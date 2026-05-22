@@ -59,8 +59,6 @@ type ModalType =
   | "friend-requests"
   | "settle-up"
   | "logout"
-  | "admin"
-  | "broadcast"
   | "saved"
   | null;
 
@@ -964,65 +962,6 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
   );
 };
 
-const AdminPanel = ({ onBroadcast }: { onBroadcast: () => void }) => {
-  const { toast } = useToast();
-  const [enabled, setEnabled] = useState(false);
-  useEffect(() => {
-    supabase.from("site_settings").select("is_maintenance_mode").eq("id", 1).single().then(({ data }) => setEnabled(Boolean(data?.is_maintenance_mode)));
-  }, []);
-  const toggle = async () => {
-    const next = !enabled;
-    setEnabled(next);
-    const { error } = await supabase.functions.invoke("toggle-maintenance", { body: { isMaintenance: next, password: "exp_admin_2026" } });
-    if (error) {
-      setEnabled(!next);
-      toast({ title: "Update failed", description: error.message, variant: "destructive" });
-    }
-  };
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between rounded-2xl bg-elevated p-4">
-        <div><p className="font-bold text-foreground">Maintenance mode</p><p className="text-xs text-muted-foreground">Lock the app for non-admins.</p></div>
-        <button onClick={toggle} className={`relative h-6 w-11 rounded-full ${enabled ? "bg-destructive" : "bg-muted"}`}><span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background shadow ${enabled ? "left-5" : "left-0.5"}`} /></button>
-      </div>
-      <Button onClick={onBroadcast} className="w-full"><Bell />Open broadcast composer</Button>
-    </div>
-  );
-};
-
-const BroadcastForm = ({ onCancel }: { onCancel: () => void }) => {
-  const { toast } = useToast();
-  const [subject, setSubject] = useState("");
-  const [message, setMessage] = useState("");
-  const [attachments, setAttachments] = useState<Array<{ name: string; data: string; size: number }>>([]);
-  const readFiles = (files: FileList | null) => {
-    Array.from(files || []).forEach((file) => {
-      const reader = new FileReader();
-      reader.onloadend = () => setAttachments((current) => [...current, { name: file.name, data: String(reader.result), size: file.size }]);
-      reader.readAsDataURL(file);
-    });
-  };
-  const send = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!subject.trim() || !message.trim()) return;
-    const { error } = await supabase.functions.invoke("send-admin-mail", { body: { subject, htmlBody: message, attachments, password: "exp_admin_2026" } });
-    if (error) toast({ title: "Broadcast failed", description: error.message, variant: "destructive" });
-    else {
-      toast({ title: "Broadcast sent" });
-      onCancel();
-    }
-  };
-  return (
-    <form className="space-y-3" onSubmit={send}>
-      <Field label="Subject" placeholder="Announcement" value={subject} onChange={setSubject} />
-      <Textarea label="Message" placeholder="Write your message..." value={message} onChange={setMessage} />
-      <label className="block text-sm font-semibold text-foreground">Attachments<input type="file" multiple className="mt-2 block w-full text-xs" onChange={(event) => readFiles(event.target.files)} /></label>
-      {attachments.length > 0 && <p className="text-xs text-muted-foreground">{attachments.length} attachment(s) selected</p>}
-      <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button type="submit" className="flex-1">Send</Button></div>
-    </form>
-  );
-};
-
 const ActionModal = ({
   modal,
   data,
@@ -1064,8 +1003,6 @@ const ActionModal = ({
     type === "add-friend" ? "Add friend" :
     type === "friend-requests" ? "Friend requests" :
     type === "settle-up" ? `Settle up - ${group?.name || ""}` :
-    type === "admin" ? "Admin panel" :
-    type === "broadcast" ? "Broadcast email" :
     type === "logout" ? "Logout" :
     type === "notifications" ? "Notifications" : "Saved";
 
@@ -1190,8 +1127,6 @@ const ActionModal = ({
           </div>
         )}
 
-        {type === "admin" && <AdminPanel onBroadcast={() => openModal("broadcast")} />}
-        {type === "broadcast" && <BroadcastForm onCancel={onClose} />}
         {type === "delete-expense" && <ConfirmBox text={`Delete "${expense?.category || "expense"}"?`} action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
         {type === "clear-expense" && <ConfirmBox text={`Mark "${expense?.category || "expense"}" as cleared?`} action="Mark cleared" onCancel={onClose} onConfirm={clearExpense} />}
         {type === "delete-group" && group && <ConfirmBox text={`Delete "${group.name}" and its group data?`} action="Delete" destructive onCancel={onClose} onConfirm={async () => { await supabase.from("groups").delete().eq("id", group.id); await closeAndRefresh(); }} />}
@@ -1234,11 +1169,11 @@ const ConfirmBox = ({ text, action, destructive, onCancel, onConfirm }: { text: 
   </div>
 );
 
-const Index = ({ initialModal = null }: { initialModal?: ModalType }) => {
+const Index = () => {
   const { user, profile, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<TabKey>("home");
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
-  const [modal, setModal] = useState<ModalState>({ type: initialModal });
+  const [modal, setModal] = useState<ModalState>({ type: null });
   const { data, loading, refresh } = useSpendovaData(user?.id);
   const { toast } = useToast();
 

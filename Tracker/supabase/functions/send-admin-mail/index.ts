@@ -17,7 +17,7 @@ serve(async (req) => {
     try {
 
         // 2. Parse Subject, HTML Body, and Attachments from the request
-        const { subject, htmlBody, attachments, password } = await req.json()
+        const { subject, htmlBody, attachments, password, targetEmail, sendToAll } = await req.json()
 
         // 3. Verify the hardcoded frontend password (same as in Admin.tsx)
         if (password !== 'exp_admin_2026') {
@@ -34,19 +34,38 @@ serve(async (req) => {
             })
         }
 
-        // 3. Get all user emails using the service role key to bypass RLS
-        const supabaseAdmin = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-        )
+        const requestedEmail = typeof targetEmail === 'string' ? targetEmail.trim().toLowerCase() : ''
+        let emails: string[] = []
 
-        const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers()
+        if (requestedEmail) {
+            const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+            if (!emailPattern.test(requestedEmail)) {
+                return new Response(JSON.stringify({ error: 'targetEmail must be a valid email address' }), {
+                    status: 400,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                })
+            }
+            emails = [requestedEmail]
+        } else if (sendToAll === true) {
+            // 3. Get all user emails using the service role key to bypass RLS
+            const supabaseAdmin = createClient(
+                Deno.env.get('SUPABASE_URL') ?? '',
+                Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            )
 
-        if (usersError) {
-            throw usersError
+            const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers()
+
+            if (usersError) {
+                throw usersError
+            }
+
+            emails = usersData.users.map((u) => u.email).filter(Boolean) as string[]
+        } else {
+            return new Response(JSON.stringify({ error: 'Refusing to send: provide targetEmail for a test email or sendToAll=true for a full broadcast.' }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            })
         }
-
-        const emails = usersData.users.map((u) => u.email).filter(Boolean) as string[]
 
         if (emails.length === 0) {
             return new Response(JSON.stringify({ message: 'No users found to email.' }), {
@@ -76,12 +95,11 @@ serve(async (req) => {
             maxMessageSize: 100 * 1024 * 1024, // 100 MB
         });
 
-        console.log(`Sending email to ${emails.length} users (BCC)...`);
+        console.log(`Sending email to ${requestedEmail || `${emails.length} users`}...`);
         // Send using BCC to prevent exposing all emails
         const mailOptions: any = {
             from: SMTP_USER,
-            to: SMTP_USER, // Need at least one "to" address, use own email
-            bcc: emails,
+            ...(requestedEmail ? { to: requestedEmail } : { to: SMTP_USER, bcc: emails }),
             subject: subject,
             text: htmlBody, // Provide text fallback (optional, but good)
             html: htmlBody,
@@ -99,7 +117,7 @@ serve(async (req) => {
 
         console.log("Transmission info:", info.messageId);
 
-        return new Response(JSON.stringify({ success: true, message: `Successfully sent broadcast to ${emails.length} users using SMTP.` }), {
+        return new Response(JSON.stringify({ success: true, message: requestedEmail ? `Successfully sent test email to ${requestedEmail}.` : `Successfully sent broadcast to ${emails.length} users using SMTP.` }), {
             status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
