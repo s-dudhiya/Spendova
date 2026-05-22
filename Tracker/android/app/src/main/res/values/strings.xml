@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ExpenseMate</string>
+    <string name="title_activity_main">ExpenseMate</string>
+    <string name="package_name">com.expensemate.app</string>
+    <string name="custom_url_scheme">com.expensemate.app</string>
+</resources>

@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --background: 250 28% 80%;
+    --foreground: 252 20% 18%;
+
+    --card: 250 20% 85%;
+    --card-foreground: 252 20% 18%;
+    --surface: 250 24% 82%;
+    --elevated: 250 20% 88%;
+
+    --popover: 250 20% 88%;
+    --popover-foreground: 252 20% 18%;
+
+    --primary: 262 72% 54%;
+    --primary-foreground: 258 30% 96%;
+
+    --secondary: 250 18% 78%;
+    --secondary-foreground: 252 20% 20%;
+
+    --muted: 250 18% 78%;
+    --muted-foreground: 252 11% 42%;
+
+    --accent: 250 18% 76%;
+    --accent-foreground: 252 20% 18%;
+
+    --destructive: 356 60% 48%;
+    --destructive-foreground: 0 0% 96%;
+    --success: 153 38% 36%;
+    --warning: 35 60% 43%;
+    --expense: 216 24% 34%;
+
+    --border: 250 14% 70%;
+    --input: 250 14% 70%;
+    --ring: 262 72% 54%;
+
+    --radius: 1rem;
+    --shadow-soft: 0 8px 24px hsl(252 20% 18% / 0.08);
+    --shadow-panel: 0 14px 34px hsl(252 20% 18% / 0.12);
+    --shadow-auth: 0 18px 42px hsl(252 20% 18% / 0.16);
+    --shadow-primary-action: 0 10px 20px hsl(var(--primary) / 0.22);
+    --auth-page: 250 100% 97%;
+    --auth-panel: 250 100% 98%;
+    --auth-field: 250 100% 98%;
+    --auth-ink: 242 33% 23%;
+    --auth-muted: 241 22% 55%;
+    --auth-line: 251 54% 88%;
+    --auth-primary: 262 72% 54%;
+    --auth-focus: 262 72% 54%;
+    --shadow-auth-input: inset 0 1px 2px hsl(242 33% 23% / 0.02), 0 8px 18px hsl(252 72% 54% / 0.04);
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    color-scheme: dark;
+    --background: 248 40% 7%;
+    --foreground: 250 24% 88%;
+
+    --card: 248 30% 11%;
+    --card-foreground: 250 24% 88%;
+    --surface: 248 34% 9%;
+    --elevated: 248 26% 14%;
+
+    --popover: 248 26% 14%;
+    --popover-foreground: 250 24% 88%;
+
+    --primary: 262 80% 65%;
+    --primary-foreground: 248 40% 7%;
+
+    --secondary: 248 23% 17%;
+    --secondary-foreground: 250 24% 86%;
+
+    --muted: 248 23% 17%;
+    --muted-foreground: 250 13% 61%;
+
+    --accent: 248 23% 18%;
+    --accent-foreground: 250 24% 88%;
+
+    --destructive: 356 48% 54%;
+    --destructive-foreground: 248 40% 7%;
+    --success: 153 36% 50%;
+    --warning: 35 65% 56%;
+    --expense: 216 23% 60%;
+
+    --border: 248 18% 23%;
+    --input: 248 18% 23%;
+    --ring: 262 80% 65%;
+    --shadow-soft: 0 10px 28px hsl(248 40% 3% / 0.28);
+    --shadow-panel: 0 18px 46px hsl(248 40% 2% / 0.38);
+    --shadow-auth: 0 22px 54px hsl(248 40% 2% / 0.48);
+    --shadow-primary-action: 0 10px 22px hsl(var(--primary) / 0.22);
+    --auth-page: 250 100% 97%;
+    --auth-panel: 250 100% 98%;
+    --auth-field: 250 100% 98%;
+    --auth-ink: 242 33% 23%;
+    --auth-muted: 241 22% 55%;
+    --auth-line: 251 54% 88%;
+    --auth-primary: 262 72% 54%;
+    --auth-focus: 262 72% 54%;
+    --shadow-auth-input: inset 0 1px 2px hsl(242 33% 23% / 0.02), 0 8px 18px hsl(252 72% 54% / 0.04);
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+
+  ::selection {
+    @apply bg-primary text-primary-foreground;
+  }
+
+  .auth-shell {
+    background-color: hsl(var(--auth-page));
+    background-image:
+      radial-gradient(circle at 0% 0%, hsl(var(--auth-primary) / 0.1), transparent 13rem),
+      radial-gradient(circle at 50% 52%, hsl(var(--auth-primary) / 0.08), transparent 22rem),
+      radial-gradient(circle at 100% 100%, hsl(var(--auth-primary) / 0.08), transparent 18rem);
+  }
+
+  .auth-shell::before {
+    content: "";
+    position: fixed;
+    inset: 1rem 1rem auto auto;
+    width: 16rem;
+    height: 11rem;
+    pointer-events: none;
+    opacity: 0.45;
+    background-image: radial-gradient(circle, hsl(var(--auth-line)) 1.1px, transparent 1.1px);
+    background-size: 1rem 1rem;
+  }
+}
