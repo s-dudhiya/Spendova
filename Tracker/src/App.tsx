@@ -21,9 +21,11 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/dashboard" element={<Index />} />
+            <Route path="/admin" element={<Index initialModal="admin" />} />
             <Route path="/login" element={<Auth mode="login" />} />
             <Route path="/register" element={<Auth mode="register" />} />
             <Route path="/forgot-password" element={<Auth mode="forgot" />} />
+            <Route path="/reset-password" element={<Auth mode="reset" />} />
             <Route path="/auth" element={<Auth mode="login" />} />
             <Route path="/invite" element={<InviteAccept />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

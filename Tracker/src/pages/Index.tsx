@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import {
   ArrowRight,
   Bell,
@@ -14,7 +14,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Shield,
   Split,
   Sun,
   Trash2,
@@ -188,7 +187,16 @@ const getInitialTheme = (): Theme => {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 };
 
-const money = (amount: number) => `Rs ${amount.toFixed(2)}`;
+const money = (amount: number) => {
+  const value = Number.isFinite(amount) ? amount : 0;
+  const hasPaise = Math.round(value * 100) % 100 !== 0;
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: hasPaise ? 2 : 0,
+    maximumFractionDigits: hasPaise ? 2 : 0,
+  }).format(value);
+};
 const dateLabel = (value?: string | null) => value ? new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today";
 const displayName = (profile?: Profile | null) => profile?.full_name || profile?.username || "Unknown";
 
@@ -708,12 +716,15 @@ const ProfileView = ({ profile, email, createdAt, theme, onThemeToggle, onSave, 
         </div>
       </section>
       <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
-        <div className="space-y-4 text-sm">
-          <div className="flex justify-between"><span className="text-muted-foreground">Email</span><span className="font-semibold text-foreground">{email}</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground">Member since</span><span className="font-semibold text-foreground">{dateLabel(createdAt)}</span></div>
+        <div className="space-y-5 text-sm">
+          <div className="space-y-3 rounded-2xl bg-elevated p-4 shadow-soft">
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Email</span><span className="text-right font-semibold text-foreground">{email}</span></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Member since</span><span className="font-semibold text-foreground">{dateLabel(createdAt)}</span></div>
+          </div>
           <button onClick={onThemeToggle} className="flex w-full items-center justify-between rounded-2xl bg-elevated p-4 font-bold text-foreground shadow-soft"><span>Theme</span><span className="flex items-center gap-2 text-primary">{theme === "dark" ? "Dark" : "Light"}{theme === "dark" ? <Moon className="size-4" /> : <Sun className="size-4" />}</span></button>
-          <button onClick={() => openModal("admin")} className="flex w-full items-center justify-between rounded-2xl bg-elevated p-4 font-bold text-foreground shadow-soft"><span className="flex items-center gap-2"><Shield className="size-4 text-primary" />Admin panel</span><ChevronRight className="size-4 text-muted-foreground" /></button>
-          <button onClick={() => openModal("logout")} className="w-full rounded-full bg-destructive/15 px-4 py-3 font-bold text-destructive">Logout</button>
+          <div className="pt-1">
+            <button onClick={() => openModal("logout")} className="w-full rounded-full bg-destructive/15 px-4 py-3 font-bold text-destructive">Logout</button>
+          </div>
         </div>
       </section>
     </main>
@@ -1223,12 +1234,11 @@ const ConfirmBox = ({ text, action, destructive, onCancel, onConfirm }: { text: 
   </div>
 );
 
-const Index = () => {
+const Index = ({ initialModal = null }: { initialModal?: ModalType }) => {
   const { user, profile, loading: authLoading } = useAuth();
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabKey>("home");
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
-  const [modal, setModal] = useState<ModalState>({ type: null });
+  const [modal, setModal] = useState<ModalState>({ type: initialModal });
   const { data, loading, refresh } = useSpendovaData(user?.id);
   const { toast } = useToast();
 

@@ -45,17 +45,7 @@ All colors MUST be HSL.
     --radius: 1rem;
     --shadow-soft: 0 8px 24px hsl(252 20% 18% / 0.08);
     --shadow-panel: 0 14px 34px hsl(252 20% 18% / 0.12);
-    --shadow-auth: 0 18px 42px hsl(252 20% 18% / 0.16);
     --shadow-primary-action: 0 10px 20px hsl(var(--primary) / 0.22);
-    --auth-page: 250 100% 97%;
-    --auth-panel: 250 100% 98%;
-    --auth-field: 250 100% 98%;
-    --auth-ink: 242 33% 23%;
-    --auth-muted: 241 22% 55%;
-    --auth-line: 251 54% 88%;
-    --auth-primary: 262 72% 54%;
-    --auth-focus: 262 72% 54%;
-    --shadow-auth-input: inset 0 1px 2px hsl(242 33% 23% / 0.02), 0 8px 18px hsl(252 72% 54% / 0.04);
 
     --sidebar-background: 0 0% 98%;
 
@@ -110,17 +100,7 @@ All colors MUST be HSL.
     --ring: 262 80% 65%;
     --shadow-soft: 0 10px 28px hsl(248 40% 3% / 0.28);
     --shadow-panel: 0 18px 46px hsl(248 40% 2% / 0.38);
-    --shadow-auth: 0 22px 54px hsl(248 40% 2% / 0.48);
     --shadow-primary-action: 0 10px 22px hsl(var(--primary) / 0.22);
-    --auth-page: 250 100% 97%;
-    --auth-panel: 250 100% 98%;
-    --auth-field: 250 100% 98%;
-    --auth-ink: 242 33% 23%;
-    --auth-muted: 241 22% 55%;
-    --auth-line: 251 54% 88%;
-    --auth-primary: 262 72% 54%;
-    --auth-focus: 262 72% 54%;
-    --shadow-auth-input: inset 0 1px 2px hsl(242 33% 23% / 0.02), 0 8px 18px hsl(252 72% 54% / 0.04);
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;
@@ -152,23 +132,4 @@ All colors MUST be HSL.
     @apply bg-primary text-primary-foreground;
   }
 
-  .auth-shell {
-    background-color: hsl(var(--auth-page));
-    background-image:
-      radial-gradient(circle at 0% 0%, hsl(var(--auth-primary) / 0.1), transparent 13rem),
-      radial-gradient(circle at 50% 52%, hsl(var(--auth-primary) / 0.08), transparent 22rem),
-      radial-gradient(circle at 100% 100%, hsl(var(--auth-primary) / 0.08), transparent 18rem);
-  }
-
-  .auth-shell::before {
-    content: "";
-    position: fixed;
-    inset: 1rem 1rem auto auto;
-    width: 16rem;
-    height: 11rem;
-    pointer-events: none;
-    opacity: 0.45;
-    background-image: radial-gradient(circle, hsl(var(--auth-line)) 1.1px, transparent 1.1px);
-    background-size: 1rem 1rem;
-  }
 }
