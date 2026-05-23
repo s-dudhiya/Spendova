@@ -24,10 +24,15 @@ const AppRoutes = () => {
   useEffect(() => {
     let active = true;
     const checkMaintenance = async () => {
-      const { data } = await supabase.from("site_settings").select("is_maintenance_mode").eq("id", 1).single();
-      if (active) {
-        setMaintenance(Boolean(data?.is_maintenance_mode));
-        setCheckingMaintenance(false);
+      try {
+        const { data, error } = await supabase.from("site_settings").select("is_maintenance_mode").eq("id", 1).single();
+        if (error) throw error;
+        if (active) setMaintenance(Boolean(data?.is_maintenance_mode));
+      } catch (error) {
+        console.error("Failed to check maintenance mode", error);
+        if (active) setMaintenance(false);
+      } finally {
+        if (active) setCheckingMaintenance(false);
       }
     };
 
@@ -58,6 +63,7 @@ const AppRoutes = () => {
       <Route path="/reset-password" element={<Auth mode="reset" />} />
       <Route path="/auth" element={<Auth mode="login" />} />
       <Route path="/invite" element={<InviteAccept />} />
+      <Route path="/accept-invite" element={<InviteAccept />} />
       {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
       <Route path="*" element={<NotFound />} />
     </Routes>

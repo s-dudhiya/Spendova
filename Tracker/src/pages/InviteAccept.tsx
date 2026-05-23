@@ -12,6 +12,7 @@ type GroupInvite = {
   group_id: string;
   invited_by: string | null;
   status: string;
+  expires_at?: string | null;
   groups?: {
     id: string;
     name: string;
@@ -39,21 +40,23 @@ export default function InviteAccept() {
 
     const loadInvite = async () => {
       const { data, error: loadError } = await supabase
-        .from("group_invites" as never)
-        .select("group_id, invited_by, status, groups(id, name, emoji, description)")
-        .eq("token", token)
-        .single();
+        .rpc("lookup_group_invite" as never, { invite_token: token } as never);
 
-      if (loadError || !data) {
+      const loadedInvite = Array.isArray(data) ? data[0] as unknown as GroupInvite | undefined : data as unknown as GroupInvite | undefined;
+      if (loadError || !loadedInvite) {
         setStatus("error");
-        setError("Invite not found or already used.");
+        setError("Invite not found, expired, or already used.");
         return;
       }
 
-      const loadedInvite = data as unknown as GroupInvite;
       if (loadedInvite.status !== "pending") {
         setStatus("error");
         setError(`This invite has already been ${loadedInvite.status}.`);
+        return;
+      }
+      if (loadedInvite.expires_at && new Date(loadedInvite.expires_at).getTime() <= Date.now()) {
+        setStatus("error");
+        setError("This invite has expired.");
         return;
       }
 
@@ -82,7 +85,8 @@ export default function InviteAccept() {
           );
         }
 
-        await supabase.from("group_invites" as never).update({ status: "accepted" } as never).eq("token", token);
+        const { error: updateError } = await supabase.from("group_invites" as never).update({ status: "accepted" } as never).eq("token", token);
+        if (updateError) throw updateError;
         localStorage.removeItem("pending_invite_token");
         setStatus("done");
         toast({ title: `Welcome to ${invite.groups?.name || "the group"}!`, description: "You've been added successfully." });
@@ -116,11 +120,11 @@ export default function InviteAccept() {
       <div className="mt-6 space-y-3">
         <Button className="w-full rounded-full" onClick={() => {
           if (token) localStorage.setItem("pending_invite_token", token);
-          navigate(`/login?redirect=/invite?token=${token}`);
+          navigate(`/login?redirect=/accept-invite?token=${token}`);
         }}>Login to accept</Button>
         <Button variant="quiet" className="w-full rounded-full" onClick={() => {
           if (token) localStorage.setItem("pending_invite_token", token);
-          navigate(`/register?redirect=/invite?token=${token}`);
+          navigate(`/register?redirect=/accept-invite?token=${token}`);
         }}>Create account</Button>
       </div>
     </InviteShell>

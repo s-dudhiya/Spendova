@@ -13,8 +13,9 @@ import { useToast } from '@/hooks/use-toast';
 interface Profile {
     id: string; // The row UUID (we may not strictly need this anymore)
     user_id: string; // The Auth UUID 
-    username: string;
-    full_name: string;
+    username: string | null;
+    full_name: string | null;
+    email?: string | null;
 }
 
 interface Connection {
@@ -43,6 +44,8 @@ export default function Friends() {
     const [searchUsername, setSearchUsername] = useState('');
     const [searchResult, setSearchResult] = useState<Profile | null>(null);
     const [isSearching, setIsSearching] = useState(false);
+    const getDisplayName = (profile?: Profile | null) => profile?.full_name || profile?.username || profile?.email || 'User';
+    const getInitial = (profile?: Profile | null) => getDisplayName(profile).charAt(0).toUpperCase();
 
     useEffect(() => {
         if (user) {
@@ -140,6 +143,8 @@ export default function Friends() {
 
             if (!data) {
                 toast({ title: 'Not Found', description: `No user found with username '${searchUsername}'`, variant: 'destructive' });
+            } else if (data.user_id === user.id) {
+                toast({ title: 'Invalid Search', description: "You cannot add yourself.", variant: 'destructive' });
             } else {
                 setSearchResult(data);
             }
@@ -152,6 +157,10 @@ export default function Friends() {
 
     const sendRequest = async (receiverId: string) => {
         if (!user) return;
+        if (receiverId === user.id) {
+            toast({ title: 'Cannot Send', description: 'You cannot send a friend request to yourself.', variant: 'destructive' });
+            return;
+        }
 
         // Check if a connection already exists
         const existingConnection =
@@ -276,10 +285,10 @@ export default function Friends() {
                                     <div key={friend.id} className="flex items-center justify-between p-4 group hover:bg-muted/30 transition-colors rounded-2xl">
                                         <div className="flex items-center gap-4">
                                             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/80 to-primary/40 flex items-center justify-center text-primary-foreground font-bold shadow-md shrink-0">
-                                                {friend.profiles.full_name.charAt(0).toUpperCase()}
+                                                {getInitial(friend.profiles)}
                                             </div>
                                             <div>
-                                                <p className="font-bold text-base text-foreground leading-tight">{friend.profiles.full_name}</p>
+                                                <p className="font-bold text-base text-foreground leading-tight">{getDisplayName(friend.profiles)}</p>
                                                 <p className="text-xs font-medium text-muted-foreground lowercase mt-0.5">@{friend.profiles.username}</p>
                                             </div>
                                         </div>
@@ -315,10 +324,10 @@ export default function Friends() {
                             <div className="p-4 bg-primary/5 border border-primary/20 rounded-[2rem] flex items-center justify-between">
                                 <div className="flex items-center gap-4">
                                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground font-bold shadow-md shrink-0">
-                                        {searchResult.full_name.charAt(0).toUpperCase()}
+                                        {getInitial(searchResult)}
                                     </div>
                                     <div>
-                                        <p className="font-bold text-lg text-foreground leading-tight">{searchResult.full_name}</p>
+                                        <p className="font-bold text-lg text-foreground leading-tight">{getDisplayName(searchResult)}</p>
                                         <p className="text-sm font-medium text-muted-foreground lowercase mt-0.5">@{searchResult.username}</p>
                                     </div>
                                 </div>
@@ -344,10 +353,10 @@ export default function Friends() {
                                         <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 hover:bg-muted/30 transition-colors rounded-[1.5rem] bg-secondary/30 gap-4">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-muted-foreground to-muted-foreground/60 flex items-center justify-center text-background font-bold shadow-sm shrink-0">
-                                                    {req.profiles.full_name.charAt(0).toUpperCase()}
+                                                    {getInitial(req.profiles)}
                                                 </div>
                                                 <div>
-                                                    <p className="font-bold text-base text-foreground leading-tight">{req.profiles.full_name}</p>
+                                                    <p className="font-bold text-base text-foreground leading-tight">{getDisplayName(req.profiles)}</p>
                                                     <p className="text-xs font-medium text-muted-foreground lowercase mt-0.5">@{req.profiles.username}</p>
                                                 </div>
                                             </div>
@@ -379,10 +388,10 @@ export default function Friends() {
                                         <div key={req.id} className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors rounded-2xl opacity-75">
                                             <div className="flex items-center gap-4">
                                                 <div className="w-10 h-10 rounded-full border border-dashed border-muted-foreground flex items-center justify-center text-muted-foreground font-bold shrink-0">
-                                                    {req.profiles.full_name.charAt(0).toUpperCase()}
+                                                    {getInitial(req.profiles)}
                                                 </div>
                                                 <div>
-                                                    <p className="font-bold text-sm text-foreground">{req.profiles.full_name}</p>
+                                                    <p className="font-bold text-sm text-foreground">{getDisplayName(req.profiles)}</p>
                                                     <p className="text-[11px] font-medium text-muted-foreground lowercase mt-0.5">Pending approval</p>
                                                 </div>
                                             </div>

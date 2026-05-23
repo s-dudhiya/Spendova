@@ -8,7 +8,23 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function escapeHtml(value: unknown) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+}
+
 function expenseEmailHtml(payerName: string, category: string, totalAmount: number, myShare: number, groupName: string, note?: string) {
+    const safePayerName = escapeHtml(payerName)
+    const safeCategory = escapeHtml(category)
+    const safeGroupName = escapeHtml(groupName)
+    const safeNote = note ? escapeHtml(note) : ''
+    const safeTotalAmount = escapeHtml(totalAmount.toFixed(2))
+    const safeMyShare = escapeHtml(myShare.toFixed(2))
+
     return `<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#0f0f14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
@@ -18,22 +34,22 @@ function expenseEmailHtml(payerName: string, category: string, totalAmount: numb
         <div style="width:48px;height:48px;background:linear-gradient(135deg,#6c47ff,#4f8bff);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;">🧾</div>
         <div>
           <p style="color:#6b6b80;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:0 0 2px;">New Expense</p>
-          <h2 style="color:#fff;margin:0;font-size:20px;font-weight:800;text-transform:capitalize;">${category}</h2>
+          <h2 style="color:#fff;margin:0;font-size:20px;font-weight:800;text-transform:capitalize;">${safeCategory}</h2>
         </div>
       </div>
     </div>
     <div style="padding:28px 32px;">
       <p style="color:#c4c4d4;font-size:14px;margin:0 0 20px;">
-        <strong style="color:#fff;">${payerName}</strong> added an expense in <strong style="color:#7c6af7;">${groupName}</strong>.
+        <strong style="color:#fff;">${safePayerName}</strong> added an expense in <strong style="color:#7c6af7;">${safeGroupName}</strong>.
       </p>
-      ${note ? `<p style="color:#8888a0;font-size:13px;margin:0 0 20px;padding:10px 14px;background:rgba(255,255,255,0.04);border-radius:10px;border-left:3px solid #6c47ff;">${note}</p>` : ''}
+      ${safeNote ? `<p style="color:#8888a0;font-size:13px;margin:0 0 20px;padding:10px 14px;background:rgba(255,255,255,0.04);border-radius:10px;border-left:3px solid #6c47ff;">${safeNote}</p>` : ''}
       <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.04);border-radius:16px;padding:16px 20px;margin-bottom:12px;">
         <span style="color:#8888a0;font-size:13px;">Total Amount</span>
-        <span style="color:#fff;font-size:20px;font-weight:800;">₹${totalAmount.toFixed(2)}</span>
+        <span style="color:#fff;font-size:20px;font-weight:800;">₹${safeTotalAmount}</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(108,71,255,0.12);border-radius:16px;padding:16px 20px;border:1px solid rgba(108,71,255,0.3);">
         <span style="color:#a08fff;font-size:13px;font-weight:600;">Your Share</span>
-        <span style="color:#7c6af7;font-size:22px;font-weight:800;">₹${myShare.toFixed(2)}</span>
+        <span style="color:#7c6af7;font-size:22px;font-weight:800;">₹${safeMyShare}</span>
       </div>
     </div>
     <div style="padding:16px 32px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;">

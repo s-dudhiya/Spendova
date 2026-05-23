@@ -14,19 +14,8 @@ serve(async (req) => {
   }
 
   try {
-    const { isMaintenance, password } = await req.json();
+    const { isMaintenance } = await req.json();
 
-    // Verify the hardcoded frontend password (same as in Admin.tsx)
-    // Note: In a production environment with proper auth, we would use Supabase JWT tokens.
-    // For this specific portal implementation, we authorize based on this secure shared secret.
-    if (password !== 'exp_admin_2026') {
-      return new Response(JSON.stringify({ error: "Unauthorized access" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Initialize Supabase admin client to bypass RLS
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
@@ -37,6 +26,27 @@ serve(async (req) => {
         }
       }
     );
+
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const token = authHeader.replace("Bearer ", "");
+    const { data: userData, error: authError } = await supabaseClient.auth.getUser(token);
+    if (authError || !userData.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized access" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: adminUser, error: adminError } = await supabaseClient
+      .from("admin_users")
+      .select("user_id")
+      .eq("user_id", userData.user.id)
+      .maybeSingle();
+    if (adminError || !adminUser) {
+      return new Response(JSON.stringify({ error: "Admin access required" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Update the site settings table
     const { error: updateError } = await supabaseClient

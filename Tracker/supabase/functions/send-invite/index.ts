@@ -8,8 +8,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const APP_URL = Deno.env.get('APP_URL') || 'https://expensemate.app'
-
 function inviteEmailHtml(inviterName: string, groupName: string, inviteUrl: string) {
   return `<!DOCTYPE html>
 <html>
@@ -72,6 +70,11 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
+    const appUrl = Deno.env.get('APP_URL')?.replace(/\/$/, '')
+    if (!appUrl) {
+      throw new Error('APP_URL is not configured. Refusing to generate an invite link.')
+    }
+
     const { email, group_id, group_name, inviter_name } = await req.json()
     if (!email || !group_id || !group_name || !inviter_name) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
@@ -83,6 +86,29 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
+
+    const authHeader = req.headers.get('Authorization') ?? ''
+    const token = authHeader.replace('Bearer ', '')
+    const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token)
+    if (authError || !userData.user) {
+      return new Response(JSON.stringify({ error: 'Authentication required to send invites' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const { data: membership, error: memberError } = await supabaseAdmin
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', group_id)
+      .eq('user_id', userData.user.id)
+      .maybeSingle()
+    if (memberError || !membership) {
+      return new Response(JSON.stringify({ error: 'Only group members can send invites' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
 
     // Check if email already exists in the app
     const { data: usersData } = await supabaseAdmin.auth.admin.listUsers()
@@ -100,7 +126,7 @@ serve(async (req) => {
     if (existingInvite) {
       const { data, error: updateErr } = await supabaseAdmin
         .from('group_invites')
-        .update({ status: 'pending' })
+        .update({ status: 'pending', invited_by: userData.user.id, expires_at: expiresAt })
         .eq('id', existingInvite.id)
         .select('token').single()
       if (updateErr) throw updateErr
@@ -108,13 +134,13 @@ serve(async (req) => {
     } else {
       const { data, error: insertErr } = await supabaseAdmin
         .from('group_invites')
-        .insert({ group_id, invited_by: null, email, status: 'pending' })
+        .insert({ group_id, invited_by: userData.user.id, email, status: 'pending', expires_at: expiresAt })
         .select('token').single()
       if (insertErr) throw insertErr
       invite = data;
     }
 
-    const inviteUrl = `${APP_URL}/invite?token=${invite.token}`
+    const inviteUrl = `${appUrl}/accept-invite?token=${invite.token}`
 
     let subject: string
     let html: string

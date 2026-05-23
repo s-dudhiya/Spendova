@@ -35,6 +35,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
 
 type TabKey = "home" | "personal" | "split" | "tiffin" | "profile";
 type Theme = "light" | "dark";
@@ -68,6 +69,7 @@ type Profile = {
   user_id: string;
   full_name: string | null;
   username: string | null;
+  email?: string | null;
 };
 
 type ExpenseSplitRow = {
@@ -122,6 +124,7 @@ type GroupRow = {
 type InviteRow = {
   id: string;
   email: string;
+  token: string;
   status: string;
   created_at: string;
 };
@@ -180,8 +183,14 @@ const emojiMap: Record<string, string> = {
 
 const getInitialTheme = (): Theme => {
   if (typeof window === "undefined") return "light";
-  const saved = window.localStorage.getItem("spendova-theme");
+  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
   if (saved === "light" || saved === "dark") return saved;
+  const legacy = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+  if (legacy === "light" || legacy === "dark") {
+    window.localStorage.setItem(THEME_STORAGE_KEY, legacy);
+    window.localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+    return legacy;
+  }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 };
 
@@ -196,7 +205,31 @@ const money = (amount: number) => {
   }).format(value);
 };
 const dateLabel = (value?: string | null) => value ? new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today";
-const displayName = (profile?: Profile | null) => profile?.full_name || profile?.username || "Unknown";
+const displayName = (profile?: Profile | null) => profile?.full_name || profile?.username || profile?.email || "User";
+const toPaise = (amount: number) => Math.round((Number.isFinite(amount) ? amount : 0) * 100);
+const fromPaise = (paise: number) => Number((paise / 100).toFixed(2));
+const allocateEqualSplitDebts = (amount: number, participantIds: string[], payerId: string) => {
+  const totalPaise = toPaise(amount);
+  const count = participantIds.length;
+  if (!count) return [];
+  const baseShare = Math.floor(totalPaise / count);
+  let remainder = totalPaise % count;
+  return participantIds
+    .map((user_id) => {
+      const share = baseShare + (remainder > 0 ? 1 : 0);
+      remainder -= 1;
+      return { user_id, amount_owed: fromPaise(share) };
+    })
+    .filter((split) => split.user_id !== payerId && split.amount_owed > 0);
+};
+const filterExpensesByRange = (expenses: ExpenseRow[], range: "week" | "month" | "year") => {
+  const now = new Date();
+  const start = new Date(now);
+  if (range === "week") start.setDate(now.getDate() - 7);
+  if (range === "month") start.setMonth(now.getMonth() - 1);
+  if (range === "year") start.setFullYear(now.getFullYear() - 1);
+  return expenses.filter((expense) => !expense.created_at || new Date(expense.created_at) >= start);
+};
 
 const StatusPill = ({ status }: { status: string }) => {
   const cleared = ["cleared", "paid", "accepted", "settled"].includes(status.toLowerCase());
@@ -311,7 +344,7 @@ function useSpendovaData(userId?: string) {
       await Promise.all(((groupsRes.data || []) as unknown as GroupQueryRow[]).map(async (group) => {
         const { data: invites } = await supabase
           .from("group_invites" as never)
-          .select("id, email, status, created_at")
+          .select("id, email, token, status, created_at")
           .eq("group_id", group.id)
           .eq("status", "pending")
           .order("created_at", { ascending: false });
@@ -425,11 +458,14 @@ function computeGroupBalances(expenses: ExpenseRow[], group: GroupRow) {
   return balances;
 }
 
-const HomeView = ({ expenses, summary, setTab, openModal }: { expenses: ExpenseRow[]; summary: ReturnType<typeof getSummary>; setTab: (tab: TabKey) => void; openModal: (type: ModalType, item?: string) => void }) => {
+const HomeView = ({ expenses, userId, setTab, openModal }: { expenses: ExpenseRow[]; userId: string; setTab: (tab: TabKey) => void; openModal: (type: ModalType, item?: string) => void }) => {
   const [range, setRange] = useState<"week" | "month" | "year">("month");
   const [status, setStatus] = useState<"all" | "pending" | "cleared">("all");
   const clear = () => { setRange("month"); setStatus("all"); };
-  const recent = expenses.filter((expense) => status === "all" || expense.status === status).slice(0, 3);
+  const rangedExpenses = filterExpensesByRange(expenses, range);
+  const filteredExpenses = rangedExpenses.filter((expense) => status === "all" || expense.status === status);
+  const summary = getSummary(filteredExpenses, userId);
+  const recent = filteredExpenses.slice(0, 3);
 
   return (
     <main className="space-y-6">
@@ -760,9 +796,7 @@ const ExpenseForm = ({ userId, friends, group, expense, onSubmit, onCancel }: { 
     if (splitOn) {
       if (participants.length < 2) return;
       if (strategy === "equal") {
-        participants.forEach((id) => {
-          if (id !== payer) splits.push({ user_id: id, amount_owed: Number(equalShare.toFixed(2)) });
-        });
+        splits.push(...allocateEqualSplitDebts(parsedAmount, participants, payer));
       } else if (strategy === "exact") {
         const total = participants.reduce((sum, id) => sum + Number(splitValues[id] || 0), 0);
         if (Math.abs(total - parsedAmount) > 0.05) return;
@@ -954,7 +988,7 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
       {result && (
         <div className="flex items-center justify-between rounded-2xl bg-elevated p-3">
           <div><p className="font-bold text-foreground">{displayName(result)}</p><p className="text-xs text-muted-foreground">@{result.username}</p></div>
-          <Button size="sm" disabled={existingIds.has(result.user_id)} onClick={() => onRequest(result.user_id)}><UserPlus />Send request</Button>
+          <Button size="sm" disabled={existingIds.has(result.user_id) || result.user_id === currentUserId} onClick={() => onRequest(result.user_id)}><UserPlus />Send request</Button>
         </div>
       )}
       <Button variant="quiet" className="w-full" onClick={onCancel}>Cancel</Button>
@@ -1016,11 +1050,11 @@ const ActionModal = ({
       const { error } = await supabase.from("expenses").update(payload).eq("id", expenseId);
       if (error) throw error;
       await supabase.from("expense_splits").delete().eq("expense_id", expenseId);
-      if (splits.length) await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: expenseId, has_paid: false })));
+      if (splits.length) await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: expenseId, has_paid: payload.status === "cleared" })));
     } else {
       const { data: inserted, error } = await supabase.from("expenses").insert(payload).select("id").single();
       if (error || !inserted) throw error;
-      if (splits.length) await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: inserted.id, has_paid: false })));
+      if (splits.length) await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: inserted.id, has_paid: payload.status === "cleared" })));
       if (payload.group_id) supabase.functions.invoke("send-expense-notification", { body: { expense_id: inserted.id } }).catch(() => undefined);
     }
     toast({ title: "Saved" });
@@ -1038,7 +1072,11 @@ const ActionModal = ({
     if (!expense) return;
     const { error } = await supabase.from("expenses").update({ status: "cleared" }).eq("id", expense.id);
     if (error) toast({ title: "Update failed", description: error.message, variant: "destructive" });
-    else await closeAndRefresh();
+    else {
+      const { error: splitError } = await supabase.from("expense_splits").update({ has_paid: true }).eq("expense_id", expense.id);
+      if (splitError) toast({ title: "Split update failed", description: splitError.message, variant: "destructive" });
+      else await closeAndRefresh();
+    }
   };
 
   const saveGroup = async (payload: { name: string; emoji: string; description: string; memberIds: string[]; groupId?: string }) => {
@@ -1103,7 +1141,7 @@ const ActionModal = ({
         )}
 
         {type === "invite-members" && group && <InviteMembers group={group} invites={data.groupInvites[group.id] || []} onInvite={sendInvite} />}
-        {type === "add-friend" && <AddFriendForm currentUserId={currentUserId} friends={data.friends} requests={[...data.incomingRequests, ...data.outgoingRequests]} onRequest={async (receiverId) => { const { error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: receiverId, status: "pending" }); if (error) toast({ title: "Request failed", description: error.message, variant: "destructive" }); else await closeAndRefresh(); }} onCancel={onClose} />}
+        {type === "add-friend" && <AddFriendForm currentUserId={currentUserId} friends={data.friends} requests={[...data.incomingRequests, ...data.outgoingRequests]} onRequest={async (receiverId) => { if (receiverId === currentUserId) { toast({ title: "Request failed", description: "You cannot send a friend request to yourself.", variant: "destructive" }); return; } const { error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: receiverId, status: "pending" }); if (error) toast({ title: "Request failed", description: error.message, variant: "destructive" }); else await closeAndRefresh(); }} onCancel={onClose} />}
 
         {type === "friend-requests" && (
           <div className="space-y-4">
@@ -1141,12 +1179,13 @@ const ActionModal = ({
 
 const InviteMembers = ({ group, invites, onInvite }: { group: GroupRow; invites: InviteRow[]; onInvite: (email: string) => Promise<void> }) => {
   const [email, setEmail] = useState("");
-  const link = `${window.location.origin}/invite?group=${group.id}`;
+  const inviteToken = invites.find((invite) => invite.status === "pending")?.token;
+  const link = inviteToken ? `${window.location.origin}/accept-invite?token=${inviteToken}` : "";
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 rounded-2xl bg-elevated p-3">
-        <input readOnly value={link} className="min-w-0 flex-1 bg-transparent text-xs font-mono outline-none" />
-        <Button size="sm" variant="quiet" onClick={() => navigator.clipboard?.writeText(link)}><Copy />Copy</Button>
+        <input readOnly value={link || "Send an invite to generate a link"} className="min-w-0 flex-1 bg-transparent text-xs font-mono outline-none" />
+        <Button size="sm" variant="quiet" disabled={!link} onClick={() => navigator.clipboard?.writeText(link)}><Copy />Copy</Button>
       </div>
       <Field label="Invite by email" type="email" value={email} onChange={setEmail} placeholder="friend@email.com" />
       <Button className="w-full" onClick={() => onInvite(email)}>Send invite</Button>
@@ -1179,7 +1218,8 @@ const Index = () => {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
-    window.localStorage.setItem("spendova-theme", theme);
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    window.localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
   }, [theme]);
 
   if (!authLoading && !user) return <Navigate to="/login" replace />;
@@ -1207,7 +1247,7 @@ const Index = () => {
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto min-h-screen max-w-3xl px-4 pb-36 sm:px-6">
         <AppHeader title={title === "Home" ? "Overview" : title} theme={theme} onThemeToggle={toggleTheme} openModal={openModal} />
-        {activeTab === "home" && <HomeView expenses={data.expenses} summary={summary} setTab={setActiveTab} openModal={openModal} />}
+        {activeTab === "home" && <HomeView expenses={data.expenses} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
         {activeTab === "personal" && <PersonalView expenses={data.expenses} summary={summary} currentUserId={user.id} openModal={openModal} />}
         {activeTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
         {activeTab === "tiffin" && <TiffinView expenses={data.expenses} openModal={openModal} />}

@@ -21,8 +21,9 @@ import { EditExpenseDialog, EditableExpense } from '@/components/EditExpenseDial
 // ─── Types ───────────────────────────────────────────────────
 interface Profile {
     user_id: string;
-    full_name: string;
-    username: string;
+    full_name: string | null;
+    username: string | null;
+    email?: string | null;
 }
 
 interface GroupMember {
@@ -90,6 +91,20 @@ function getGroupGradient(groupId: string) {
     for (let i = 0; i < groupId.length; i++) hash = groupId.charCodeAt(i) + ((hash << 5) - hash);
     return GRADIENT_COLORS[Math.abs(hash) % GRADIENT_COLORS.length];
 }
+const displayProfileName = (profile?: Profile | null) => profile?.full_name || profile?.username || profile?.email || 'User';
+const firstName = (profile?: Profile | null) => displayProfileName(profile).split(' ')[0] || 'User';
+const splitEqualDebts = (amount: number, participantIds: string[], payerId: string) => {
+    const totalPaise = Math.round(amount * 100);
+    const base = Math.floor(totalPaise / participantIds.length);
+    let remainder = totalPaise % participantIds.length;
+    return participantIds
+        .map(user_id => {
+            const share = base + (remainder > 0 ? 1 : 0);
+            remainder -= 1;
+            return { user_id, amount_owed: Number((share / 100).toFixed(2)) };
+        })
+        .filter(split => split.user_id !== payerId && split.amount_owed > 0);
+};
 
 /** Compute simplified net balances: who owes whom and how much */
 function computeBalances(expenses: GroupExpense[], currentUserId: string): BalanceEntry[] {
@@ -598,10 +613,10 @@ export default function Groups() {
                                                     onClick={() => setSelectedMembers(prev => isSelected ? prev.filter(id => id !== f.user_id) : [...prev, f.user_id])}
                                                 >
                                                     <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground'}`}>
-                                                        {isSelected ? <Check className="h-4 w-4" /> : f.full_name.charAt(0).toUpperCase()}
+                                                        {isSelected ? <Check className="h-4 w-4" /> : displayProfileName(f).charAt(0).toUpperCase()}
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <p className="font-bold text-sm truncate">{f.full_name}</p>
+                                                        <p className="font-bold text-sm truncate">{displayProfileName(f)}</p>
                                                         <p className="text-xs text-muted-foreground">@{f.username}</p>
                                                     </div>
                                                 </div>
@@ -664,9 +679,9 @@ function GroupCard({ group, currentUserId, onClick }: { group: Group; currentUse
                                 <div
                                     key={m.user_id}
                                     className="w-6 h-6 rounded-full bg-gradient-to-br from-primary/70 to-primary/40 flex items-center justify-center text-[9px] font-bold text-primary-foreground border-2 border-background"
-                                    title={m.profiles?.full_name}
+                                    title={displayProfileName(m.profiles)}
                                 >
-                                    {m.profiles?.full_name?.charAt(0)?.toUpperCase() || '?'}
+                                    {displayProfileName(m.profiles).charAt(0).toUpperCase()}
                                 </div>
                             ))}
                             {group.group_members?.length > 4 && (
@@ -760,7 +775,7 @@ function GroupDetailView({
     const rawBalances = computeBalances(expenses, currentUserId);
     // Attach names from group members
     const memberMap: Record<string, string> = {};
-    group.group_members?.forEach(m => { memberMap[m.user_id] = m.profiles?.full_name || 'Unknown'; });
+    group.group_members?.forEach(m => { memberMap[m.user_id] = displayProfileName(m.profiles); });
 
     const balances: BalanceEntry[] = rawBalances
         .map(b => ({ ...b, fromName: memberMap[b.fromUserId] || 'Unknown', toName: memberMap[b.toUserId] || 'Unknown' }))
@@ -826,7 +841,7 @@ function GroupDetailView({
                         {group.group_members?.map(m => (
                             <div key={m.user_id} className="flex flex-col items-center gap-1.5 group/avatar">
                                 <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${getGroupGradient(m.user_id)} flex items-center justify-center text-white font-bold text-base shadow-md relative`}>
-                                    {m.profiles?.full_name?.charAt(0)?.toUpperCase() || '?'}
+                                    {displayProfileName(m.profiles).charAt(0).toUpperCase()}
                                     {m.user_id === group.created_by && (
                                         <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center border-2 border-background">
                                             <Crown className="h-2.5 w-2.5 text-white" />
@@ -839,13 +854,13 @@ function GroupDetailView({
                                             onRemoveMember(group.id, m.user_id);
                                         }}
                                         className="absolute -top-1 -left-1 w-5 h-5 bg-background shadow-lg rounded-full flex items-center justify-center text-destructive border border-border/50 opacity-0 group-hover/avatar:opacity-100 transition-opacity hover:bg-destructive hover:text-white"
-                                        title={`Remove ${m.profiles?.full_name || 'member'}`}
+                                        title={`Remove ${displayProfileName(m.profiles)}`}
                                     >
                                         <X className="h-3 w-3" />
                                     </button>
                                 </div>
                                 <span className="text-[10px] font-bold text-muted-foreground max-w-[56px] truncate text-center">
-                                    {m.user_id === currentUserId ? 'You' : m.profiles?.full_name?.split(' ')[0] || '?'}
+                                    {m.user_id === currentUserId ? 'You' : firstName(m.profiles)}
                                 </span>
                             </div>
                         ))}
@@ -1026,10 +1041,10 @@ function GroupDetailView({
                                                 onClick={() => setAddMemberIds(sel ? addMemberIds.filter(id => id !== f.user_id) : [...addMemberIds, f.user_id])}
                                                 className={`flex items-center gap-3 p-2.5 rounded-xl cursor-pointer transition-all ${sel ? 'bg-primary/10' : 'hover:bg-secondary/60'}`}>
                                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${sel ? 'bg-primary text-primary-foreground' : 'bg-secondary'}`}>
-                                                    {sel ? <Check className="h-3.5 w-3.5" /> : f.full_name.charAt(0).toUpperCase()}
+                                                    {sel ? <Check className="h-3.5 w-3.5" /> : displayProfileName(f).charAt(0).toUpperCase()}
                                                 </div>
                                                 <div>
-                                                    <p className="font-bold text-sm">{f.full_name}</p>
+                                                    <p className="font-bold text-sm">{displayProfileName(f)}</p>
                                                     <p className="text-xs text-muted-foreground">@{f.username}</p>
                                                 </div>
                                             </div>
@@ -1137,7 +1152,7 @@ function GroupExpenseCard({ expense, currentUserId, onRefresh, onEdit, onDelete 
                     <div className="min-w-0">
                         <p className="font-bold text-sm truncate">{expense.category}</p>
                         <p className="text-xs text-muted-foreground font-medium">
-                            {isPayer ? 'You paid' : `Paid by ${expense.payer_profile?.full_name || 'someone'}`}
+                            {isPayer ? 'You paid' : `Paid by ${displayProfileName(expense.payer_profile)}`}
                             {' · '}{new Date(expense.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                         </p>
                     </div>
@@ -1172,7 +1187,7 @@ function GroupExpenseCard({ expense, currentUserId, onRefresh, onEdit, onDelete 
                     {expense.expense_splits.map(split => (
                         <div key={split.id} className="flex items-center justify-between text-xs font-medium">
                             <span className="text-foreground/80">
-                                {split.user_id === currentUserId ? 'You' : split.profiles?.full_name}
+                                {split.user_id === currentUserId ? 'You' : displayProfileName(split.profiles)}
                             </span>
                             <div className="flex items-center gap-2">
                                 <span>₹{split.amount_owed.toFixed(2)}</span>
@@ -1244,10 +1259,7 @@ function GroupExpenseForm({ group, currentUserId, onClose, onSuccess }: {
         const splits: { user_id: string; amount_owed: number }[] = [];
 
         if (splitType === 'equal') {
-            const perPerson = parsedAmount / selectedParticipants.length;
-            selectedParticipants.forEach(uid => {
-                if (uid !== paidBy) splits.push({ user_id: uid, amount_owed: Number(perPerson.toFixed(2)) });
-            });
+            splits.push(...splitEqualDebts(parsedAmount, selectedParticipants, paidBy));
         } else if (splitType === 'exact') {
             let total = 0;
             for (const uid of selectedParticipants) {
@@ -1352,7 +1364,7 @@ function GroupExpenseForm({ group, currentUserId, onClose, onSuccess }: {
                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${isSelected ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-secondary text-muted-foreground hover:bg-secondary/80'}`}
                                     >
                                         {isSelected && <Check className="h-3 w-3" />}
-                                        {m.user_id === currentUserId ? 'You' : m.profiles?.full_name?.split(' ')[0] || 'Member'}
+                                        {m.user_id === currentUserId ? 'You' : firstName(m.profiles)}
                                     </button>
                                 );
                             })}
@@ -1368,7 +1380,7 @@ function GroupExpenseForm({ group, currentUserId, onClose, onSuccess }: {
                                 <SelectContent>
                                     {members.filter(m => selectedParticipants.includes(m.user_id)).map(m => (
                                         <SelectItem key={m.user_id} value={m.user_id}>
-                                            {m.user_id === currentUserId ? 'You' : m.profiles?.full_name?.split(' ')[0]}
+                                            {m.user_id === currentUserId ? 'You' : firstName(m.profiles)}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
@@ -1396,7 +1408,7 @@ function GroupExpenseForm({ group, currentUserId, onClose, onSuccess }: {
                             {members.filter(m => selectedParticipants.includes(m.user_id)).map(m => (
                                 <div key={m.user_id} className="flex items-center justify-between gap-3">
                                     <span className="text-sm font-medium truncate">
-                                        {m.user_id === currentUserId ? 'You' : m.profiles?.full_name?.split(' ')[0]}
+                                        {m.user_id === currentUserId ? 'You' : firstName(m.profiles)}
                                         {m.user_id === paidBy && <span className="text-[10px] ml-1 text-primary font-bold">(Paid)</span>}
                                     </span>
                                     <div className="flex items-center gap-1 w-24 shrink-0">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Lock, LogOut, Mail, Paperclip, Send, Settings, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,60 +8,140 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 
-const ADMIN_PASSWORD = "exp_admin_2026";
-const ADMIN_SESSION_KEY = "spendova-admin-session";
-
-const hasAdminSession = () => {
-  if (typeof window === "undefined") return false;
-  return window.sessionStorage.getItem(ADMIN_SESSION_KEY) === "active";
-};
-
-const setAdminSession = (active: boolean) => {
-  if (active) window.sessionStorage.setItem(ADMIN_SESSION_KEY, "active");
-  else window.sessionStorage.removeItem(ADMIN_SESSION_KEY);
-};
+type AdminCheck = "loading" | "allowed" | "denied";
+const AUTH_BRAND_IMAGE = "/brand/login-branding-image.png";
 
 const AdminLogin = () => {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [adminCheck, setAdminCheck] = useState<AdminCheck>("loading");
+  const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  if (hasAdminSession()) return <Navigate to="/admin/dashboard" replace />;
+  useEffect(() => {
+    const verifyExistingSession = async () => {
+      if (authLoading) return;
+      if (!user) {
+        setAdminCheck("denied");
+        return;
+      }
+      const { data, error } = await supabase.rpc("is_admin" as never);
+      if (!error && data === true) navigate("/admin/dashboard", { replace: true });
+      else setAdminCheck("denied");
+    };
+    verifyExistingSession();
+  }, [authLoading, user, navigate]);
 
-  const handleLogin = (event: React.FormEvent) => {
+  const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (password === ADMIN_PASSWORD) {
-      setAdminSession(true);
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+
+      const { data: isAdmin, error: adminError } = await supabase.rpc("is_admin" as never);
+      if (adminError) throw adminError;
+      if (isAdmin !== true) {
+        await supabase.auth.signOut();
+        setPassword("");
+        toast({ title: "Access denied", description: "You are not authorized to access admin panel.", variant: "destructive" });
+        return;
+      }
+
       toast({ title: "Access granted", description: "Welcome to the Spendova admin portal." });
       navigate("/admin/dashboard", { replace: true });
-    } else {
-      toast({ title: "Access denied", description: "Incorrect admin password.", variant: "destructive" });
-      setPassword("");
+    } catch (error: any) {
+      toast({ title: "Admin login failed", description: error.message || "Could not sign in.", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 text-foreground">
-      <Card className="w-full max-w-sm rounded-[1.25rem] border-border bg-card shadow-panel">
-        <CardHeader className="text-center">
-          <img src="/brand/spendova-horizontal.png" alt="Spendova" className="mx-auto h-auto w-64 max-w-full" />
-          <div className="mx-auto mt-5 grid size-12 place-items-center rounded-full bg-primary/10 text-primary">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-8 text-foreground sm:px-6">
+      <div className="mb-5 text-center sm:mb-6">
+        <img src={AUTH_BRAND_IMAGE} alt="Spendova" className="mx-auto h-auto w-52 max-w-full sm:w-64" />
+        <p className="mt-2 text-sm font-medium text-muted-foreground">Admin portal</p>
+      </div>
+      <Card className="w-full max-w-md rounded-[1.5rem] border-border/70 bg-card/95 shadow-[0_24px_70px_rgba(0,0,0,0.34)] ring-1 ring-primary/10">
+        <CardHeader className="space-y-2 px-5 pt-6 text-center sm:px-7">
+          <div className="mx-auto grid size-12 place-items-center rounded-full bg-primary/10 text-primary">
             <Lock className="size-5" />
           </div>
           <CardTitle className="text-2xl text-foreground">Admin Login</CardTitle>
-          <CardDescription>Enter the admin key to access the portal.</CardDescription>
+          <CardDescription>Sign in with an admin account to access the portal.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-5 pb-6 sm:px-7">
+          {adminCheck === "denied" && user && (
+            <div className="mb-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">
+              You are not authorized to access admin panel.
+            </div>
+          )}
           <form onSubmit={handleLogin} className="space-y-4">
-            <Input type="password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} autoFocus />
-            <Button type="submit" className="w-full shadow-primary-action">Unlock</Button>
+            <div className="space-y-2">
+              <Label htmlFor="admin-email">Email</Label>
+              <Input id="admin-email" type="email" placeholder="admin@example.com" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required autoFocus={!user} className="h-12 rounded-2xl border-input bg-background/85 px-4 shadow-soft focus-visible:ring-ring/35" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="admin-password">Password</Label>
+              <Input id="admin-password" type="password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required className="h-12 rounded-2xl border-input bg-background/85 px-4 shadow-soft focus-visible:ring-ring/35" />
+            </div>
+            <Button type="submit" className="h-12 w-full rounded-2xl bg-primary shadow-primary-action transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60" disabled={authLoading || submitting}>{submitting ? "Checking..." : "Login"}</Button>
           </form>
         </CardContent>
       </Card>
     </div>
   );
+};
+
+const UnauthorizedAdmin = () => {
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
+
+  const leaveAdmin = async () => {
+    await signOut();
+    navigate("/dashboard", { replace: true });
+  };
+
+  return (
+    <div className="grid min-h-screen place-items-center bg-background px-4 text-center text-foreground">
+      <Card className="w-full max-w-sm rounded-[1.25rem] border-border bg-card shadow-panel">
+        <CardHeader>
+          <CardTitle>Access denied</CardTitle>
+          <CardDescription>You are not authorized to access admin panel.</CardDescription>
+        </CardHeader>
+        <CardContent><Button className="w-full" onClick={leaveAdmin}>Go to Spendova</Button></CardContent>
+      </Card>
+    </div>
+  );
+};
+
+const AdminGuard = ({ children }: { children: React.ReactNode }) => {
+  const [adminCheck, setAdminCheck] = useState<AdminCheck>("loading");
+  const { user, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    const verifyAdmin = async () => {
+      if (authLoading) return;
+      if (!user) {
+        setAdminCheck("denied");
+        return;
+      }
+      const { data, error } = await supabase.rpc("is_admin" as never);
+      setAdminCheck(!error && data === true ? "allowed" : "denied");
+    };
+    verifyAdmin();
+  }, [authLoading, user]);
+
+  if (authLoading || adminCheck === "loading") return <div className="grid min-h-screen place-items-center bg-background text-foreground">Checking admin access...</div>;
+  if (!user) return <AdminLogin />;
+  if (adminCheck === "denied") return <UnauthorizedAdmin />;
+  return <>{children}</>;
 };
 
 const AdminDashboard = () => {
@@ -75,14 +155,13 @@ const AdminDashboard = () => {
   const [fetchingMaintenance, setFetchingMaintenance] = useState(false);
   const [readingFiles, setReadingFiles] = useState(0);
   const { toast } = useToast();
+  const { signOut } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchMaintenanceState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  if (!hasAdminSession()) return <Navigate to="/admin/login" replace />;
 
   const fetchMaintenanceState = async () => {
     setFetchingMaintenance(true);
@@ -101,9 +180,7 @@ const AdminDashboard = () => {
   const toggleMaintenanceMode = async (checked: boolean) => {
     try {
       setIsMaintenance(checked);
-      const { error } = await supabase.functions.invoke("toggle-maintenance", {
-        body: { isMaintenance: checked, password: ADMIN_PASSWORD },
-      });
+      const { error } = await supabase.from("site_settings").update({ is_maintenance_mode: checked, updated_at: new Date().toISOString() }).eq("id", 1);
       if (error) throw error;
       toast({ title: "Site state updated", description: `Maintenance mode is now ${checked ? "ON" : "OFF"}.` });
     } catch (error: any) {
@@ -114,9 +191,8 @@ const AdminDashboard = () => {
   };
 
   const handleLogout = () => {
-    setAdminSession(false);
     setPasswordlessCleanup();
-    navigate("/admin/login", { replace: true });
+    signOut().finally(() => navigate("/admin/login", { replace: true }));
   };
 
   const setPasswordlessCleanup = () => {
@@ -176,13 +252,13 @@ const AdminDashboard = () => {
           subject,
           htmlBody: message,
           attachments,
-          password: ADMIN_PASSWORD,
+          recipientMode,
           targetEmail: recipientMode === "single" ? targetEmail.trim().toLowerCase() : undefined,
           sendToAll: recipientMode === "all",
         },
       });
       if (error) throw error;
-      toast({ title: "Broadcast sent", description: data?.message || "The email was successfully dispatched to all users." });
+      toast({ title: recipientMode === "single" ? "Email sent" : "Broadcast sent", description: data?.message || "The email was successfully dispatched." });
       setSubject("");
       setMessage("");
       setAttachments([]);
@@ -308,9 +384,9 @@ const AdminDashboard = () => {
 };
 
 const Admin = ({ view }: { view: "login" | "dashboard" | "root" }) => {
-  if (view === "dashboard") return <AdminDashboard />;
+  if (view === "dashboard") return <AdminGuard><AdminDashboard /></AdminGuard>;
   if (view === "login") return <AdminLogin />;
-  return <Navigate to={hasAdminSession() ? "/admin/dashboard" : "/admin/login"} replace />;
+  return <AdminGuard><AdminDashboard /></AdminGuard>;
 };
 
 export default Admin;

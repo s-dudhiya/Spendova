@@ -15,17 +15,33 @@ serve(async (req) => {
     }
 
     try {
-
-        // 2. Parse Subject, HTML Body, and Attachments from the request
-        const { subject, htmlBody, attachments, password, targetEmail, sendToAll } = await req.json()
-
-        // 3. Verify the hardcoded frontend password (same as in Admin.tsx)
-        if (password !== 'exp_admin_2026') {
+        const supabaseAdmin = createClient(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        )
+        const authHeader = req.headers.get('Authorization') ?? ''
+        const token = authHeader.replace('Bearer ', '')
+        const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token)
+        if (authError || !userData.user) {
             return new Response(JSON.stringify({ error: 'Unauthorized access' }), {
                 status: 401,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             })
         }
+        const { data: adminUser, error: adminError } = await supabaseAdmin
+            .from('admin_users')
+            .select('user_id')
+            .eq('user_id', userData.user.id)
+            .maybeSingle()
+        if (adminError || !adminUser) {
+            return new Response(JSON.stringify({ error: 'Admin access required' }), {
+                status: 403,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            })
+        }
+
+        // 2. Parse Subject, HTML Body, and Attachments from the request
+        const { subject, htmlBody, attachments, targetEmail, sendToAll, recipientMode } = await req.json()
 
         if (!subject || !htmlBody) {
             return new Response(JSON.stringify({ error: 'Subject and htmlBody are required' }), {
@@ -35,9 +51,37 @@ serve(async (req) => {
         }
 
         const requestedEmail = typeof targetEmail === 'string' ? targetEmail.trim().toLowerCase() : ''
+        const mode = recipientMode === 'all' || recipientMode === 'single'
+            ? recipientMode
+            : sendToAll === true
+                ? 'all'
+                : requestedEmail
+                    ? 'single'
+                    : ''
         let emails: string[] = []
 
-        if (requestedEmail) {
+        if (!mode) {
+            return new Response(JSON.stringify({ error: 'recipientMode must be "single" or "all".' }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            })
+        }
+
+        if (mode === 'single' && sendToAll === true) {
+            return new Response(JSON.stringify({ error: 'Refusing to send: single recipient requests cannot also set sendToAll=true.' }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            })
+        }
+
+        if (mode === 'all' && requestedEmail) {
+            return new Response(JSON.stringify({ error: 'Refusing to send: all-user broadcasts cannot include targetEmail.' }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            })
+        }
+
+        if (mode === 'single') {
             const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
             if (!emailPattern.test(requestedEmail)) {
                 return new Response(JSON.stringify({ error: 'targetEmail must be a valid email address' }), {
@@ -46,13 +90,8 @@ serve(async (req) => {
                 })
             }
             emails = [requestedEmail]
-        } else if (sendToAll === true) {
+        } else {
             // 3. Get all user emails using the service role key to bypass RLS
-            const supabaseAdmin = createClient(
-                Deno.env.get('SUPABASE_URL') ?? '',
-                Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-            )
-
             const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers()
 
             if (usersError) {
@@ -60,11 +99,6 @@ serve(async (req) => {
             }
 
             emails = usersData.users.map((u) => u.email).filter(Boolean) as string[]
-        } else {
-            return new Response(JSON.stringify({ error: 'Refusing to send: provide targetEmail for a test email or sendToAll=true for a full broadcast.' }), {
-                status: 400,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            })
         }
 
         if (emails.length === 0) {
@@ -95,11 +129,11 @@ serve(async (req) => {
             maxMessageSize: 100 * 1024 * 1024, // 100 MB
         });
 
-        console.log(`Sending email to ${requestedEmail || `${emails.length} users`}...`);
+        console.log(`Admin mail mode=${mode}; recipients=${mode === 'single' ? requestedEmail : emails.length}`);
         // Send using BCC to prevent exposing all emails
         const mailOptions: any = {
             from: SMTP_USER,
-            ...(requestedEmail ? { to: requestedEmail } : { to: SMTP_USER, bcc: emails }),
+            ...(mode === 'single' ? { to: requestedEmail } : { to: SMTP_USER, bcc: emails }),
             subject: subject,
             text: htmlBody, // Provide text fallback (optional, but good)
             html: htmlBody,
@@ -117,7 +151,7 @@ serve(async (req) => {
 
         console.log("Transmission info:", info.messageId);
 
-        return new Response(JSON.stringify({ success: true, message: requestedEmail ? `Successfully sent test email to ${requestedEmail}.` : `Successfully sent broadcast to ${emails.length} users using SMTP.` }), {
+        return new Response(JSON.stringify({ success: true, recipientMode: mode, recipientCount: emails.length, message: mode === 'single' ? `Successfully sent email to ${requestedEmail}.` : `Successfully sent broadcast to ${emails.length} users using SMTP.` }), {
             status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })

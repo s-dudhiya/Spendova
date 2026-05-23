@@ -133,11 +133,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
-    // Ensure the redirect points to the live URL when tested from the live site, 
-    // or fallback to origin (localhost) if testing locally.
-    const baseUrl = 'https://the-expensemate.vercel.app';
-
-    const redirectUrl = `${baseUrl}/auth?reset=true`;
+    const envAppUrl = import.meta.env.VITE_APP_URL?.replace(/\/$/, "");
+    const browserOrigin = typeof window !== "undefined" ? window.location.origin : "";
+    const redirectUrl = `${envAppUrl || browserOrigin}/reset-password`;
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: redirectUrl,
