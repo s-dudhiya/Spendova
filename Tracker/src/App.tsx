@@ -27,7 +27,7 @@ const AppRoutes = () => {
       try {
         const { data, error } = await supabase.from("site_settings").select("is_maintenance_mode").eq("id", 1).single();
         if (error) throw error;
-        if (active) setMaintenance(Boolean(data?.is_maintenance_mode));
+        // if (active) setMaintenance(Boolean(data?.is_maintenance_mode));
       } catch (error) {
         console.error("Failed to check maintenance mode", error);
         if (active) setMaintenance(false);
@@ -57,6 +57,7 @@ const AppRoutes = () => {
       <Route path="/split" element={<Index />} />
       <Route path="/split/friend/:id" element={<Index />} />
       <Route path="/split/group/:id" element={<Index />} />
+      <Route path="/split/expense/:id" element={<Index />} />
       <Route path="/admin" element={<Admin view="root" />} />
       <Route path="/admin/login" element={<Admin view="login" />} />
       <Route path="/admin/dashboard" element={<Admin view="dashboard" />} />

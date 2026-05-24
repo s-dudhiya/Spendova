@@ -4,7 +4,7 @@ export default function Maintenance() {
     return (
         <div className="flex min-h-screen items-center justify-center bg-background p-4 text-foreground">
             <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-8 space-y-8 text-center duration-700">
-                <img src="/brand/spendova-horizontal.png" alt="Spendova" className="mx-auto h-auto w-72 max-w-full" />
+                {/* <img src="/brand/login-branding-image.png" alt="Spendova" className="mx-auto h-auto w-72 max-w-full" /> */}
                 <div className="mx-auto mb-8 flex size-24 items-center justify-center rounded-full border border-primary/20 bg-primary/10 shadow-primary-action">
                     <Wrench className="size-12 animate-pulse text-primary" />
                 </div>

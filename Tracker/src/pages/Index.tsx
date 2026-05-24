@@ -3,14 +3,19 @@ import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom"
 import {
   ArrowLeft,
   ArrowRight,
+  AlertTriangle,
   Bell,
+  Car,
   Check,
   ChevronRight,
   CircleDollarSign,
+  Coffee,
   Copy,
+  Crown,
   Filter,
   Home,
   Link as LinkIcon,
+  MoreVertical,
   Moon,
   Pencil,
   Plus,
@@ -26,6 +31,13 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import {
   Dialog,
   DialogContent,
@@ -324,7 +336,7 @@ function useSpendovaData(userId?: string) {
     if (!userId) return;
     setLoading(true);
     try {
-      const [expensesRes, reqRes, recRes, groupsRes, settlementsRes] = await Promise.all([
+      const [expensesRes, reqRes, recRes, groupsRes] = await Promise.all([
         supabase
           .from("expenses")
           .select(`
@@ -346,17 +358,12 @@ function useSpendovaData(userId?: string) {
           .from("groups")
           .select("id, name, emoji, description, created_by, created_at, group_members(user_id, joined_at, profiles!group_members_user_id_fkey(user_id, full_name, username))")
           .order("created_at", { ascending: false }),
-        supabase
-          .from("split_settlements" as never)
-          .select("id, group_id, from_user_id, to_user_id, amount, note, created_at, from_profile:profiles!split_settlements_from_user_id_fkey(user_id, full_name, username), to_profile:profiles!split_settlements_to_user_id_fkey(user_id, full_name, username)")
-          .order("created_at", { ascending: false }),
       ]);
 
       if (expensesRes.error) throw expensesRes.error;
       if (reqRes.error) throw reqRes.error;
       if (recRes.error) throw recRes.error;
       if (groupsRes.error) throw groupsRes.error;
-      if (settlementsRes.error) console.warn("Could not load settlement history", settlementsRes.error);
 
       const requested = ((reqRes.data || []) as unknown as ConnectionQueryRow[]).map((row) => ({ ...row, profiles: row.profiles || { user_id: "", full_name: null, username: null } })) as ConnectionRow[];
       const received = ((recRes.data || []) as unknown as ConnectionQueryRow[]).map((row) => ({ ...row, profiles: row.profiles || { user_id: "", full_name: null, username: null } })) as ConnectionRow[];
@@ -385,7 +392,7 @@ function useSpendovaData(userId?: string) {
         outgoingRequests: requested.filter((row) => row.status === "pending"),
         groups: (groupsRes.data || []) as unknown as GroupRow[],
         groupInvites,
-        settlements: settlementsRes.error ? [] : (settlementsRes.data || []) as unknown as SplitSettlementRow[],
+        settlements: [],
       });
     } catch (error: unknown) {
       toast({ title: "Could not load data", description: error instanceof Error ? error.message : "Unexpected error", variant: "destructive" });
@@ -775,6 +782,9 @@ const GroupSummaryCard = ({ group, expenses, currentUserId, openModal }: { group
 };
 
 type HistoryItem = { id: string; created_at: string | null; kind: "expense" | "settlement"; title: string; detail: string; amount: number };
+type FriendActivityStatus = "pending" | "partial" | "paid";
+type FriendActivityItem = HistoryItem & { impact: number; remainingImpact: number; status: FriendActivityStatus; icon: typeof CircleDollarSign };
+type SettlementPayload = { from_user_id: string; to_user_id: string; amount: number; group_id?: string | null; note?: string | null; created_at?: string; settlementId?: string };
 
 const BalanceLabel = ({ amount }: { amount: number }) => (
   <p className={`text-sm font-bold ${amount > 0 ? "text-success" : amount < 0 ? "text-warning" : "text-muted-foreground"}`}>
@@ -795,102 +805,548 @@ const DetailHeader = ({ title, subtitle, balance, onBack }: { title: string; sub
   </section>
 );
 
-const FriendDetailView = ({ friend, data, currentUserId, openModal, onBack }: { friend: FriendProfile; data: AppData; currentUserId: string; openModal: (type: ModalType, item?: string) => void; onBack: () => void }) => {
+const getFriendActivityIcon = (item: { kind: "expense" | "settlement"; title: string }) => {
+  if (item.kind === "settlement") return Check;
+  const title = item.title.toLowerCase();
+  if (title.includes("taxi") || title.includes("cab") || title.includes("ride")) return Car;
+  if (title.includes("coffee") || title.includes("tea")) return Coffee;
+  if (title.includes("dinner") || title.includes("lunch") || title.includes("food")) return UtensilsCrossed;
+  return CircleDollarSign;
+};
+
+const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, openModal, onBack, refresh }: { friend: FriendProfile; data: AppData; currentUserId: string; theme: Theme; onThemeToggle: () => void; openModal: (type: ModalType, item?: string) => void; onBack: () => void; refresh: () => Promise<void> }) => {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [actionItem, setActionItem] = useState<FriendActivityItem | null>(null);
+  const [quickSettleItem, setQuickSettleItem] = useState<FriendActivityItem | null>(null);
+  const [quickSettling, setQuickSettling] = useState(false);
   const balances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null });
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const net = owedToMe - iOwe;
+  const balanceText = net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled";
+  const balanceClass = net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground";
   const expenses = data.expenses.filter((expense) => !expense.group_id && (expense.paid_by === friend.user_id || expense.paid_by === currentUserId) && expense.expense_splits?.some((split) => split.user_id === friend.user_id || split.user_id === currentUserId));
   const settlements = data.settlements.filter((settlement) => !settlement.group_id && [settlement.from_user_id, settlement.to_user_id].includes(friend.user_id) && [settlement.from_user_id, settlement.to_user_id].includes(currentUserId));
-  const history: HistoryItem[] = [
-    ...expenses.map((expense) => ({
-      id: expense.id,
-      created_at: expense.created_at,
-      kind: "expense" as const,
-      title: expense.category || "Expense",
-      detail: `${expense.paid_by === currentUserId ? "You" : displayName(friend)} paid ${money(expense.amount)}${expense.split_type ? ` - ${expense.split_type} split` : ""}`,
-      amount: expense.amount,
-    })),
-    ...settlements.map((settlement) => ({
-      id: settlement.id,
-      created_at: settlement.created_at,
-      kind: "settlement" as const,
-      title: "Settlement",
-      detail: `${settlement.from_user_id === currentUserId ? "You" : displayName(friend)} paid ${settlement.to_user_id === currentUserId ? "you" : displayName(friend)}${settlement.note ? ` - ${settlement.note}` : ""}`,
-      amount: settlement.amount,
-    })),
+  const activity: FriendActivityItem[] = [
+    ...expenses.map((expense) => {
+      const friendShare = expense.expense_splits?.find((split) => split.user_id === friend.user_id)?.amount_owed || 0;
+      const myShare = expense.expense_splits?.find((split) => split.user_id === currentUserId)?.amount_owed || 0;
+      const impact = expense.paid_by === currentUserId ? Number(friendShare) : -Number(myShare);
+      const targetSplit = expense.paid_by === currentUserId
+        ? expense.expense_splits?.find((split) => split.user_id === friend.user_id)
+        : expense.expense_splits?.find((split) => split.user_id === currentUserId);
+      const remainingImpact = targetSplit?.has_paid ? 0 : impact;
+      const status: FriendActivityStatus = targetSplit?.has_paid ? "paid" : "pending";
+      const item = {
+        id: expense.id,
+        created_at: expense.created_at,
+        kind: "expense" as const,
+        title: expense.category || "Expense",
+        detail: `${expense.paid_by === currentUserId ? "You" : displayName(friend)} paid ${money(expense.amount)}${expense.split_type ? ` • ${expense.split_type} split` : ""}`,
+        amount: expense.amount,
+        impact,
+        remainingImpact: Number(remainingImpact.toFixed(2)),
+        status,
+      };
+      return { ...item, icon: getFriendActivityIcon(item) };
+    }),
+    ...settlements.map((settlement) => {
+      const item = {
+        id: settlement.id,
+        created_at: settlement.created_at,
+        kind: "settlement" as const,
+        title: "Settlement",
+        detail: `${settlement.from_user_id === currentUserId ? "You" : displayName(friend)} paid ${settlement.to_user_id === currentUserId ? "you" : displayName(friend)} ${money(settlement.amount)}${settlement.note ? ` • ${settlement.note}` : ""}`,
+        amount: settlement.amount,
+        impact: settlement.from_user_id === currentUserId ? -Number(settlement.amount) : Number(settlement.amount),
+        remainingImpact: 0,
+        status: "paid" as const,
+      };
+      return { ...item, icon: getFriendActivityIcon(item) };
+    }),
   ].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+  const openActivity = (item: FriendActivityItem) => {
+    navigate(`/split/expense/${item.id}`);
+  };
+  const closeActions = () => setActionItem(null);
+  const openActionMenu = (event: React.MouseEvent, item: FriendActivityItem) => {
+    event.stopPropagation();
+    setActionItem(item);
+  };
+  const handleActivityKeyDown = (event: React.KeyboardEvent, item: FriendActivityItem) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openActivity(item);
+  };
+  const selectedExpense = actionItem?.kind === "expense" ? data.expenses.find((expense) => expense.id === actionItem.id) : undefined;
+  const selectedSettlement = actionItem?.kind === "settlement" ? data.settlements.find((settlement) => settlement.id === actionItem.id) : undefined;
+  const selectedExpenseRemaining = actionItem?.kind === "expense" ? Math.abs(actionItem.remainingImpact) : 0;
+  const runAction = (action: () => void) => {
+    closeActions();
+    action();
+  };
+  const confirmQuickSettle = async () => {
+    if (!quickSettleItem || quickSettling) return;
+    const amount = Number(Math.abs(quickSettleItem.remainingImpact).toFixed(2));
+    if (amount <= 0) return;
+    const expense = data.expenses.find((item) => item.id === quickSettleItem.id);
+    const split = expense?.paid_by === currentUserId
+      ? expense.expense_splits?.find((item) => item.user_id === friend.user_id)
+      : expense?.expense_splits?.find((item) => item.user_id === currentUserId);
+    if (!expense || !split) {
+      toast({ title: "Could not settle expense", description: "No unpaid split was found for this activity.", variant: "destructive" });
+      return;
+    }
+    setQuickSettling(true);
+    const { error } = await supabase.from("expense_splits").update({ has_paid: true }).eq("id", split.id);
+    setQuickSettling(false);
+    if (error) {
+      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
+      return;
+    }
+    const allSplits = expense.expense_splits || [];
+    const allPaid = allSplits.every((item) => item.id === split.id || item.has_paid);
+    if (allPaid) await supabase.from("expenses").update({ status: "cleared" }).eq("id", expense.id);
+    toast({ title: "Expense marked settled", description: `${money(amount)} was settled for ${quickSettleItem.title}.` });
+    setQuickSettleItem(null);
+    await refresh();
+  };
 
   return (
-    <main className="space-y-6">
-      <DetailHeader title={displayName(friend)} subtitle={`@${friend.username || "user"}`} balance={net} onBack={onBack} />
+    <>
+      <main className="space-y-5 pt-4">
+        <header className="flex items-center justify-between">
+          <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-bold text-primary"><ArrowLeft className="size-4" />Back to Split</button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => openModal("notifications")} className="grid size-9 place-items-center rounded-full bg-card text-muted-foreground shadow-soft" aria-label="Notifications">
+              <Bell className="size-4" />
+            </button>
+            <button onClick={onThemeToggle} className="grid size-9 place-items-center rounded-full bg-card text-foreground shadow-soft" aria-label="Toggle theme">
+              {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </button>
+          </div>
+        </header>
+
+      <section className="flex items-center gap-4">
+        <div className="grid size-14 shrink-0 place-items-center rounded-full bg-primary text-xl font-bold text-primary-foreground shadow-primary-action">
+          {displayName(friend).charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0">
+          <h2 className="truncate text-xl font-bold tracking-tight text-foreground">{displayName(friend)}</h2>
+          <p className="text-sm font-medium text-muted-foreground">@{friend.username || "user"}</p>
+          <p className={`mt-1 text-sm font-bold ${balanceClass}`}>{balanceText}</p>
+        </div>
+      </section>
+
       <section className="grid grid-cols-2 gap-3">
-        <Button onClick={() => openModal("add-expense", friend.user_id)} className="h-12 shadow-primary-action"><Plus />Add Expense</Button>
-        <Button onClick={() => openModal("settle-up", friend.user_id)} variant="quiet" className="h-12"><Check />Settle Up</Button>
+        <Button onClick={() => openModal("add-expense", friend.user_id)} className="h-11 rounded-2xl shadow-primary-action"><Plus />Add Expense</Button>
+        <Button onClick={() => net !== 0 && openModal("settle-up", friend.user_id)} disabled={net === 0} variant="outline" className="h-11 rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary">
+          <Check />{net === 0 ? "Settled" : `Settle ${money(Math.abs(net))}`}
+        </Button>
       </section>
-      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
-        <SectionHeader title="Settlement history" />
-        <div className="space-y-2">{settlements.length === 0 ? <EmptyCard text="No settlements yet." /> : settlements.map((settlement) => <div key={settlement.id} className="rounded-2xl bg-elevated p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-foreground">{settlement.from_user_id === currentUserId ? "You" : displayName(friend)} paid {settlement.to_user_id === currentUserId ? "you" : displayName(friend)}</span><span className="font-bold text-primary">{money(settlement.amount)}</span></div><p className="mt-1 text-xs text-muted-foreground">{dateLabel(settlement.created_at)}{settlement.note ? ` - ${settlement.note}` : ""}</p></div>)}</div>
-      </section>
-      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
-        <SectionHeader title="History" />
-        <div className="space-y-3">
-          {history.length === 0 ? <EmptyCard text="No expenses yet. Add your first expense" /> : history.map((item) => (
-            <article key={`${item.kind}-${item.id}`} className="rounded-2xl bg-elevated p-4 shadow-soft">
-              <div className="flex items-start justify-between gap-3">
-                <div><h3 className="font-bold text-foreground">{item.title}</h3><p className="mt-1 text-sm text-muted-foreground">{item.detail}</p><p className="mt-1 text-xs text-muted-foreground">{dateLabel(item.created_at)}</p></div>
-                <p className="font-bold text-foreground">{money(item.amount)}</p>
+
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-foreground">Activity</h2>
+          <button className="inline-flex items-center gap-1 text-xs font-bold text-primary" type="button"><Filter className="size-3.5" />Filter</button>
+        </div>
+        <div className="overflow-hidden rounded-2xl bg-card shadow-soft">
+          {activity.length === 0 ? (
+            <div className="grid min-h-44 place-items-center px-4 py-8 text-center">
+              <div>
+                <p className="font-bold text-foreground">No activity yet</p>
+                <p className="mt-1 text-sm text-muted-foreground">Add your first expense</p>
+                <Button onClick={() => openModal("add-expense", friend.user_id)} className="mt-4 h-10 rounded-2xl shadow-primary-action"><Plus />Add Expense</Button>
               </div>
-            </article>
+            </div>
+          ) : (
+            <div className="relative">
+              <span className="absolute left-9 top-8 bottom-8 w-px bg-border/70" aria-hidden="true" />
+              {activity.map((item, index) => {
+                const Icon = item.icon;
+                const impactClass = item.impact > 0 ? "text-success" : item.impact < 0 ? "text-destructive" : "text-muted-foreground";
+                const statusLabel = item.status === "paid" ? "Paid" : item.status === "partial" ? "Partial" : "Pending";
+                const statusClass = item.status === "paid" ? "bg-success/15 text-success" : item.status === "partial" ? "bg-primary/10 text-primary" : "bg-warning/15 text-warning";
+                return (
+                  <div
+                    key={`${item.kind}-${item.id}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Open activity details"
+                    onClick={() => openActivity(item)}
+                    onKeyDown={(event) => handleActivityKeyDown(event, item)}
+                    className={`relative flex w-full cursor-pointer items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-elevated/70 active:bg-elevated ${index < activity.length - 1 ? "border-b border-border/60" : ""}`}
+                  >
+                    <span className={`z-10 grid size-10 shrink-0 place-items-center rounded-full ${item.kind === "settlement" ? "bg-success/15 text-success" : item.impact < 0 ? "bg-warning/15 text-warning" : "bg-primary/10 text-primary"}`}>
+                      <Icon className="size-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-sm font-bold text-foreground">{item.title}</h3>
+                      <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground">{item.detail}</p>
+                      <p className="mt-1 text-xs font-medium text-muted-foreground">{dateLabel(item.created_at)}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <div className="text-right">
+                        <p className={`text-sm font-bold ${impactClass}`}>{item.impact > 0 ? "+" : item.impact < 0 ? "-" : ""}{money(Math.abs(item.impact))}</p>
+                        {item.kind === "expense" ? (
+                          <div className="mt-1 flex flex-col items-end gap-1">
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${statusClass}`}>{statusLabel}</span>
+                            {item.status === "partial" ? <span className="text-[10px] font-semibold text-muted-foreground">{money(Math.abs(item.remainingImpact))} pending</span> : null}
+                          </div>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        aria-label="Open activity actions"
+                        onClick={(event) => openActionMenu(event, item)}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        className="grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <MoreVertical className="pointer-events-none size-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <button onClick={() => openModal("remove-friend", friend.user_id)} className="flex w-full items-center gap-3 rounded-2xl bg-card p-4 text-left shadow-soft">
+        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-destructive/10 text-destructive"><AlertTriangle className="size-4" /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-destructive">Remove Friend</span>
+          <span className="mt-0.5 block text-xs font-medium text-muted-foreground">This will not delete any existing expenses.</span>
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+      </button>
+      </main>
+
+      <Drawer open={Boolean(actionItem)} onOpenChange={(open) => !open && closeActions()}>
+        <DrawerContent className="mx-auto max-w-3xl rounded-t-3xl border-border bg-card px-4 pb-5">
+          <DrawerHeader className="px-0 pb-2 text-left">
+            <DrawerTitle>{actionItem?.kind === "settlement" ? "Settlement actions" : "Expense actions"}</DrawerTitle>
+            <DrawerDescription>{actionItem?.title || "Activity"}</DrawerDescription>
+          </DrawerHeader>
+          <div className="overflow-hidden rounded-2xl bg-elevated/70">
+            <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => actionItem && runAction(() => openActivity(actionItem))}>
+              View details
+              <ArrowRight className="size-4 text-muted-foreground" />
+            </button>
+            {actionItem?.kind === "expense" && selectedExpense ? (
+              <>
+                <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => runAction(() => openModal("edit-expense", selectedExpense.id))}>
+                  Edit expense
+                  <Pencil className="size-4 text-muted-foreground" />
+                </button>
+                {selectedExpenseRemaining > 0.009 ? (
+                  <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => runAction(() => setQuickSettleItem(actionItem))}>
+                    {actionItem.status === "partial" ? `Settle remaining ${money(selectedExpenseRemaining)}` : "Mark this expense as settled"}
+                    <Check className="size-4 text-muted-foreground" />
+                  </button>
+                ) : actionItem?.kind === "expense" ? (
+                  <div className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-sm font-bold text-muted-foreground">
+                    Already settled
+                    <Check className="size-4" />
+                  </div>
+                ) : null}
+                <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold text-destructive hover:bg-destructive/10" onClick={() => runAction(() => openModal("delete-expense", selectedExpense.id))}>
+                  Delete expense
+                  <Trash2 className="size-4" />
+                </button>
+              </>
+            ) : null}
+          </div>
+        </DrawerContent>
+      </Drawer>
+
+      <Dialog open={Boolean(quickSettleItem)} onOpenChange={(open) => !open && setQuickSettleItem(null)}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-[1.25rem] border-border bg-card shadow-panel">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Mark expense as settled?</DialogTitle>
+            <DialogDescription>
+              {quickSettleItem ? `This will mark ${money(Math.abs(quickSettleItem.remainingImpact))} as paid for "${quickSettleItem.title}".` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 pt-2">
+            <Button type="button" variant="quiet" className="flex-1" onClick={() => setQuickSettleItem(null)}>Cancel</Button>
+            <Button type="button" className="flex-1" onClick={confirmQuickSettle} disabled={quickSettling}>{quickSettling ? "Saving..." : "Mark Settled"}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+};
+
+const DetailRow = ({ label, value }: { label: string; value: React.ReactNode }) => (
+  <div className="flex items-start justify-between gap-4 border-b border-border/60 py-3 last:border-b-0">
+    <span className="text-sm font-medium text-muted-foreground">{label}</span>
+    <span className="max-w-[62%] text-right text-sm font-bold text-foreground">{value}</span>
+  </div>
+);
+
+const ExpenseDetailView = ({ expense, currentUserId, openModal, onBack }: { expense: ExpenseRow; currentUserId: string; openModal: (type: ModalType, item?: string) => void; onBack: () => void }) => {
+  const isPayer = expense.paid_by === currentUserId;
+  const mySplit = expense.expense_splits?.find((split) => split.user_id === currentUserId);
+  const paidBy = isPayer ? "You" : displayName(expense.payer_profile || expense.profiles);
+  const balanceImpact = isPayer
+    ? (expense.expense_splits?.reduce((sum, split) => sum + Number(split.amount_owed || 0), 0) || 0)
+    : -Number(mySplit?.amount_owed || 0);
+  const participants = [
+    { id: expense.paid_by, name: paidBy, amount: expense.amount, role: "Paid" },
+    ...(expense.expense_splits || []).map((split) => ({
+      id: split.user_id,
+      name: split.user_id === currentUserId ? "You" : displayName(split.profiles),
+      amount: Number(split.amount_owed || 0),
+      role: split.has_paid ? "Settled share" : "Share",
+    })),
+  ];
+
+  return (
+    <main className="space-y-5 pt-4">
+      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-bold text-primary"><ArrowLeft className="size-4" />Back to Split</button>
+      <section className="rounded-2xl bg-card p-4 shadow-soft">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase text-muted-foreground">Expense Detail</p>
+            <h1 className="mt-1 truncate text-2xl font-bold text-foreground">{expense.category || "Expense"}</h1>
+            {expense.note ? <p className="mt-1 text-sm text-muted-foreground">{expense.note}</p> : null}
+          </div>
+          <p className="shrink-0 text-xl font-bold text-foreground">{money(expense.amount)}</p>
+        </div>
+      </section>
+
+      <section className="rounded-2xl bg-card px-4 shadow-soft">
+        <DetailRow label="Description" value={expense.note || expense.category || "Expense"} />
+        <DetailRow label="Amount" value={money(expense.amount)} />
+        <DetailRow label="Paid by" value={paidBy} />
+        <DetailRow label="Split type" value={expense.split_type || "none"} />
+        <DetailRow label="Date" value={dateLabel(expense.created_at)} />
+        <DetailRow label="Balance impact" value={<span className={balanceImpact > 0 ? "text-success" : balanceImpact < 0 ? "text-destructive" : "text-muted-foreground"}>{balanceImpact > 0 ? "+" : balanceImpact < 0 ? "-" : ""}{money(Math.abs(balanceImpact))}</span>} />
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-bold text-foreground">Participants</h2>
+        <div className="overflow-hidden rounded-2xl bg-card shadow-soft">
+          {participants.map((participant, index) => (
+            <div key={`${participant.id}-${participant.role}-${index}`} className={`flex items-center justify-between gap-3 px-4 py-3 ${index < participants.length - 1 ? "border-b border-border/60" : ""}`}>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-foreground">{participant.name}</p>
+                <p className="text-xs font-medium text-muted-foreground">{participant.role}</p>
+              </div>
+              <p className="text-sm font-bold text-foreground">{money(participant.amount)}</p>
+            </div>
           ))}
         </div>
       </section>
-      <Button variant="destructive" className="w-full" onClick={() => openModal("remove-friend", friend.user_id)}><UserMinus />Remove Friend</Button>
+
+      <section className="grid grid-cols-2 gap-3">
+        <Button onClick={() => openModal("edit-expense", expense.id)} className="h-11 rounded-2xl shadow-primary-action"><Pencil />Edit expense</Button>
+        <Button onClick={() => openModal("delete-expense", expense.id)} variant="destructive" className="h-11 rounded-2xl"><Trash2 />Delete expense</Button>
+      </section>
     </main>
   );
 };
 
-const GroupDetailView = ({ group, data, currentUserId, openModal, onBack }: { group: GroupRow; data: AppData; currentUserId: string; openModal: (type: ModalType, item?: string) => void; onBack: () => void }) => {
+const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refresh }: { group: GroupRow; data: AppData; currentUserId: string; openModal: (type: ModalType, item?: string) => void; onBack: () => void; refresh: () => Promise<void> }) => {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
+  const [actionExpense, setActionExpense] = useState<ExpenseRow | null>(null);
+  const [participantsExpense, setParticipantsExpense] = useState<ExpenseRow | null>(null);
+  const groupExpenses = data.expenses.filter((expense) => expense.group_id === group.id).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+  const totalSpent = groupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const balances = computeGroupBalances(data.expenses, data.settlements, group, currentUserId);
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const net = owedToMe - iOwe;
-  const groupExpenses = data.expenses.filter((expense) => expense.group_id === group.id);
-  const settlements = data.settlements.filter((settlement) => settlement.group_id === group.id);
-  const history: HistoryItem[] = [
-    ...groupExpenses.map((expense) => ({ id: expense.id, created_at: expense.created_at, kind: "expense" as const, title: expense.category || "Expense", detail: `${expense.payer_profile?.user_id === currentUserId ? "You" : displayName(expense.payer_profile)} paid ${money(expense.amount)}`, amount: expense.amount })),
-    ...settlements.map((settlement) => ({ id: settlement.id, created_at: settlement.created_at, kind: "settlement" as const, title: "Settlement", detail: `${settlement.from_user_id === currentUserId ? "You" : displayName(settlement.from_profile)} paid ${settlement.to_user_id === currentUserId ? "you" : displayName(settlement.to_profile)}`, amount: settlement.amount })),
-  ].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+  const balanceChipText = net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled";
+  const balanceChipClass = net > 0 ? "bg-success/15 text-success" : net < 0 ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground";
+  const memberMap = Object.fromEntries(group.group_members.map((member) => [member.user_id, member]));
+  const getExpenseStatus = (expense: ExpenseRow) => {
+    const splits = expense.expense_splits || [];
+    if (expense.status === "cleared" || (splits.length > 0 && splits.every((split) => split.has_paid))) return "settled" as const;
+    if (splits.some((split) => split.has_paid)) return "partial" as const;
+    return "pending" as const;
+  };
+  const getRemaining = (expense: ExpenseRow) => (expense.expense_splits || []).filter((split) => !split.has_paid).reduce((sum, split) => sum + Number(split.amount_owed || 0), 0);
+  const settleExpense = async (expense: ExpenseRow) => {
+    const splitIds = (expense.expense_splits || []).filter((split) => !split.has_paid).map((split) => split.id);
+    if (splitIds.length === 0) return;
+    const { error } = await supabase.from("expense_splits").update({ has_paid: true }).in("id", splitIds);
+    if (error) {
+      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
+      return;
+    }
+    await supabase.from("expenses").update({ status: "cleared" }).eq("id", expense.id);
+    toast({ title: "Expense settled", description: "Group balances were updated." });
+    setActionExpense(null);
+    await refresh();
+  };
+  const actionStatus = actionExpense ? getExpenseStatus(actionExpense) : "pending";
+  const actionRemaining = actionExpense ? getRemaining(actionExpense) : 0;
+  const getPayerShare = (expense: ExpenseRow) => Math.max(Number(expense.amount || 0) - (expense.expense_splits || []).reduce((sum, item) => sum + Number(item.amount_owed || 0), 0), 0);
+  const getUserShare = (expense: ExpenseRow, userId: string) => expense.paid_by === userId ? getPayerShare(expense) : Number(expense.expense_splits?.find((split) => split.user_id === userId)?.amount_owed || 0);
+  const getUserPaid = (expense: ExpenseRow, userId: string) => expense.paid_by === userId || Boolean(expense.expense_splits?.find((split) => split.user_id === userId)?.has_paid);
 
   return (
-    <main className="space-y-6">
-      <DetailHeader title={`${group.emoji || ""} ${group.name}`.trim()} subtitle={`${group.group_members.length} members`} balance={net} onBack={onBack} />
-      <section className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <Button onClick={() => openModal("group-expense", group.id)} className="h-12 shadow-primary-action"><Plus />Add Group Expense</Button>
-        <Button onClick={() => openModal("settle-up", group.id)} variant="quiet" className="h-12"><Check />Settle Up</Button>
-        <Button onClick={() => openModal("invite-members", group.id)} variant="quiet" className="h-12"><LinkIcon />Invite Members</Button>
-      </section>
-      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
-        <SectionHeader title="Who owes whom" />
-        <div className="space-y-2">{balances.length === 0 ? <EmptyCard text="All settled" /> : balances.map((balance) => <div key={`${balance.fromUserId}-${balance.toUserId}`} className="flex items-center justify-between rounded-2xl bg-elevated p-3 text-sm"><span className="font-semibold text-foreground">{balance.fromName} owes {balance.toName}</span><span className="font-bold text-primary">{money(balance.amount)}</span></div>)}</div>
-      </section>
-      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
-        <SectionHeader title="Members" />
-        <div className="grid gap-2 sm:grid-cols-2">{group.group_members.map((member) => <div key={member.user_id} className="rounded-2xl bg-elevated p-3"><p className="font-bold text-foreground">{member.user_id === currentUserId ? "You" : displayName(member.profiles)}</p><p className="text-xs text-muted-foreground">@{member.profiles.username || "user"}</p></div>)}</div>
-      </section>
-      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
-        <SectionHeader title="Settlement history" />
-        <div className="space-y-2">{settlements.length === 0 ? <EmptyCard text="No settlements yet." /> : settlements.map((settlement) => <div key={settlement.id} className="rounded-2xl bg-elevated p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-foreground">{settlement.from_user_id === currentUserId ? "You" : displayName(settlement.from_profile)} paid {settlement.to_user_id === currentUserId ? "you" : displayName(settlement.to_profile)}</span><span className="font-bold text-primary">{money(settlement.amount)}</span></div><p className="mt-1 text-xs text-muted-foreground">{dateLabel(settlement.created_at)}{settlement.note ? ` - ${settlement.note}` : ""}</p></div>)}</div>
-      </section>
-      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
-        <SectionHeader title="Latest activity" />
-        <div className="space-y-3">{history.length === 0 ? <EmptyCard text="No expenses yet. Add your first expense" /> : history.map((item) => <article key={`${item.kind}-${item.id}`} className="rounded-2xl bg-elevated p-4 shadow-soft"><div className="flex items-start justify-between gap-3"><div><h3 className="font-bold text-foreground">{item.title}</h3><p className="mt-1 text-sm text-muted-foreground">{item.detail}</p><p className="mt-1 text-xs text-muted-foreground">{dateLabel(item.created_at)}</p></div><p className="font-bold text-foreground">{money(item.amount)}</p></div></article>)}</div>
-      </section>
-      <section className="grid grid-cols-2 gap-2">
-        <Button variant="quiet" onClick={() => openModal("edit-group", group.id)}><Pencil />Edit Group</Button>
-        <Button variant="destructive" onClick={() => openModal("delete-group", group.id)}><Trash2 />Delete Group</Button>
-      </section>
-    </main>
+    <>
+      <main className="space-y-4 pt-4 pb-8">
+        <header className="flex items-center gap-3">
+          <button onClick={onBack} className="grid size-9 shrink-0 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Back to Split">
+            <ArrowLeft className="size-4" />
+          </button>
+          <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-elevated text-2xl shadow-soft">{group.emoji || "🏠"}</div>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-xl font-bold text-foreground">{group.name}</h1>
+            <div className="mt-0.5 flex flex-wrap items-center gap-2">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{group.group_members.length} members</p>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${balanceChipClass}`}>{balanceChipText}</span>
+            </div>
+          </div>
+          <button onClick={() => openModal("invite-members", group.id)} className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Invite members"><UserPlus className="size-4" /></button>
+          <button onClick={() => openModal("edit-group", group.id)} className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Manage group"><Pencil className="size-4" /></button>
+          <button onClick={() => openModal("delete-group", group.id)} className="grid size-9 place-items-center rounded-full text-destructive hover:bg-destructive/10" aria-label="Delete group"><Trash2 className="size-4" /></button>
+        </header>
+
+        <section className="grid grid-cols-2 gap-3">
+          <div className="rounded-[20px] border border-border/70 bg-card p-4">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Total spent</p>
+            <p className="mt-2 text-2xl font-black text-foreground">{money(totalSpent)}</p>
+          </div>
+          <div className="rounded-[20px] border border-border/70 bg-card p-4">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Expenses</p>
+            <p className="mt-2 text-2xl font-black text-foreground">{groupExpenses.length}</p>
+          </div>
+        </section>
+
+        <section className="rounded-[20px] border border-border/70 bg-card p-4">
+          <h2 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Members</h2>
+          <div className="mt-3 flex gap-4 overflow-x-auto pb-1">
+            {group.group_members.map((member) => {
+              const name = member.user_id === currentUserId ? "You" : displayName(member.profiles).split(" ")[0];
+              return (
+                <div key={member.user_id} className="w-14 shrink-0 text-center">
+                  <div className="relative mx-auto grid size-11 place-items-center rounded-2xl bg-primary text-base font-bold text-primary-foreground shadow-primary-action">
+                    {displayName(member.profiles).charAt(0).toUpperCase()}
+                    {member.user_id === group.created_by || member.user_id === currentUserId ? <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-warning text-primary-foreground"><Crown className="size-2.5" /></span> : null}
+                  </div>
+                  <p className="mt-1 truncate text-xs font-bold text-foreground">{name}</p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="grid grid-cols-[2fr_1fr] gap-3">
+          <Button onClick={() => openModal("group-expense", group.id)} className="h-[52px] rounded-2xl shadow-primary-action"><Plus />Add Group Expense</Button>
+          <Button onClick={() => openModal("settle-up", group.id)} variant="outline" className="h-[52px] rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary"><Check />Settle Up</Button>
+        </section>
+
+        <section>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-xs font-bold uppercase tracking-wide text-foreground">Expense History</h2>
+            <button type="button" className="inline-flex items-center gap-1 text-xs font-bold text-primary"><Filter className="size-3.5" />Filter</button>
+          </div>
+          <div className="space-y-3">
+            {groupExpenses.length === 0 ? <EmptyCard text="No group expenses yet. Add your first expense" /> : groupExpenses.map((expense) => {
+              const status = getExpenseStatus(expense);
+              const expanded = expandedExpenseId === expense.id;
+              const payerName = expense.paid_by === currentUserId ? "You" : displayName(expense.payer_profile || memberMap[expense.paid_by]?.profiles);
+              const statusClass = status === "settled" ? "bg-success/15 text-success" : status === "partial" ? "bg-primary/10 text-primary" : "bg-warning/15 text-warning";
+              const statusLabel = status === "settled" ? "Paid" : status === "partial" ? "Partial" : "Pending";
+              const yourShare = getUserShare(expense, currentUserId);
+              const yourPaid = getUserPaid(expense, currentUserId);
+              return (
+                <article key={expense.id} className="overflow-hidden rounded-[20px] border border-border/70 bg-card transition-colors">
+                  <button type="button" onClick={() => setExpandedExpenseId(expanded ? null : expense.id)} className="flex w-full items-center gap-3 p-3 text-left hover:bg-elevated/60">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-warning/15 text-warning"><CircleDollarSign className="size-4" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold text-foreground">{expense.category || "Expense"}</span>
+                      <span className="mt-1 block truncate text-xs font-medium text-muted-foreground">Paid by {payerName} · {dateLabel(expense.created_at)}</span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="block text-sm font-black text-foreground">{money(expense.amount)}</span>
+                      <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${statusClass}`}>{statusLabel}</span>
+                    </span>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Open expense actions"
+                      onClick={(event) => { event.stopPropagation(); setActionExpense(expense); }}
+                      onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setActionExpense(expense); } }}
+                      className="grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                    >
+                      <MoreVertical className="pointer-events-none size-4" />
+                    </span>
+                    <ChevronRight className={`size-4 shrink-0 text-primary transition-transform duration-200 ${expanded ? "-rotate-90" : "rotate-90"}`} />
+                  </button>
+                  <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+                    <div className="overflow-hidden">
+                      <div className="border-t border-border/60 px-4 py-3">
+                        <div className="space-y-2 text-xs">
+                          <div className="flex justify-between gap-3"><span className="font-bold text-foreground">Your share</span><span className="font-bold text-foreground">{money(yourShare)}</span></div>
+                          <div className="flex justify-between gap-3"><span className="text-muted-foreground">Status</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${yourPaid ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>{yourPaid ? "Paid" : "Pending"}</span></div>
+                          <div className="flex justify-between gap-3"><span className="text-muted-foreground">Split type</span><span className="font-bold capitalize text-foreground">{expense.split_type || "equal"} split</span></div>
+                          <button type="button" onClick={(event) => { event.stopPropagation(); setParticipantsExpense(expense); }} className="mt-2 flex w-full items-center justify-between border-t border-border/60 pt-3 text-left font-bold text-primary">
+                            <span>View participants ({group.group_members.length})</span>
+                            <ChevronRight className="size-4 text-muted-foreground" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      </main>
+
+      <Drawer open={Boolean(actionExpense)} onOpenChange={(open) => !open && setActionExpense(null)}>
+        <DrawerContent className="mx-auto max-w-3xl rounded-t-3xl border-border bg-card px-4 pb-5">
+          <DrawerHeader className="px-0 pb-2 text-left">
+            <DrawerTitle>Expense actions</DrawerTitle>
+            <DrawerDescription>{actionExpense?.category || "Expense"}</DrawerDescription>
+          </DrawerHeader>
+          <div className="overflow-hidden rounded-2xl bg-elevated/70">
+            <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => actionExpense && navigate(`/split/expense/${actionExpense.id}`)}>View details<ArrowRight className="size-4 text-muted-foreground" /></button>
+            <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => actionExpense && openModal("edit-expense", actionExpense.id)}>Edit expense<Pencil className="size-4 text-muted-foreground" /></button>
+            {actionExpense && actionStatus !== "settled" ? <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => actionExpense && settleExpense(actionExpense)}>{actionStatus === "partial" ? `Settle remaining ${money(actionRemaining)}` : "Mark as settled"}<Check className="size-4 text-muted-foreground" /></button> : null}
+            <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold text-destructive hover:bg-destructive/10" onClick={() => actionExpense && openModal("delete-expense", actionExpense.id)}>Delete expense<Trash2 className="size-4" /></button>
+          </div>
+        </DrawerContent>
+      </Drawer>
+
+      <Drawer open={Boolean(participantsExpense)} onOpenChange={(open) => !open && setParticipantsExpense(null)}>
+        <DrawerContent className="mx-auto max-w-3xl rounded-t-3xl border-border bg-card px-4 pb-5">
+          <DrawerHeader className="px-0 pb-2 text-left">
+            <DrawerTitle>Participants</DrawerTitle>
+            <DrawerDescription>{participantsExpense?.category || "Expense"}</DrawerDescription>
+          </DrawerHeader>
+          {participantsExpense ? (
+            <div className="overflow-hidden rounded-2xl bg-elevated/70">
+              {group.group_members.map((member, index) => {
+                const split = participantsExpense.expense_splits?.find((item) => item.user_id === member.user_id);
+                const isPayer = participantsExpense.paid_by === member.user_id;
+                const share = split ? Number(split.amount_owed || 0) : isPayer ? Number(participantsExpense.amount || 0) : 0;
+                const paid = isPayer || Boolean(split?.has_paid);
+                const name = member.user_id === currentUserId ? "You" : displayName(member.profiles);
+                return (
+                  <div key={member.user_id} className={`flex items-center gap-3 px-4 py-3 text-sm ${index < group.group_members.length - 1 ? "border-b border-border/60" : ""}`}>
+                    <span className={`grid size-7 place-items-center rounded-full ${paid ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>{paid ? <Check className="size-4" /> : <CircleDollarSign className="size-4" />}</span>
+                    <span className="min-w-0 flex-1 truncate font-bold text-foreground">{name}</span>
+                    <span className="font-semibold text-muted-foreground">{isPayer ? "paid" : "owes"} {money(share)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </DrawerContent>
+      </Drawer>
+    </>
   );
 };
 
@@ -1225,19 +1681,34 @@ const PickerList = ({ items, emptyText, onPick }: { items: Array<{ id: string; t
   </div>
 );
 
-const SettleForm = ({ currentUserId, friend, group, balances, defaultAmount, onSubmit, onCancel }: { currentUserId: string; friend?: FriendProfile; group?: GroupRow; balances: DebtBalance[]; defaultAmount: number; onSubmit: (payload: { from_user_id: string; to_user_id: string; amount: number; group_id?: string | null; note?: string | null }) => Promise<void>; onCancel: () => void }) => {
+const SettleForm = ({ currentUserId, friend, group, settlement, balances, defaultAmount, onSubmit, onCancel }: { currentUserId: string; friend?: FriendProfile; group?: GroupRow; settlement?: SplitSettlementRow; balances: DebtBalance[]; defaultAmount: number; onSubmit: (payload: SettlementPayload) => Promise<void>; onCancel: () => void }) => {
   const firstBalance = balances[0];
-  const [fromUserId, setFromUserId] = useState(firstBalance?.fromUserId || currentUserId);
-  const [toUserId, setToUserId] = useState(firstBalance?.toUserId || friend?.user_id || currentUserId);
-  const [amount, setAmount] = useState(defaultAmount > 0 ? String(defaultAmount.toFixed(2)) : "");
-  const [note, setNote] = useState("");
+  const [fromUserId, setFromUserId] = useState(settlement?.from_user_id || firstBalance?.fromUserId || currentUserId);
+  const [toUserId, setToUserId] = useState(settlement?.to_user_id || firstBalance?.toUserId || friend?.user_id || currentUserId);
+  const [amount, setAmount] = useState(settlement?.amount ? String(Number(settlement.amount).toFixed(2)) : defaultAmount > 0 ? String(defaultAmount.toFixed(2)) : "");
+  const [date, setDate] = useState(settlement?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
+  const [note, setNote] = useState(settlement?.note || "");
   const [submitting, setSubmitting] = useState(false);
-  const members = group ? group.group_members.map((member) => ({ user_id: member.user_id, name: member.user_id === currentUserId ? "You" : displayName(member.profiles) })) : [{ user_id: currentUserId, name: "You" }, ...(friend ? [{ user_id: friend.user_id, name: displayName(friend) }] : [])];
+  const settlementCounterparty = settlement ? (settlement.from_user_id === currentUserId ? { user_id: settlement.to_user_id, name: displayName(settlement.to_profile) } : { user_id: settlement.from_user_id, name: displayName(settlement.from_profile) }) : null;
+  const members = group
+    ? group.group_members.map((member) => ({ user_id: member.user_id, name: member.user_id === currentUserId ? "You" : displayName(member.profiles) }))
+    : [{ user_id: currentUserId, name: "You" }, ...(friend ? [{ user_id: friend.user_id, name: displayName(friend) }] : settlementCounterparty ? [settlementCounterparty] : [])];
   const parsed = Number(amount);
+  const paidDirection = fromUserId === currentUserId ? "me-to-friend" : "friend-to-me";
   const pickSuggestion = (balance: DebtBalance) => {
     setFromUserId(balance.fromUserId);
     setToUserId(balance.toUserId);
     setAmount(balance.amount.toFixed(2));
+  };
+  const setFriendDirection = (direction: "me-to-friend" | "friend-to-me") => {
+    if (!friend) return;
+    if (direction === "me-to-friend") {
+      setFromUserId(currentUserId);
+      setToUserId(friend.user_id);
+    } else {
+      setFromUserId(friend.user_id);
+      setToUserId(currentUserId);
+    }
   };
 
   return (
@@ -1246,7 +1717,7 @@ const SettleForm = ({ currentUserId, friend, group, balances, defaultAmount, onS
       if (!parsed || parsed <= 0 || fromUserId === toUserId || submitting) return;
       setSubmitting(true);
       try {
-        await onSubmit({ from_user_id: fromUserId, to_user_id: toUserId, amount: parsed, group_id: group?.id || null, note: note.trim() || null });
+        await onSubmit({ settlementId: settlement?.id, from_user_id: fromUserId, to_user_id: toUserId, amount: parsed, group_id: group?.id || settlement?.group_id || null, note: note.trim() || null, created_at: new Date(date).toISOString() });
       } finally {
         setSubmitting(false);
       }
@@ -1257,11 +1728,22 @@ const SettleForm = ({ currentUserId, friend, group, balances, defaultAmount, onS
           {balances.map((balance) => <button key={`${balance.fromUserId}-${balance.toUserId}`} type="button" onClick={() => pickSuggestion(balance)} className="flex w-full items-center justify-between rounded-xl bg-background px-3 py-2 text-left text-sm"><span className="font-semibold text-foreground">{balance.fromName} pays {balance.toName}</span><span className="font-bold text-primary">{money(balance.amount)}</span></button>)}
         </div>
       )}
-      <div className="grid grid-cols-2 gap-2">
-        <label className="text-sm font-semibold text-foreground">From<select value={fromUserId} onChange={(event) => setFromUserId(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm">{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>
-        <label className="text-sm font-semibold text-foreground">To<select value={toUserId} onChange={(event) => setToUserId(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm">{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>
-      </div>
       <Field label="Amount" type="number" placeholder="0" value={amount} onChange={setAmount} />
+      {friend ? (
+        <div>
+          <p className="mb-2 text-sm font-semibold text-foreground">Paid by</p>
+          <div className="grid grid-cols-2 gap-2 rounded-2xl bg-elevated p-1">
+            <button type="button" onClick={() => setFriendDirection("me-to-friend")} className={`rounded-xl px-3 py-2.5 text-xs font-bold transition-colors ${paidDirection === "me-to-friend" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>I paid friend</button>
+            <button type="button" onClick={() => setFriendDirection("friend-to-me")} className={`rounded-xl px-3 py-2.5 text-xs font-bold transition-colors ${paidDirection === "friend-to-me" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Friend paid me</button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          <label className="text-sm font-semibold text-foreground">From<select value={fromUserId} onChange={(event) => setFromUserId(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm">{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>
+          <label className="text-sm font-semibold text-foreground">To<select value={toUserId} onChange={(event) => setToUserId(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm">{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>
+        </div>
+      )}
+      {settlement ? <Field label="Date" type="date" value={date} onChange={setDate} /> : null}
       <Textarea label="Note (optional)" placeholder="Paid by UPI, cash..." value={note} onChange={setNote} />
       <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button type="submit" className="flex-1" disabled={submitting || !parsed || parsed <= 0 || fromUserId === toUserId}>{submitting ? "Saving..." : "Confirm Settlement"}</Button></div>
     </form>
@@ -1287,8 +1769,10 @@ const ActionModal = ({
   const { signOut } = useAuth();
   const type = modal.type;
   const expense = data.expenses.find((item) => item.id === modal.item);
+  const settlement = data.settlements.find((item) => item.id === modal.item);
   const group = data.groups.find((item) => item.id === modal.item) || data.groups.find((item) => item.id === expense?.group_id);
-  const friend = data.friends.find((item) => item.user_id === modal.item);
+  const settlementFriendId = settlement ? (settlement.from_user_id === currentUserId ? settlement.to_user_id : settlement.from_user_id) : undefined;
+  const friend = data.friends.find((item) => item.user_id === modal.item) || data.friends.find((item) => item.user_id === settlementFriendId);
   const groupExpenses = group ? data.expenses.filter((item) => item.group_id === group.id) : [];
   const balances = group ? computeGroupBalances(data.expenses, data.settlements, group, currentUserId) : [];
   const friendBalances = friend ? buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null }) : [];
@@ -1352,7 +1836,37 @@ const ActionModal = ({
     if (!expense) return;
     const { error } = await supabase.from("expenses").delete().eq("id", expense.id);
     if (error) toast({ title: "Delete failed", description: error.message, variant: "destructive" });
-    else await closeAndRefresh();
+    else {
+      toast({ title: "Expense deleted", description: "Balances were updated for everyone involved." });
+      await closeAndRefresh();
+    }
+  };
+
+  const saveSettlement = async (payload: SettlementPayload) => {
+    const splitIds: string[] = [];
+    let selectedAmount = 0;
+    data.expenses
+      .filter((item) => (payload.group_id ? item.group_id === payload.group_id : !item.group_id) && item.paid_by === payload.to_user_id)
+      .forEach((item) => {
+        item.expense_splits?.forEach((split) => {
+          if (split.user_id !== payload.from_user_id || split.has_paid) return;
+          if (selectedAmount + Number(split.amount_owed || 0) <= payload.amount + 0.01) {
+            splitIds.push(split.id);
+            selectedAmount += Number(split.amount_owed || 0);
+          }
+        });
+      });
+    if (splitIds.length === 0) {
+      toast({ title: "Nothing to settle", description: "No unpaid split was found for this selection.", variant: "destructive" });
+      return;
+    }
+    const { error } = await supabase.from("expense_splits").update({ has_paid: true }).in("id", splitIds);
+    if (error) {
+      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Settlement saved", description: "Balances were updated." });
+    await closeAndRefresh();
   };
 
   const clearExpense = async () => {
@@ -1453,9 +1967,9 @@ const ActionModal = ({
           <SettleForm currentUserId={currentUserId} friend={friend} group={group} balances={group ? balances : friendBalances} defaultAmount={(group ? balances : friendBalances).find((balance) => balance.fromUserId === currentUserId || balance.toUserId === currentUserId)?.amount || 0} onSubmit={saveSettlement} onCancel={onClose} />
         )}
 
-        {type === "delete-expense" && <ConfirmBox text={`Delete "${expense?.category || "expense"}"?`} action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
+        {type === "delete-expense" && <ConfirmBox title="Delete expense?" text="This will update balances for everyone involved." action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
         {type === "clear-expense" && <ConfirmBox text={`Mark "${expense?.category || "expense"}" as cleared?`} action="Mark cleared" onCancel={onClose} onConfirm={clearExpense} />}
-        {type === "delete-group" && group && <ConfirmBox text={`Delete "${group.name}" and its group data?`} action="Delete" destructive onCancel={onClose} onConfirm={async () => { await supabase.from("groups").delete().eq("id", group.id); await closeAndRefresh(); }} />}
+        {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { await supabase.from("groups").delete().eq("id", group.id); await closeAndRefresh(); }} />}
         {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { await supabase.from("connections").delete().eq("id", friend.connection_id); await closeAndRefresh(); }} />}
         {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
         {type === "notifications" && <EmptyCard text={`${data.incomingRequests.length} incoming friend request(s), ${data.outgoingRequests.length} pending sent request(s).`} />}
@@ -1490,9 +2004,12 @@ const RequestCard = ({ request, onAccept, onReject }: { request: ConnectionRow; 
   </div>
 );
 
-const ConfirmBox = ({ text, action, destructive, onCancel, onConfirm }: { text: string; action: string; destructive?: boolean; onCancel: () => void; onConfirm: () => void }) => (
+const ConfirmBox = ({ title, text, action, destructive, onCancel, onConfirm }: { title?: string; text: string; action: string; destructive?: boolean; onCancel: () => void; onConfirm: () => void }) => (
   <div className="space-y-3">
-    <div className="rounded-2xl bg-elevated p-4 text-sm text-muted-foreground">{text}</div>
+    <div className="rounded-2xl bg-elevated p-4 text-sm text-muted-foreground">
+      {title ? <p className="mb-1 font-bold text-foreground">{title}</p> : null}
+      <p>{text}</p>
+    </div>
     <div className="flex gap-2"><Button variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button variant={destructive ? "destructive" : "default"} className="flex-1" onClick={onConfirm}>{action}</Button></div>
   </div>
 );
@@ -1505,6 +2022,7 @@ const Index = () => {
   const isSplitRoute = location.pathname.startsWith("/split");
   const friendDetailId = location.pathname.startsWith("/split/friend/") ? params.id : undefined;
   const groupDetailId = location.pathname.startsWith("/split/group/") ? params.id : undefined;
+  const expenseDetailId = location.pathname.startsWith("/split/expense/") ? params.id : undefined;
   const [activeTab, setActiveTabState] = useState<TabKey>(isSplitRoute ? "split" : "home");
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [modal, setModal] = useState<ModalState>({ type: null });
@@ -1525,17 +2043,8 @@ const Index = () => {
     else if (location.pathname.startsWith("/split")) navigate("/dashboard");
   };
 
-  const saveSettlement = async (payload: { from_user_id: string; to_user_id: string; amount: number; group_id?: string | null; note?: string | null }) => {
-    const { error } = await supabase.from("split_settlements" as never).insert(payload as never);
-    if (error) {
-      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
-      return;
-    }
-    toast({ title: "Settlement saved" });
-    await closeAndRefresh();
-  };
   const activeContentTab: TabKey = isSplitRoute ? "split" : activeTab;
-  const title = friendDetailId ? "Friend" : groupDetailId ? "Group" : tabs.find((tab) => tab.key === activeContentTab)?.label ?? "Home";
+  const title = friendDetailId ? "Friend" : groupDetailId ? "Group" : expenseDetailId ? "Expense" : tabs.find((tab) => tab.key === activeContentTab)?.label ?? "Home";
   const toggleTheme = () => setTheme((current) => (current === "dark" ? "light" : "dark"));
   const openModal = (type: ModalType, item?: string) => setModal({ type, item });
   const summary = user ? getSummary(data.expenses, user.id, data.settlements) : getSummary([], "");
@@ -1556,21 +2065,25 @@ const Index = () => {
 
   const friendDetail = friendDetailId ? data.friends.find((friend) => friend.user_id === friendDetailId) : undefined;
   const groupDetail = groupDetailId ? data.groups.find((group) => group.id === groupDetailId) : undefined;
+  const expenseDetail = expenseDetailId ? data.expenses.find((expense) => expense.id === expenseDetailId) : undefined;
   const backToSplit = () => navigate("/split");
+  const showingDetailPage = Boolean(friendDetail || groupDetail || expenseDetail);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto min-h-screen max-w-3xl px-4 pb-36 sm:px-6">
-        <AppHeader title={title === "Home" ? "Overview" : title} theme={theme} onThemeToggle={toggleTheme} openModal={openModal} />
+        {!showingDetailPage && <AppHeader title={title === "Home" ? "Overview" : title} theme={theme} onThemeToggle={toggleTheme} openModal={openModal} />}
         {friendDetailId && !friendDetail && <EmptyCard text="Friend not found." />}
         {groupDetailId && !groupDetail && <EmptyCard text="Group not found." />}
-        {friendDetail && <FriendDetailView friend={friendDetail} data={data} currentUserId={user.id} openModal={openModal} onBack={backToSplit} />}
-        {groupDetail && <GroupDetailView group={groupDetail} data={data} currentUserId={user.id} openModal={openModal} onBack={backToSplit} />}
-        {!friendDetailId && !groupDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} summary={summary} currentUserId={user.id} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && activeContentTab === "tiffin" && <TiffinView expenses={data.expenses} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && activeContentTab === "profile" && <ProfileView profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
+        {expenseDetailId && !expenseDetail && <EmptyCard text="Expense not found." />}
+        {friendDetail && <FriendDetailView friend={friendDetail} data={data} currentUserId={user.id} theme={theme} onThemeToggle={toggleTheme} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
+        {expenseDetail && <ExpenseDetailView expense={expenseDetail} currentUserId={user.id} openModal={openModal} onBack={backToSplit} />}
+        {groupDetail && <GroupDetailView group={groupDetail} data={data} currentUserId={user.id} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} summary={summary} currentUserId={user.id} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && activeContentTab === "tiffin" && <TiffinView expenses={data.expenses} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && activeContentTab === "profile" && <ProfileView profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
         <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p>
       </div>
       <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-3xl px-4 pb-4">
