@@ -50,7 +50,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
 
-type TabKey = "home" | "personal" | "split" | "tiffin" | "profile";
+type TabKey = "home" | "split" | "personal" | "tiffin";
+type ContentKey = TabKey | "profile";
 type Theme = "light" | "dark";
 type SplitStrategy = "equal" | "exact" | "percentage";
 type ModalType =
@@ -91,6 +92,7 @@ type ExpenseSplitRow = {
   id: string;
   user_id: string;
   amount_owed: number;
+  amount_paid?: number | null;
   has_paid: boolean | null;
   profiles?: Profile | null;
 };
@@ -147,6 +149,7 @@ type InviteRow = {
 type SplitSettlementRow = {
   id: string;
   group_id: string | null;
+  expense_id?: string | null;
   from_user_id: string;
   to_user_id: string;
   amount: number;
@@ -189,10 +192,9 @@ type AppData = {
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof Home }> = [
   { key: "home", label: "Home", icon: Home },
-  { key: "personal", label: "Personal", icon: WalletCards },
   { key: "split", label: "Split", icon: Split },
+  { key: "personal", label: "Personal", icon: WalletCards },
   { key: "tiffin", label: "Tiffin", icon: UtensilsCrossed },
-  { key: "profile", label: "Profile", icon: User },
 ];
 
 const emojiChoices = ["Home", "Trip", "Food", "Party", "Beach", "Movie", "Sports", "Books", "Work", "Cart"];
@@ -300,7 +302,7 @@ const Textarea = ({ label, placeholder, value, onChange }: { label: string; plac
   </label>
 );
 
-const AppHeader = ({ title, theme, onThemeToggle, openModal }: { title: string; theme: Theme; onThemeToggle: () => void; openModal: (type: ModalType, item?: string) => void }) => (
+const AppHeader = ({ title, theme, onThemeToggle, onProfile, openModal }: { title: string; theme: Theme; onThemeToggle: () => void; onProfile: () => void; openModal: (type: ModalType, item?: string) => void }) => (
   <header className="sticky top-0 z-20 -mx-4 mb-5 border-b border-border/70 bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
     <div className="mx-auto flex max-w-3xl items-center justify-between">
       <div>
@@ -313,6 +315,9 @@ const AppHeader = ({ title, theme, onThemeToggle, openModal }: { title: string; 
         </button>
         <button onClick={onThemeToggle} className="grid size-10 place-items-center rounded-full bg-card text-foreground shadow-soft" aria-label="Toggle theme">
           {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+        </button>
+        <button onClick={onProfile} className="grid size-10 place-items-center rounded-full bg-card text-foreground shadow-soft" aria-label="Profile">
+          <User className="size-4" />
         </button>
       </div>
     </div>
@@ -336,14 +341,14 @@ function useSpendovaData(userId?: string) {
     if (!userId) return;
     setLoading(true);
     try {
-      const [expensesRes, reqRes, recRes, groupsRes] = await Promise.all([
+      const [expensesRes, reqRes, recRes, groupsRes, settlementsRes] = await Promise.all([
         supabase
           .from("expenses")
           .select(`
             id, user_id, paid_by, amount, category, note, status, split_type, group_id, created_at,
             profiles!expenses_user_id_fkey(user_id, full_name, username),
             payer_profile:profiles!expenses_paid_by_fkey(user_id, full_name, username),
-            expense_splits(id, user_id, amount_owed, has_paid, profiles!expense_splits_user_id_fkey(user_id, full_name, username))
+            expense_splits(id, user_id, amount_owed, amount_paid, has_paid, profiles!expense_splits_user_id_fkey(user_id, full_name, username))
           `)
           .order("created_at", { ascending: false }),
         supabase
@@ -358,12 +363,17 @@ function useSpendovaData(userId?: string) {
           .from("groups")
           .select("id, name, emoji, description, created_by, created_at, group_members(user_id, joined_at, profiles!group_members_user_id_fkey(user_id, full_name, username))")
           .order("created_at", { ascending: false }),
+        supabase
+          .from("split_settlements" as never)
+          .select("id, group_id, expense_id, from_user_id, to_user_id, amount, note, created_at, from_profile:profiles!split_settlements_from_user_id_fkey(user_id, full_name, username), to_profile:profiles!split_settlements_to_user_id_fkey(user_id, full_name, username)")
+          .order("created_at", { ascending: false }),
       ]);
 
       if (expensesRes.error) throw expensesRes.error;
       if (reqRes.error) throw reqRes.error;
       if (recRes.error) throw recRes.error;
       if (groupsRes.error) throw groupsRes.error;
+      if (settlementsRes.error) console.warn("Could not load settlement history", settlementsRes.error);
 
       const requested = ((reqRes.data || []) as unknown as ConnectionQueryRow[]).map((row) => ({ ...row, profiles: row.profiles || { user_id: "", full_name: null, username: null } })) as ConnectionRow[];
       const received = ((recRes.data || []) as unknown as ConnectionQueryRow[]).map((row) => ({ ...row, profiles: row.profiles || { user_id: "", full_name: null, username: null } })) as ConnectionRow[];
@@ -392,7 +402,7 @@ function useSpendovaData(userId?: string) {
         outgoingRequests: requested.filter((row) => row.status === "pending"),
         groups: (groupsRes.data || []) as unknown as GroupRow[],
         groupInvites,
-        settlements: [],
+        settlements: settlementsRes.error ? [] : (settlementsRes.data || []) as unknown as SplitSettlementRow[],
       });
     } catch (error: unknown) {
       toast({ title: "Could not load data", description: error instanceof Error ? error.message : "Unexpected error", variant: "destructive" });
@@ -426,7 +436,7 @@ function getProfileName(userId: string, profiles: Record<string, string>, curren
   return profiles[userId] || "Unknown";
 }
 
-function buildDebtBalances(expenses: ExpenseRow[], settlements: SplitSettlementRow[], options: { currentUserId?: string; groupId?: string | null; friendId?: string } = {}) {
+function buildDebtBalances(expenses: ExpenseRow[], _settlements: SplitSettlementRow[], options: { currentUserId?: string; groupId?: string | null; friendId?: string } = {}) {
   const profiles: Record<string, string> = {};
   const pairTotals: Record<string, number> = {};
   const addName = (profile?: Profile | null) => {
@@ -443,19 +453,11 @@ function buildDebtBalances(expenses: ExpenseRow[], settlements: SplitSettlementR
     addName(expense.payer_profile);
     addName(expense.profiles);
     expense.expense_splits?.forEach((split) => {
-      if (split.has_paid) return;
+      if (Number(split.amount_paid || 0) >= Number(split.amount_owed || 0) || split.has_paid) return;
       if (options.friendId && expense.paid_by !== options.friendId && split.user_id !== options.friendId) return;
       addName(split.profiles);
-      addDebt(split.user_id, expense.paid_by, Number(split.amount_owed || 0));
+      addDebt(split.user_id, expense.paid_by, Math.max(Number(split.amount_owed || 0) - Number(split.amount_paid || 0), 0));
     });
-  });
-
-  settlements.forEach((settlement) => {
-    if (options.groupId !== undefined && settlement.group_id !== options.groupId) return;
-    if (options.friendId && settlement.from_user_id !== options.friendId && settlement.to_user_id !== options.friendId) return;
-    addName(settlement.from_profile);
-    addName(settlement.to_profile);
-    addDebt(settlement.from_user_id, settlement.to_user_id, -Number(settlement.amount || 0));
   });
 
   const normalized: Record<string, number> = {};
@@ -598,8 +600,8 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
         <SectionHeader title="Shortcuts" />
         <div className="space-y-3">
           {[
-            { title: "Personal", value: money(summary.personal), icon: WalletCards, tab: "personal" as TabKey },
             { title: "Split", value: money(summary.totalLent + summary.totalOwed), icon: Split, tab: "split" as TabKey },
+            { title: "Personal", value: money(summary.personal), icon: WalletCards, tab: "personal" as TabKey },
             { title: "Tiffin", value: money(summary.tiffinPending + summary.tiffinCleared), icon: UtensilsCrossed, tab: "tiffin" as TabKey },
           ].map((item) => <button key={item.title} onClick={() => setTab(item.tab)} className="flex w-full items-center justify-between rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel"><span className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-full bg-elevated text-primary"><item.icon className="size-4" /></span><span><span className="block font-bold text-foreground">{item.title}</span><span className="text-sm text-muted-foreground">Current data</span></span></span><span className="flex items-center gap-2 font-bold text-foreground">{item.value}<ChevronRight className="size-4 text-muted-foreground" /></span></button>)}
         </div>
@@ -836,8 +838,10 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
       const targetSplit = expense.paid_by === currentUserId
         ? expense.expense_splits?.find((split) => split.user_id === friend.user_id)
         : expense.expense_splits?.find((split) => split.user_id === currentUserId);
-      const remainingImpact = targetSplit?.has_paid ? 0 : impact;
-      const status: FriendActivityStatus = targetSplit?.has_paid ? "paid" : "pending";
+      const paidAmount = Number(targetSplit?.amount_paid || (targetSplit?.has_paid ? targetSplit.amount_owed : 0) || 0);
+      const remaining = Math.max(Number(targetSplit?.amount_owed || 0) - paidAmount, 0);
+      const remainingImpact = impact < 0 ? -remaining : remaining;
+      const status: FriendActivityStatus = remaining <= 0.009 ? "paid" : paidAmount > 0 ? "partial" : "pending";
       const item = {
         id: expense.id,
         created_at: expense.created_at,
@@ -867,7 +871,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
     }),
   ].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
   const openActivity = (item: FriendActivityItem) => {
-    navigate(`/split/expense/${item.id}`);
+    navigate(item.kind === "settlement" ? `/split/settlement/${item.id}` : `/split/expense/${item.id}`);
   };
   const closeActions = () => setActionItem(null);
   const openActionMenu = (event: React.MouseEvent, item: FriendActivityItem) => {
@@ -899,15 +903,21 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
       return;
     }
     setQuickSettling(true);
-    const { error } = await supabase.from("expense_splits").update({ has_paid: true }).eq("id", split.id);
+    const fromUserId = quickSettleItem.impact > 0 ? friend.user_id : currentUserId;
+    const toUserId = quickSettleItem.impact > 0 ? currentUserId : friend.user_id;
+    const { error } = await supabase.rpc("record_split_settlement" as never, {
+      p_from_user_id: fromUserId,
+      p_to_user_id: toUserId,
+      p_amount: amount,
+      p_group_id: null,
+      p_expense_id: expense.id,
+      p_note: `Settled ${quickSettleItem.title}`,
+    } as never);
     setQuickSettling(false);
     if (error) {
       toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
       return;
     }
-    const allSplits = expense.expense_splits || [];
-    const allPaid = allSplits.every((item) => item.id === split.id || item.has_paid);
-    if (allPaid) await supabase.from("expenses").update({ status: "cleared" }).eq("id", expense.id);
     toast({ title: "Expense marked settled", description: `${money(amount)} was settled for ${quickSettleItem.title}.` });
     setQuickSettleItem(null);
     await refresh();
@@ -949,7 +959,6 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-bold text-foreground">Activity</h2>
-          <button className="inline-flex items-center gap-1 text-xs font-bold text-primary" type="button"><Filter className="size-3.5" />Filter</button>
         </div>
         <div className="overflow-hidden rounded-2xl bg-card shadow-soft">
           {activity.length === 0 ? (
@@ -1087,12 +1096,20 @@ const DetailRow = ({ label, value }: { label: string; value: React.ReactNode }) 
   </div>
 );
 
-const ExpenseDetailView = ({ expense, currentUserId, openModal, onBack }: { expense: ExpenseRow; currentUserId: string; openModal: (type: ModalType, item?: string) => void; onBack: () => void }) => {
+const ExpenseDetailView = ({ expense, settlements, currentUserId, openModal, onBack, refresh }: { expense: ExpenseRow; settlements: SplitSettlementRow[]; currentUserId: string; openModal: (type: ModalType, item?: string) => void; onBack: () => void; refresh: () => Promise<void> }) => {
+  const { toast } = useToast();
+  const [settling, setSettling] = useState(false);
   const isPayer = expense.paid_by === currentUserId;
   const mySplit = expense.expense_splits?.find((split) => split.user_id === currentUserId);
+  const expenseSettlements = settlements.filter((settlement) => settlement.expense_id === expense.id);
   const paidBy = isPayer ? "You" : displayName(expense.payer_profile || expense.profiles);
+  const totalOwed = expense.expense_splits?.reduce((sum, split) => sum + Number(split.amount_owed || 0), 0) || 0;
+  const totalPaid = expense.expense_splits?.reduce((sum, split) => sum + Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0), 0) || 0;
+  const remainingUnpaid = Math.max(totalOwed - totalPaid, 0);
+  const expenseStatus = remainingUnpaid <= 0 ? "Paid" : totalPaid > 0 ? "Partial" : "Pending";
+  const myRemaining = mySplit ? Math.max(Number(mySplit.amount_owed || 0) - Number(mySplit.amount_paid || (mySplit.has_paid ? mySplit.amount_owed : 0) || 0), 0) : 0;
   const balanceImpact = isPayer
-    ? (expense.expense_splits?.reduce((sum, split) => sum + Number(split.amount_owed || 0), 0) || 0)
+    ? totalOwed
     : -Number(mySplit?.amount_owed || 0);
   const participants = [
     { id: expense.paid_by, name: paidBy, amount: expense.amount, role: "Paid" },
@@ -1100,9 +1117,28 @@ const ExpenseDetailView = ({ expense, currentUserId, openModal, onBack }: { expe
       id: split.user_id,
       name: split.user_id === currentUserId ? "You" : displayName(split.profiles),
       amount: Number(split.amount_owed || 0),
-      role: split.has_paid ? "Settled share" : "Share",
+      role: Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0) >= Number(split.amount_owed || 0) ? "Settled share" : "Share",
     })),
   ];
+  const settleMyShare = async () => {
+    if (!mySplit || myRemaining <= 0 || settling) return;
+    setSettling(true);
+    const { error } = await supabase.rpc("record_split_settlement" as never, {
+      p_from_user_id: currentUserId,
+      p_to_user_id: expense.paid_by,
+      p_amount: myRemaining,
+      p_group_id: expense.group_id,
+      p_expense_id: expense.id,
+      p_note: `Settled ${expense.category || "expense"}`,
+    } as never);
+    setSettling(false);
+    if (error) {
+      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Expense settled", description: "Your share and balances were updated." });
+    await refresh();
+  };
 
   return (
     <main className="space-y-5 pt-4">
@@ -1124,6 +1160,8 @@ const ExpenseDetailView = ({ expense, currentUserId, openModal, onBack }: { expe
         <DetailRow label="Paid by" value={paidBy} />
         <DetailRow label="Split type" value={expense.split_type || "none"} />
         <DetailRow label="Date" value={dateLabel(expense.created_at)} />
+        <DetailRow label="Status" value={<StatusPill status={expenseStatus} />} />
+        <DetailRow label="Remaining unpaid" value={money(remainingUnpaid)} />
         <DetailRow label="Balance impact" value={<span className={balanceImpact > 0 ? "text-success" : balanceImpact < 0 ? "text-destructive" : "text-muted-foreground"}>{balanceImpact > 0 ? "+" : balanceImpact < 0 ? "-" : ""}{money(Math.abs(balanceImpact))}</span>} />
       </section>
 
@@ -1142,11 +1180,92 @@ const ExpenseDetailView = ({ expense, currentUserId, openModal, onBack }: { expe
         </div>
       </section>
 
+      <section>
+        <h2 className="mb-2 text-sm font-bold text-foreground">Settlement history</h2>
+        <div className="overflow-hidden rounded-2xl bg-card shadow-soft">
+          {expenseSettlements.length === 0 ? (
+            <div className="px-4 py-5 text-sm font-medium text-muted-foreground">No settlements recorded for this expense.</div>
+          ) : expenseSettlements.map((settlement, index) => (
+            <div key={settlement.id} className={`flex items-center justify-between gap-3 px-4 py-3 ${index < expenseSettlements.length - 1 ? "border-b border-border/60" : ""}`}>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-foreground">{settlement.from_user_id === currentUserId ? "You" : displayName(settlement.from_profile)} paid {settlement.to_user_id === currentUserId ? "you" : displayName(settlement.to_profile)}</p>
+                <p className="text-xs font-medium text-muted-foreground">{dateLabel(settlement.created_at)}{settlement.note ? ` - ${settlement.note}` : ""}</p>
+              </div>
+              <p className="text-sm font-bold text-success">{money(settlement.amount)}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="grid grid-cols-2 gap-3">
+        {myRemaining > 0 ? <Button onClick={settleMyShare} className="col-span-2 h-11 rounded-2xl shadow-primary-action" disabled={settling}><Check />{settling ? "Saving..." : `Settle this expense (${money(myRemaining)})`}</Button> : null}
         <Button onClick={() => openModal("edit-expense", expense.id)} className="h-11 rounded-2xl shadow-primary-action"><Pencil />Edit expense</Button>
         <Button onClick={() => openModal("delete-expense", expense.id)} variant="destructive" className="h-11 rounded-2xl"><Trash2 />Delete expense</Button>
       </section>
     </main>
+  );
+};
+
+const SettlementDetailView = ({ settlement, currentUserId, onBack, onDelete }: { settlement: SplitSettlementRow; currentUserId: string; onBack: () => void; onDelete: (settlementId: string) => Promise<void> }) => {
+  const paidBy = settlement.from_user_id === currentUserId ? "You" : displayName(settlement.from_profile);
+  const paidTo = settlement.to_user_id === currentUserId ? "you" : displayName(settlement.to_profile);
+  return (
+    <main className="space-y-5 pt-4">
+      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-bold text-primary"><ArrowLeft className="size-4" />Back to Split</button>
+      <section className="rounded-2xl bg-card p-4 shadow-soft">
+        <p className="text-xs font-bold uppercase text-muted-foreground">Settlement Detail</p>
+        <h1 className="mt-1 text-2xl font-bold text-foreground">{money(settlement.amount)}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{paidBy} paid {paidTo}</p>
+      </section>
+      <section className="rounded-2xl bg-card px-4 shadow-soft">
+        <DetailRow label="Amount" value={money(settlement.amount)} />
+        <DetailRow label="Paid by" value={paidBy} />
+        <DetailRow label="Paid to" value={paidTo} />
+        <DetailRow label="Date" value={dateLabel(settlement.created_at)} />
+        <DetailRow label="Linked expense" value={settlement.expense_id ? "Specific expense" : "Balance settlement"} />
+        {settlement.note ? <DetailRow label="Note" value={settlement.note} /> : null}
+      </section>
+      <Button onClick={() => onDelete(settlement.id)} variant="destructive" className="h-11 w-full rounded-2xl"><Trash2 />Delete settlement</Button>
+    </main>
+  );
+};
+
+const NotificationsList = ({ data, currentUserId }: { data: AppData; currentUserId: string }) => {
+  const items = [
+    ...data.incomingRequests.map((request) => ({
+      id: `incoming-${request.id}`,
+      title: `${displayName(request.profiles)} sent a friend request`,
+      subtitle: dateLabel(request.created_at),
+    })),
+    ...data.outgoingRequests.map((request) => ({
+      id: `outgoing-${request.id}`,
+      title: `Friend request pending for ${displayName(request.profiles)}`,
+      subtitle: dateLabel(request.created_at),
+    })),
+    ...Object.values(data.groupInvites).flat().map((invite) => ({
+      id: `invite-${invite.id}`,
+      title: `Group invite pending for ${invite.email}`,
+      subtitle: dateLabel(invite.created_at),
+    })),
+    ...data.settlements.slice(0, 6).map((settlement) => ({
+      id: `settlement-${settlement.id}`,
+      title: settlement.to_user_id === currentUserId
+        ? `${displayName(settlement.from_profile)} paid you ${money(settlement.amount)}`
+        : `You paid ${displayName(settlement.to_profile)} ${money(settlement.amount)}`,
+      subtitle: dateLabel(settlement.created_at),
+    })),
+  ];
+
+  if (!items.length) return <EmptyCard text="No notifications yet." />;
+  return (
+    <div className="overflow-hidden rounded-2xl bg-elevated/70">
+      {items.map((item, index) => (
+        <div key={item.id} className={`px-4 py-3 text-sm ${index < items.length - 1 ? "border-b border-border/60" : ""}`}>
+          <p className="font-bold text-foreground">{item.title}</p>
+          <p className="mt-0.5 text-xs font-medium text-muted-foreground">{item.subtitle}</p>
+        </div>
+      ))}
+    </div>
   );
 };
 
@@ -1167,29 +1286,46 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const memberMap = Object.fromEntries(group.group_members.map((member) => [member.user_id, member]));
   const getExpenseStatus = (expense: ExpenseRow) => {
     const splits = expense.expense_splits || [];
-    if (expense.status === "cleared" || (splits.length > 0 && splits.every((split) => split.has_paid))) return "settled" as const;
-    if (splits.some((split) => split.has_paid)) return "partial" as const;
+    if (expense.status === "cleared" || (splits.length > 0 && splits.every((split) => Number(split.amount_paid || 0) >= Number(split.amount_owed || 0) || split.has_paid))) return "settled" as const;
+    if (splits.some((split) => Number(split.amount_paid || 0) > 0 || split.has_paid)) return "partial" as const;
     return "pending" as const;
   };
-  const getRemaining = (expense: ExpenseRow) => (expense.expense_splits || []).filter((split) => !split.has_paid).reduce((sum, split) => sum + Number(split.amount_owed || 0), 0);
+  const getRemaining = (expense: ExpenseRow) => (expense.expense_splits || []).reduce((sum, split) => sum + Math.max(Number(split.amount_owed || 0) - Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0), 0), 0);
   const settleExpense = async (expense: ExpenseRow) => {
-    const splitIds = (expense.expense_splits || []).filter((split) => !split.has_paid).map((split) => split.id);
-    if (splitIds.length === 0) return;
-    const { error } = await supabase.from("expense_splits").update({ has_paid: true }).in("id", splitIds);
+    const unpaidSplits = (expense.expense_splits || [])
+      .map((split) => ({ ...split, remaining: Math.max(Number(split.amount_owed || 0) - Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0), 0) }))
+      .filter((split) => split.remaining > 0 && (currentUserId === expense.paid_by || split.user_id === currentUserId));
+    if (!unpaidSplits.length) return;
+    const results = await Promise.all(unpaidSplits.map((split) => supabase.rpc("record_split_settlement" as never, {
+      p_from_user_id: split.user_id,
+      p_to_user_id: expense.paid_by,
+      p_amount: split.remaining,
+      p_group_id: group.id,
+      p_expense_id: expense.id,
+      p_note: `Settled ${expense.category || "expense"}`,
+    } as never)));
+    const error = results.find((result) => result.error)?.error;
     if (error) {
       toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
       return;
     }
-    await supabase.from("expenses").update({ status: "cleared" }).eq("id", expense.id);
     toast({ title: "Expense settled", description: "Group balances were updated." });
     setActionExpense(null);
     await refresh();
   };
   const actionStatus = actionExpense ? getExpenseStatus(actionExpense) : "pending";
-  const actionRemaining = actionExpense ? getRemaining(actionExpense) : 0;
+  const getSettleableRemaining = (expense: ExpenseRow) => (expense.expense_splits || []).reduce((sum, split) => {
+    const canSettle = currentUserId === expense.paid_by || split.user_id === currentUserId;
+    if (!canSettle) return sum;
+    return sum + Math.max(Number(split.amount_owed || 0) - Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0), 0);
+  }, 0);
+  const actionRemaining = actionExpense ? getSettleableRemaining(actionExpense) : 0;
   const getPayerShare = (expense: ExpenseRow) => Math.max(Number(expense.amount || 0) - (expense.expense_splits || []).reduce((sum, item) => sum + Number(item.amount_owed || 0), 0), 0);
   const getUserShare = (expense: ExpenseRow, userId: string) => expense.paid_by === userId ? getPayerShare(expense) : Number(expense.expense_splits?.find((split) => split.user_id === userId)?.amount_owed || 0);
-  const getUserPaid = (expense: ExpenseRow, userId: string) => expense.paid_by === userId || Boolean(expense.expense_splits?.find((split) => split.user_id === userId)?.has_paid);
+  const getUserPaid = (expense: ExpenseRow, userId: string) => {
+    const split = expense.expense_splits?.find((item) => item.user_id === userId);
+    return expense.paid_by === userId || Boolean(split?.has_paid) || Number(split?.amount_paid || 0) >= Number(split?.amount_owed || 0);
+  };
 
   return (
     <>
@@ -1248,7 +1384,6 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
         <section>
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-xs font-bold uppercase tracking-wide text-foreground">Expense History</h2>
-            <button type="button" className="inline-flex items-center gap-1 text-xs font-bold text-primary"><Filter className="size-3.5" />Filter</button>
           </div>
           <div className="space-y-3">
             {groupExpenses.length === 0 ? <EmptyCard text="No group expenses yet. Add your first expense" /> : groupExpenses.map((expense) => {
@@ -1314,7 +1449,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
           <div className="overflow-hidden rounded-2xl bg-elevated/70">
             <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => actionExpense && navigate(`/split/expense/${actionExpense.id}`)}>View details<ArrowRight className="size-4 text-muted-foreground" /></button>
             <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => actionExpense && openModal("edit-expense", actionExpense.id)}>Edit expense<Pencil className="size-4 text-muted-foreground" /></button>
-            {actionExpense && actionStatus !== "settled" ? <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => actionExpense && settleExpense(actionExpense)}>{actionStatus === "partial" ? `Settle remaining ${money(actionRemaining)}` : "Mark as settled"}<Check className="size-4 text-muted-foreground" /></button> : null}
+            {actionExpense && actionStatus !== "settled" && actionRemaining > 0 ? <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => actionExpense && settleExpense(actionExpense)}>{actionStatus === "partial" ? `Settle remaining ${money(actionRemaining)}` : "Mark as settled"}<Check className="size-4 text-muted-foreground" /></button> : null}
             <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold text-destructive hover:bg-destructive/10" onClick={() => actionExpense && openModal("delete-expense", actionExpense.id)}>Delete expense<Trash2 className="size-4" /></button>
           </div>
         </DrawerContent>
@@ -1449,6 +1584,7 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
   const [submitting, setSubmitting] = useState(false);
 
   const parsedAmount = Number(amount);
+  const hasSettlementState = Boolean(expense?.expense_splits?.some((split) => Number(split.amount_paid || 0) > 0 || split.has_paid));
   const selectedMembers = members.filter((member) => participants.includes(member.user_id));
   const debtors = selectedMembers.filter((member) => member.user_id !== payer);
   const equalShare = participants.length ? parsedAmount / participants.length : 0;
@@ -1511,6 +1647,11 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
       <Field label="Date" type="date" value={date} onChange={setDate} />
       <Field label="Amount" type="number" placeholder="0" value={amount} onChange={setAmount} />
       <Textarea label="Note (optional)" placeholder="Add a note" value={note} onChange={setNote} />
+      {isEdit && hasSettlementState ? (
+        <div className="rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs font-semibold text-warning">
+          This expense has settlements. Editing split details is blocked until those settlements are reversed.
+        </div>
+      ) : null}
       {isEdit && (
         <div>
           <p className="mb-2 text-sm font-semibold text-foreground">Status</p>
@@ -1579,19 +1720,25 @@ const TiffinForm = ({ userId, defaultCategory, onSubmit, onCancel }: { userId: s
   const [category, setCategory] = useState(defaultCategory === "delivery" ? "delivery" : "tiffin");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [submitting, setSubmitting] = useState(false);
   return (
     <form className="space-y-3" onSubmit={async (event) => {
       event.preventDefault();
       const parsed = Number(amount);
-      if (!parsed || parsed <= 0) return;
-      await onSubmit({ user_id: userId, paid_by: userId, category, amount: parsed, status: "pending", split_type: "none", created_at: new Date(date).toISOString() });
+      if (!parsed || parsed <= 0 || submitting) return;
+      setSubmitting(true);
+      try {
+        await onSubmit({ user_id: userId, paid_by: userId, category, amount: parsed, status: "pending", split_type: "none", created_at: new Date(date).toISOString() });
+      } finally {
+        setSubmitting(false);
+      }
     }}>
       <div className="flex gap-1 rounded-full bg-elevated p-1">
         {(["tiffin", "delivery"] as const).map((item) => <button key={item} type="button" onClick={() => setCategory(item)} className={`flex-1 rounded-full px-3 py-2 text-xs font-bold capitalize ${category === item ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{item}</button>)}
       </div>
       <Field label="Amount" placeholder="0" type="number" value={amount} onChange={setAmount} />
       <Field label="Date" type="date" value={date} onChange={setDate} />
-      <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button type="submit" className="flex-1">Log Expense</Button></div>
+      <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel} disabled={submitting}>Cancel</Button><Button type="submit" className="flex-1" disabled={submitting}>{submitting ? "Saving..." : "Log Expense"}</Button></div>
     </form>
   );
 };
@@ -1601,11 +1748,17 @@ const CreateGroupForm = ({ friends, group, onSubmit, onCancel }: { friends: Frie
   const [name, setName] = useState(group?.name || "");
   const [description, setDescription] = useState(group?.description || "");
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
   return (
     <form className="space-y-3" onSubmit={async (event) => {
       event.preventDefault();
-      if (!name.trim()) return;
-      await onSubmit({ groupId: group?.id, name: name.trim(), emoji, description: description.trim(), memberIds });
+      if (!name.trim() || submitting) return;
+      setSubmitting(true);
+      try {
+        await onSubmit({ groupId: group?.id, name: name.trim(), emoji, description: description.trim(), memberIds });
+      } finally {
+        setSubmitting(false);
+      }
     }}>
       <div>
         <p className="mb-2 text-sm font-semibold text-foreground">Emoji</p>
@@ -1628,7 +1781,7 @@ const CreateGroupForm = ({ friends, group, onSubmit, onCancel }: { friends: Frie
           </div>
         </div>
       )}
-      <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button type="submit" className="flex-1">{group ? "Save" : "Create"}</Button></div>
+      <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel} disabled={submitting}>Cancel</Button><Button type="submit" className="flex-1" disabled={submitting}>{submitting ? "Saving..." : group ? "Save" : "Create"}</Button></div>
     </form>
   );
 };
@@ -1808,18 +1961,25 @@ const ActionModal = ({
   const saveExpense = async ({ expense: payload, splits, expenseId }: { expense: ExpensePayload; splits: Array<{ user_id: string; amount_owed: number }>; expenseId?: string }) => {
     try {
       if (expenseId) {
+        const hasSettlementState = Boolean(
+          expense?.expense_splits?.some((split) => Number(split.amount_paid || 0) > 0 || split.has_paid) ||
+          data.settlements.some((item) => item.expense_id === expenseId)
+        );
+        if (hasSettlementState) {
+          throw new Error("This expense has settlements. Reverse or delete its settlements before editing split details.");
+        }
         const { error } = await supabase.from("expenses").update(payload).eq("id", expenseId);
         if (error) throw error;
         await supabase.from("expense_splits").delete().eq("expense_id", expenseId);
         if (splits.length) {
-          const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: expenseId, has_paid: payload.status === "cleared" })));
+          const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: expenseId, amount_paid: payload.status === "cleared" ? split.amount_owed : 0, has_paid: payload.status === "cleared" })));
           if (splitError) throw splitError;
         }
       } else {
         const { data: inserted, error } = await supabase.from("expenses").insert(payload).select("id").single();
         if (error || !inserted) throw error;
         if (splits.length) {
-          const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: inserted.id, has_paid: payload.status === "cleared" })));
+          const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: inserted.id, amount_paid: payload.status === "cleared" ? split.amount_owed : 0, has_paid: payload.status === "cleared" })));
           if (splitError) throw splitError;
         }
         if (payload.group_id) supabase.functions.invoke("send-expense-notification", { body: { expense_id: inserted.id } }).catch(() => undefined);
@@ -1834,33 +1994,34 @@ const ActionModal = ({
 
   const deleteExpense = async () => {
     if (!expense) return;
+    const { error: settlementError } = await supabase.from("split_settlements" as never).delete().eq("expense_id", expense.id);
+    if (settlementError) {
+      toast({ title: "Delete failed", description: settlementError.message, variant: "destructive" });
+      return;
+    }
+    const { error: splitError } = await supabase.from("expense_splits").delete().eq("expense_id", expense.id);
+    if (splitError) {
+      toast({ title: "Delete failed", description: splitError.message, variant: "destructive" });
+      return;
+    }
     const { error } = await supabase.from("expenses").delete().eq("id", expense.id);
-    if (error) toast({ title: "Delete failed", description: error.message, variant: "destructive" });
-    else {
+    if (error) {
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
+    } else {
       toast({ title: "Expense deleted", description: "Balances were updated for everyone involved." });
       await closeAndRefresh();
     }
   };
 
   const saveSettlement = async (payload: SettlementPayload) => {
-    const splitIds: string[] = [];
-    let selectedAmount = 0;
-    data.expenses
-      .filter((item) => (payload.group_id ? item.group_id === payload.group_id : !item.group_id) && item.paid_by === payload.to_user_id)
-      .forEach((item) => {
-        item.expense_splits?.forEach((split) => {
-          if (split.user_id !== payload.from_user_id || split.has_paid) return;
-          if (selectedAmount + Number(split.amount_owed || 0) <= payload.amount + 0.01) {
-            splitIds.push(split.id);
-            selectedAmount += Number(split.amount_owed || 0);
-          }
-        });
-      });
-    if (splitIds.length === 0) {
-      toast({ title: "Nothing to settle", description: "No unpaid split was found for this selection.", variant: "destructive" });
-      return;
-    }
-    const { error } = await supabase.from("expense_splits").update({ has_paid: true }).in("id", splitIds);
+    const { error } = await supabase.rpc("record_split_settlement" as never, {
+      p_from_user_id: payload.from_user_id,
+      p_to_user_id: payload.to_user_id,
+      p_amount: payload.amount,
+      p_group_id: payload.group_id || null,
+      p_expense_id: null,
+      p_note: payload.note || null,
+    } as never);
     if (error) {
       toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
       return;
@@ -1874,7 +2035,8 @@ const ActionModal = ({
     const { error } = await supabase.from("expenses").update({ status: "cleared" }).eq("id", expense.id);
     if (error) toast({ title: "Update failed", description: error.message, variant: "destructive" });
     else {
-      const { error: splitError } = await supabase.from("expense_splits").update({ has_paid: true }).eq("expense_id", expense.id);
+      const splitUpdates = await Promise.all((expense.expense_splits || []).map((split) => supabase.from("expense_splits").update({ has_paid: true, amount_paid: split.amount_owed }).eq("id", split.id)));
+      const splitError = splitUpdates.find((result) => result.error)?.error;
       if (splitError) toast({ title: "Split update failed", description: splitError.message, variant: "destructive" });
       else await closeAndRefresh();
     }
@@ -1888,16 +2050,21 @@ const ActionModal = ({
       const { data: inserted, error } = await supabase.from("groups").insert({ name: payload.name, emoji: payload.emoji, description: payload.description || null, created_by: currentUserId } as never).select("id").single();
       if (error || !inserted) throw error;
       const members = [{ group_id: inserted.id, user_id: currentUserId }, ...payload.memberIds.map((user_id) => ({ group_id: inserted.id, user_id }))];
-      await supabase.from("group_members").insert(members);
+      const { error: memberError } = await supabase.from("group_members").insert(members);
+      if (memberError) throw memberError;
     }
     await closeAndRefresh();
   };
 
   const sendInvite = async (email: string) => {
     if (!group || !email.trim()) return;
-    const { error } = await supabase.functions.invoke("send-invite", { body: { email: email.trim().toLowerCase(), group_id: group.id, group_name: group.name, inviter_name: "A friend" } });
+    const { data: inviteResult, error } = await supabase.functions.invoke("send-invite", { body: { email: email.trim().toLowerCase(), group_id: group.id, group_name: group.name, inviter_name: "A friend" } });
     if (error) toast({ title: "Invite failed", description: error.message, variant: "destructive" });
-    else await closeAndRefresh();
+    else {
+      if (inviteResult && inviteResult.emailSent === false) toast({ title: "Invite link created", description: "Email could not be sent. Copy the invite link manually." });
+      else toast({ title: "Invite sent" });
+      await closeAndRefresh();
+    }
   };
 
   return (
@@ -1925,7 +2092,7 @@ const ActionModal = ({
               {group.group_members.map((member) => (
                 <div key={member.user_id} className="flex items-center justify-between rounded-2xl bg-elevated p-3 text-sm">
                   <span className="font-semibold text-foreground">{member.user_id === currentUserId ? "You" : displayName(member.profiles)}</span>
-                  <button onClick={async () => { await supabase.from("group_members").delete().eq("group_id", group.id).eq("user_id", member.user_id); await closeAndRefresh(); }} className="text-xs font-bold text-destructive">Remove</button>
+                  <button onClick={async () => { const { error } = await supabase.from("group_members").delete().eq("group_id", group.id).eq("user_id", member.user_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} className="text-xs font-bold text-destructive">Remove</button>
                 </div>
               ))}
             </div>
@@ -1949,8 +2116,8 @@ const ActionModal = ({
 
         {type === "friend-requests" && (
           <div className="space-y-4">
-            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Incoming</p><div className="space-y-2">{data.incomingRequests.length === 0 ? <EmptyCard text="No incoming requests." /> : data.incomingRequests.map((request) => <RequestCard key={request.id} request={request} onAccept={() => supabase.from("connections").update({ status: "accepted" }).eq("id", request.id).then(closeAndRefresh)} onReject={() => supabase.from("connections").update({ status: "rejected" }).eq("id", request.id).then(closeAndRefresh)} />)}</div></div>
-            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Outgoing</p><div className="space-y-2">{data.outgoingRequests.length === 0 ? <EmptyCard text="No outgoing requests." /> : data.outgoingRequests.map((request) => <div key={request.id} className="flex items-center justify-between rounded-2xl bg-elevated p-3"><div><p className="font-bold text-foreground">{displayName(request.profiles)}</p><p className="text-xs text-muted-foreground">@{request.profiles.username}</p></div><Button size="sm" variant="quiet" onClick={() => supabase.from("connections").delete().eq("id", request.id).then(closeAndRefresh)}>Cancel</Button></div>)}</div></div>
+            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Incoming</p><div className="space-y-2">{data.incomingRequests.length === 0 ? <EmptyCard text="No incoming requests." /> : data.incomingRequests.map((request) => <RequestCard key={request.id} request={request} onAccept={async () => { const { error } = await supabase.from("connections").update({ status: "accepted" }).eq("id", request.id); if (error) { toast({ title: "Accept failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} onReject={async () => { const { error } = await supabase.from("connections").update({ status: "rejected" }).eq("id", request.id); if (error) { toast({ title: "Reject failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} />)}</div></div>
+            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Outgoing</p><div className="space-y-2">{data.outgoingRequests.length === 0 ? <EmptyCard text="No outgoing requests." /> : data.outgoingRequests.map((request) => <div key={request.id} className="flex items-center justify-between rounded-2xl bg-elevated p-3"><div><p className="font-bold text-foreground">{displayName(request.profiles)}</p><p className="text-xs text-muted-foreground">@{request.profiles.username}</p></div><Button size="sm" variant="quiet" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", request.id); if (error) { toast({ title: "Cancel failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }}>Cancel</Button></div>)}</div></div>
           </div>
         )}
 
@@ -1959,7 +2126,7 @@ const ActionModal = ({
             <div className="space-y-2 rounded-2xl bg-elevated p-4 text-sm">
               {data.expenses.filter((expense) => expense.paid_by === friend.user_id || expense.expense_splits?.some((split) => split.user_id === friend.user_id)).slice(0, 4).map((item) => <div key={item.id} className="flex justify-between"><span className="text-muted-foreground">{item.category}</span><span className="font-semibold text-foreground">{money(item.amount)}</span></div>)}
             </div>
-            <Button variant="destructive" className="w-full" onClick={async () => { await supabase.from("connections").delete().eq("id", friend.connection_id); await closeAndRefresh(); }}><UserMinus />Remove friend</Button>
+            <Button variant="destructive" className="w-full" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }}><UserMinus />Remove friend</Button>
           </div>
         )}
 
@@ -1969,10 +2136,10 @@ const ActionModal = ({
 
         {type === "delete-expense" && <ConfirmBox title="Delete expense?" text="This will update balances for everyone involved." action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
         {type === "clear-expense" && <ConfirmBox text={`Mark "${expense?.category || "expense"}" as cleared?`} action="Mark cleared" onCancel={onClose} onConfirm={clearExpense} />}
-        {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { await supabase.from("groups").delete().eq("id", group.id); await closeAndRefresh(); }} />}
-        {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { await supabase.from("connections").delete().eq("id", friend.connection_id); await closeAndRefresh(); }} />}
+        {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} />}
+        {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} />}
         {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
-        {type === "notifications" && <EmptyCard text={`${data.incomingRequests.length} incoming friend request(s), ${data.outgoingRequests.length} pending sent request(s).`} />}
+        {type === "notifications" && <NotificationsList data={data} currentUserId={currentUserId} />}
         {type === "chart-details" && <div className="rounded-2xl bg-elevated p-4 text-sm text-muted-foreground">Spendova uses your live expenses, split debts, and food logs for this summary.</div>}
         {type === "saved" && <EmptyCard text="Saved." />}
       </DialogContent>
@@ -1982,8 +2149,18 @@ const ActionModal = ({
 
 const InviteMembers = ({ group, invites, onInvite }: { group: GroupRow; invites: InviteRow[]; onInvite: (email: string) => Promise<void> }) => {
   const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const inviteToken = invites.find((invite) => invite.status === "pending")?.token;
   const link = inviteToken ? `${window.location.origin}/accept-invite?token=${inviteToken}` : "";
+  const submitInvite = async () => {
+    if (submitting || !email.trim()) return;
+    setSubmitting(true);
+    try {
+      await onInvite(email);
+    } finally {
+      setSubmitting(false);
+    }
+  };
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 rounded-2xl bg-elevated p-3">
@@ -1991,7 +2168,7 @@ const InviteMembers = ({ group, invites, onInvite }: { group: GroupRow; invites:
         <Button size="sm" variant="quiet" disabled={!link} onClick={() => navigator.clipboard?.writeText(link)}><Copy />Copy</Button>
       </div>
       <Field label="Invite by email" type="email" value={email} onChange={setEmail} placeholder="friend@email.com" />
-      <Button className="w-full" onClick={() => onInvite(email)}>Send invite</Button>
+      <Button className="w-full" onClick={submitInvite} disabled={submitting || !email.trim()}>{submitting ? "Sending..." : "Send invite"}</Button>
       {invites.length > 0 && <div className="space-y-2">{invites.map((invite) => <div key={invite.id} className="rounded-2xl bg-elevated p-3 text-sm"><span className="font-semibold">{invite.email}</span><span className="ml-2 text-muted-foreground">{invite.status}</span></div>)}</div>}
     </div>
   );
@@ -2004,15 +2181,30 @@ const RequestCard = ({ request, onAccept, onReject }: { request: ConnectionRow; 
   </div>
 );
 
-const ConfirmBox = ({ title, text, action, destructive, onCancel, onConfirm }: { title?: string; text: string; action: string; destructive?: boolean; onCancel: () => void; onConfirm: () => void }) => (
-  <div className="space-y-3">
-    <div className="rounded-2xl bg-elevated p-4 text-sm text-muted-foreground">
-      {title ? <p className="mb-1 font-bold text-foreground">{title}</p> : null}
-      <p>{text}</p>
+const ConfirmBox = ({ title, text, action, destructive, onCancel, onConfirm }: { title?: string; text: string; action: string; destructive?: boolean; onCancel: () => void; onConfirm: () => Promise<void> | void }) => {
+  const [submitting, setSubmitting] = useState(false);
+  const handleConfirm = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await onConfirm();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl bg-elevated p-4 text-sm text-muted-foreground">
+        {title ? <p className="mb-1 font-bold text-foreground">{title}</p> : null}
+        <p>{text}</p>
+      </div>
+      <div className="flex gap-2">
+        <Button variant="quiet" className="flex-1" onClick={onCancel} disabled={submitting}>Cancel</Button>
+        <Button variant={destructive ? "destructive" : "default"} className="flex-1" onClick={handleConfirm} disabled={submitting}>{submitting ? "Processing..." : action}</Button>
+      </div>
     </div>
-    <div className="flex gap-2"><Button variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button variant={destructive ? "destructive" : "default"} className="flex-1" onClick={onConfirm}>{action}</Button></div>
-  </div>
-);
+  );
+};
 
 const Index = () => {
   const { user, profile, loading: authLoading } = useAuth();
@@ -2020,9 +2212,11 @@ const Index = () => {
   const navigate = useNavigate();
   const params = useParams();
   const isSplitRoute = location.pathname.startsWith("/split");
+  const isProfileRoute = location.pathname === "/profile";
   const friendDetailId = location.pathname.startsWith("/split/friend/") ? params.id : undefined;
   const groupDetailId = location.pathname.startsWith("/split/group/") ? params.id : undefined;
   const expenseDetailId = location.pathname.startsWith("/split/expense/") ? params.id : undefined;
+  const settlementDetailId = location.pathname.startsWith("/split/settlement/") ? params.id : undefined;
   const [activeTab, setActiveTabState] = useState<TabKey>(isSplitRoute ? "split" : "home");
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [modal, setModal] = useState<ModalState>({ type: null });
@@ -2040,11 +2234,11 @@ const Index = () => {
   const setActiveTab = (tab: TabKey) => {
     setActiveTabState(tab);
     if (tab === "split") navigate("/split");
-    else if (location.pathname.startsWith("/split")) navigate("/dashboard");
+    else if (location.pathname.startsWith("/split") || isProfileRoute) navigate("/dashboard");
   };
 
-  const activeContentTab: TabKey = isSplitRoute ? "split" : activeTab;
-  const title = friendDetailId ? "Friend" : groupDetailId ? "Group" : expenseDetailId ? "Expense" : tabs.find((tab) => tab.key === activeContentTab)?.label ?? "Home";
+  const activeContentTab: ContentKey = isProfileRoute ? "profile" : isSplitRoute ? "split" : activeTab;
+  const title = friendDetailId ? "Friend" : groupDetailId ? "Group" : expenseDetailId ? "Expense" : settlementDetailId ? "Settlement" : isProfileRoute ? "Profile" : tabs.find((tab) => tab.key === activeContentTab)?.label ?? "Home";
   const toggleTheme = () => setTheme((current) => (current === "dark" ? "light" : "dark"));
   const openModal = (type: ModalType, item?: string) => setModal({ type, item });
   const summary = user ? getSummary(data.expenses, user.id, data.settlements) : getSummary([], "");
@@ -2066,28 +2260,41 @@ const Index = () => {
   const friendDetail = friendDetailId ? data.friends.find((friend) => friend.user_id === friendDetailId) : undefined;
   const groupDetail = groupDetailId ? data.groups.find((group) => group.id === groupDetailId) : undefined;
   const expenseDetail = expenseDetailId ? data.expenses.find((expense) => expense.id === expenseDetailId) : undefined;
+  const settlementDetail = settlementDetailId ? data.settlements.find((settlement) => settlement.id === settlementDetailId) : undefined;
   const backToSplit = () => navigate("/split");
-  const showingDetailPage = Boolean(friendDetail || groupDetail || expenseDetail);
+  const deleteSettlement = async (settlementId: string) => {
+    const { error } = await supabase.rpc("delete_split_settlement" as never, { p_settlement_id: settlementId } as never);
+    if (error) {
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Settlement deleted", description: "Balances were restored." });
+    await refresh();
+    navigate("/split");
+  };
+  const showingDetailPage = Boolean(friendDetail || groupDetail || expenseDetail || settlementDetail);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto min-h-screen max-w-3xl px-4 pb-36 sm:px-6">
-        {!showingDetailPage && <AppHeader title={title === "Home" ? "Overview" : title} theme={theme} onThemeToggle={toggleTheme} openModal={openModal} />}
+        {!showingDetailPage && <AppHeader title={title === "Home" ? "Overview" : title} theme={theme} onThemeToggle={toggleTheme} onProfile={() => navigate("/profile")} openModal={openModal} />}
         {friendDetailId && !friendDetail && <EmptyCard text="Friend not found." />}
         {groupDetailId && !groupDetail && <EmptyCard text="Group not found." />}
         {expenseDetailId && !expenseDetail && <EmptyCard text="Expense not found." />}
+        {settlementDetailId && !settlementDetail && <EmptyCard text="Settlement not found." />}
         {friendDetail && <FriendDetailView friend={friendDetail} data={data} currentUserId={user.id} theme={theme} onThemeToggle={toggleTheme} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
-        {expenseDetail && <ExpenseDetailView expense={expenseDetail} currentUserId={user.id} openModal={openModal} onBack={backToSplit} />}
+        {expenseDetail && <ExpenseDetailView expense={expenseDetail} settlements={data.settlements} currentUserId={user.id} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
+        {settlementDetail && <SettlementDetailView settlement={settlementDetail} currentUserId={user.id} onBack={backToSplit} onDelete={deleteSettlement} />}
         {groupDetail && <GroupDetailView group={groupDetail} data={data} currentUserId={user.id} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} summary={summary} currentUserId={user.id} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && activeContentTab === "tiffin" && <TiffinView expenses={data.expenses} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && activeContentTab === "profile" && <ProfileView profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} summary={summary} currentUserId={user.id} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "tiffin" && <TiffinView expenses={data.expenses} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "profile" && <ProfileView profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
         <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p>
       </div>
       <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-3xl px-4 pb-4">
-        <div className="grid grid-cols-5 rounded-[1.4rem] border border-border/80 bg-card p-2 shadow-panel backdrop-blur">
+        <div className="grid grid-cols-4 rounded-[1.4rem] border border-border/80 bg-card p-2 shadow-panel backdrop-blur">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = activeContentTab === tab.key;

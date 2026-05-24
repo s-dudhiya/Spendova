@@ -54,10 +54,12 @@ const AppRoutes = () => {
     <Routes>
       <Route path="/" element={<Index />} />
       <Route path="/dashboard" element={<Index />} />
+      <Route path="/profile" element={<Index />} />
       <Route path="/split" element={<Index />} />
       <Route path="/split/friend/:id" element={<Index />} />
       <Route path="/split/group/:id" element={<Index />} />
       <Route path="/split/expense/:id" element={<Index />} />
+      <Route path="/split/settlement/:id" element={<Index />} />
       <Route path="/admin" element={<Admin view="root" />} />
       <Route path="/admin/login" element={<Admin view="login" />} />
       <Route path="/admin/dashboard" element={<Admin view="dashboard" />} />

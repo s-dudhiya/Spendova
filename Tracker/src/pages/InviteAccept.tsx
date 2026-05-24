@@ -73,20 +73,8 @@ export default function InviteAccept() {
     const acceptInvite = async () => {
       setStatus("accepting");
       try {
-        await supabase.from("group_members").upsert(
-          { group_id: invite.group_id, user_id: user.id },
-          { onConflict: "group_id,user_id", ignoreDuplicates: true },
-        );
-
-        if (invite.invited_by && invite.invited_by !== user.id) {
-          await supabase.from("connections").upsert(
-            { requester_id: invite.invited_by, receiver_id: user.id, status: "accepted" },
-            { onConflict: "requester_id,receiver_id", ignoreDuplicates: true },
-          );
-        }
-
-        const { error: updateError } = await supabase.from("group_invites" as never).update({ status: "accepted" } as never).eq("token", token);
-        if (updateError) throw updateError;
+        const { error: acceptError } = await supabase.rpc("accept_group_invite" as never, { invite_token: token } as never);
+        if (acceptError) throw acceptError;
         localStorage.removeItem("pending_invite_token");
         setStatus("done");
         toast({ title: `Welcome to ${invite.groups?.name || "the group"}!`, description: "You've been added successfully." });

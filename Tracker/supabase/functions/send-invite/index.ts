@@ -161,6 +161,8 @@ serve(async (req) => {
     const SMTP_USER = Deno.env.get('SMTP_USER')
     const SMTP_PASS = Deno.env.get('SMTP_PASS')
 
+    let emailSent = false
+    let emailReason: string | null = null
     if (SMTP_USER && SMTP_PASS) {
       const transporter = nodemailer.createTransport({
         host: SMTP_HOST, port: SMTP_PORT,
@@ -169,11 +171,13 @@ serve(async (req) => {
         maxMessageSize: 100 * 1024 * 1024,
       })
       await transporter.sendMail({ from: `ExpenseMate <${SMTP_USER}>`, to: email, subject, html })
+      emailSent = true
     } else {
+      emailReason = 'SMTP missing'
       console.warn("SMTP credentials missing. Invite generated in DB but email not sent.");
     }
 
-    return new Response(JSON.stringify({ success: true, isExistingUser: !!existingUser }), {
+    return new Response(JSON.stringify({ success: true, inviteCreated: true, emailSent, reason: emailReason, inviteUrl, isExistingUser: !!existingUser }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   } catch (error: any) {
