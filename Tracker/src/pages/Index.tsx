@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
+  ArrowLeft,
   ArrowRight,
   Bell,
   Check,
@@ -54,6 +55,8 @@ type ModalType =
   | "delete-group"
   | "invite-members"
   | "group-expense"
+  | "choose-friend-expense"
+  | "choose-group-expense"
   | "friend-details"
   | "add-friend"
   | "remove-friend"
@@ -129,6 +132,18 @@ type InviteRow = {
   created_at: string;
 };
 
+type SplitSettlementRow = {
+  id: string;
+  group_id: string | null;
+  from_user_id: string;
+  to_user_id: string;
+  amount: number;
+  note: string | null;
+  created_at: string;
+  from_profile?: Profile | null;
+  to_profile?: Profile | null;
+};
+
 type ExpensePayload = {
   user_id: string;
   paid_by: string;
@@ -157,6 +172,7 @@ type AppData = {
   outgoingRequests: ConnectionRow[];
   groups: GroupRow[];
   groupInvites: Record<string, InviteRow[]>;
+  settlements: SplitSettlementRow[];
 };
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof Home }> = [
@@ -301,13 +317,14 @@ function useSpendovaData(userId?: string) {
     outgoingRequests: [],
     groups: [],
     groupInvites: {},
+    settlements: [],
   });
 
   const refresh = async () => {
     if (!userId) return;
     setLoading(true);
     try {
-      const [expensesRes, reqRes, recRes, groupsRes] = await Promise.all([
+      const [expensesRes, reqRes, recRes, groupsRes, settlementsRes] = await Promise.all([
         supabase
           .from("expenses")
           .select(`
@@ -329,12 +346,17 @@ function useSpendovaData(userId?: string) {
           .from("groups")
           .select("id, name, emoji, description, created_by, created_at, group_members(user_id, joined_at, profiles!group_members_user_id_fkey(user_id, full_name, username))")
           .order("created_at", { ascending: false }),
+        supabase
+          .from("split_settlements" as never)
+          .select("id, group_id, from_user_id, to_user_id, amount, note, created_at, from_profile:profiles!split_settlements_from_user_id_fkey(user_id, full_name, username), to_profile:profiles!split_settlements_to_user_id_fkey(user_id, full_name, username)")
+          .order("created_at", { ascending: false }),
       ]);
 
       if (expensesRes.error) throw expensesRes.error;
       if (reqRes.error) throw reqRes.error;
       if (recRes.error) throw recRes.error;
       if (groupsRes.error) throw groupsRes.error;
+      if (settlementsRes.error) console.warn("Could not load settlement history", settlementsRes.error);
 
       const requested = ((reqRes.data || []) as unknown as ConnectionQueryRow[]).map((row) => ({ ...row, profiles: row.profiles || { user_id: "", full_name: null, username: null } })) as ConnectionRow[];
       const received = ((recRes.data || []) as unknown as ConnectionQueryRow[]).map((row) => ({ ...row, profiles: row.profiles || { user_id: "", full_name: null, username: null } })) as ConnectionRow[];
@@ -363,6 +385,7 @@ function useSpendovaData(userId?: string) {
         outgoingRequests: requested.filter((row) => row.status === "pending"),
         groups: (groupsRes.data || []) as unknown as GroupRow[],
         groupInvites,
+        settlements: settlementsRes.error ? [] : (settlementsRes.data || []) as unknown as SplitSettlementRow[],
       });
     } catch (error: unknown) {
       toast({ title: "Could not load data", description: error instanceof Error ? error.message : "Unexpected error", variant: "destructive" });
@@ -389,7 +412,69 @@ function getExpenseShare(expense: ExpenseRow, userId: string) {
   return expense.expense_splits?.find((split) => split.user_id === userId)?.amount_owed || 0;
 }
 
-function getSummary(expenses: ExpenseRow[], userId: string) {
+type DebtBalance = { fromUserId: string; toUserId: string; fromName: string; toName: string; amount: number };
+
+function getProfileName(userId: string, profiles: Record<string, string>, currentUserId?: string) {
+  if (currentUserId && userId === currentUserId) return "You";
+  return profiles[userId] || "Unknown";
+}
+
+function buildDebtBalances(expenses: ExpenseRow[], settlements: SplitSettlementRow[], options: { currentUserId?: string; groupId?: string | null; friendId?: string } = {}) {
+  const profiles: Record<string, string> = {};
+  const pairTotals: Record<string, number> = {};
+  const addName = (profile?: Profile | null) => {
+    if (profile?.user_id) profiles[profile.user_id] = displayName(profile);
+  };
+  const addDebt = (from: string, to: string, amount: number) => {
+    if (!from || !to || from === to || Math.abs(amount) < 0.01) return;
+    const key = `${from}|${to}`;
+    pairTotals[key] = (pairTotals[key] || 0) + amount;
+  };
+
+  expenses.forEach((expense) => {
+    if (options.groupId !== undefined && expense.group_id !== options.groupId) return;
+    addName(expense.payer_profile);
+    addName(expense.profiles);
+    expense.expense_splits?.forEach((split) => {
+      if (split.has_paid) return;
+      if (options.friendId && expense.paid_by !== options.friendId && split.user_id !== options.friendId) return;
+      addName(split.profiles);
+      addDebt(split.user_id, expense.paid_by, Number(split.amount_owed || 0));
+    });
+  });
+
+  settlements.forEach((settlement) => {
+    if (options.groupId !== undefined && settlement.group_id !== options.groupId) return;
+    if (options.friendId && settlement.from_user_id !== options.friendId && settlement.to_user_id !== options.friendId) return;
+    addName(settlement.from_profile);
+    addName(settlement.to_profile);
+    addDebt(settlement.from_user_id, settlement.to_user_id, -Number(settlement.amount || 0));
+  });
+
+  const normalized: Record<string, number> = {};
+  Object.entries(pairTotals).forEach(([key, amount]) => {
+    const [from, to] = key.split("|");
+    const reverseKey = `${to}|${from}`;
+    if (normalized[key] !== undefined || normalized[reverseKey] !== undefined) return;
+    const net = amount - (pairTotals[reverseKey] || 0);
+    if (Math.abs(net) < 0.01) return;
+    if (net > 0) normalized[key] = net;
+    else normalized[reverseKey] = Math.abs(net);
+  });
+
+  return Object.entries(normalized).map(([key, amount]) => {
+    const [fromUserId, toUserId] = key.split("|");
+    return {
+      fromUserId,
+      toUserId,
+      fromName: getProfileName(fromUserId, profiles, options.currentUserId),
+      toName: getProfileName(toUserId, profiles, options.currentUserId),
+      amount: Number(amount.toFixed(2)),
+    };
+  });
+}
+
+function getSummary(expenses: ExpenseRow[], userId: string, settlements: SplitSettlementRow[] = []) {
   let totalLent = 0;
   let totalOwed = 0;
   let personal = 0;
@@ -403,14 +488,6 @@ function getSummary(expenses: ExpenseRow[], userId: string) {
     const isPayer = expense.paid_by === userId;
     const mySplit = expense.expense_splits?.find((split) => split.user_id === userId);
 
-    if (isPayer) {
-      expense.expense_splits?.forEach((split) => {
-        if (!split.has_paid) totalLent += split.amount_owed;
-      });
-    } else if (mySplit && !mySplit.has_paid) {
-      totalOwed += mySplit.amount_owed;
-    }
-
     if (!isFood) {
       const share = getExpenseShare(expense, userId);
       personal += share;
@@ -423,48 +500,27 @@ function getSummary(expenses: ExpenseRow[], userId: string) {
     }
   });
 
+  buildDebtBalances(expenses, settlements, { currentUserId: userId }).forEach((balance) => {
+    if (balance.toUserId === userId) totalLent += balance.amount;
+    if (balance.fromUserId === userId) totalOwed += balance.amount;
+  });
+
   return { totalLent, totalOwed, net: totalLent - totalOwed, personal, personalPending, personalCleared, tiffinPending, tiffinCleared };
 }
 
-function computeGroupBalances(expenses: ExpenseRow[], group: GroupRow) {
-  const names: Record<string, string> = {};
-  group.group_members.forEach((member) => { names[member.user_id] = displayName(member.profiles); });
-  const totals: Record<string, Record<string, number>> = {};
-
-  expenses.filter((expense) => expense.group_id === group.id).forEach((expense) => {
-    expense.expense_splits?.forEach((split) => {
-      if (split.has_paid) return;
-      if (!totals[split.user_id]) totals[split.user_id] = {};
-      totals[split.user_id][expense.paid_by] = (totals[split.user_id][expense.paid_by] || 0) + split.amount_owed;
-    });
-  });
-
-  const balances: Array<{ fromUserId: string; toUserId: string; fromName: string; toName: string; amount: number }> = [];
-  const seen = new Set<string>();
-  Object.keys(totals).forEach((from) => {
-    Object.keys(totals[from]).forEach((to) => {
-      const key = [from, to].sort().join("|");
-      if (seen.has(key)) return;
-      seen.add(key);
-      const a = totals[from]?.[to] || 0;
-      const b = totals[to]?.[from] || 0;
-      const diff = a - b;
-      if (Math.abs(diff) < 0.01) return;
-      balances.push(diff > 0
-        ? { fromUserId: from, toUserId: to, fromName: names[from] || "Unknown", toName: names[to] || "Unknown", amount: diff }
-        : { fromUserId: to, toUserId: from, fromName: names[to] || "Unknown", toName: names[from] || "Unknown", amount: -diff });
-    });
-  });
-  return balances;
+function computeGroupBalances(expenses: ExpenseRow[], settlements: SplitSettlementRow[], group: GroupRow, currentUserId?: string) {
+  const balances = buildDebtBalances(expenses, settlements, { currentUserId, groupId: group.id });
+  const memberNames = Object.fromEntries(group.group_members.map((member) => [member.user_id, member.user_id === currentUserId ? "You" : displayName(member.profiles)]));
+  return balances.map((balance) => ({ ...balance, fromName: memberNames[balance.fromUserId] || balance.fromName, toName: memberNames[balance.toUserId] || balance.toName }));
 }
 
-const HomeView = ({ expenses, userId, setTab, openModal }: { expenses: ExpenseRow[]; userId: string; setTab: (tab: TabKey) => void; openModal: (type: ModalType, item?: string) => void }) => {
+const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; userId: string; setTab: (tab: TabKey) => void; openModal: (type: ModalType, item?: string) => void }) => {
   const [range, setRange] = useState<"week" | "month" | "year">("month");
   const [status, setStatus] = useState<"all" | "pending" | "cleared">("all");
   const clear = () => { setRange("month"); setStatus("all"); };
   const rangedExpenses = filterExpensesByRange(expenses, range);
   const filteredExpenses = rangedExpenses.filter((expense) => status === "all" || expense.status === status);
-  const summary = getSummary(filteredExpenses, userId);
+  const summary = getSummary(filteredExpenses, userId, settlements);
   const recent = filteredExpenses.slice(0, 3);
 
   return (
@@ -581,10 +637,27 @@ const PersonalView = ({ expenses, summary, currentUserId, openModal }: { expense
 };
 
 const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentUserId: string; openModal: (type: ModalType, item?: string) => void }) => {
-  const [subTab, setSubTab] = useState<"friends" | "groups">("friends");
+  const navigate = useNavigate();
+  const [subTab, setSubTabState] = useState<"friends" | "groups">(() => (sessionStorage.getItem("spendova-split-tab") === "groups" ? "groups" : "friends"));
   const [query, setQuery] = useState("");
   const filteredFriends = data.friends.filter((friend) => displayName(friend).toLowerCase().includes(query.toLowerCase()) || (friend.username || "").toLowerCase().includes(query.toLowerCase()));
-  const summary = getSummary(data.expenses, currentUserId);
+  const summary = getSummary(data.expenses, currentUserId, data.settlements);
+  const setSubTab = (value: "friends" | "groups") => {
+    sessionStorage.setItem("spendova-split-tab", value);
+    setSubTabState(value);
+  };
+  const openDetail = (kind: "friend" | "group", id: string) => {
+    sessionStorage.setItem("spendova-split-tab", kind === "friend" ? "friends" : "groups");
+    sessionStorage.setItem("spendova-split-scroll", String(window.scrollY));
+    navigate(`/split/${kind}/${id}`);
+  };
+  useEffect(() => {
+    const saved = Number(sessionStorage.getItem("spendova-split-scroll") || 0);
+    if (saved > 0) {
+      window.requestAnimationFrame(() => window.scrollTo({ top: saved }));
+      sessionStorage.removeItem("spendova-split-scroll");
+    }
+  }, []);
 
   return (
     <main className="space-y-6">
@@ -601,55 +674,74 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
         <div className="rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You owe</p><p className="mt-1 text-xl font-bold text-warning">{money(summary.totalOwed)}</p></div>
       </section>
 
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Button onClick={() => subTab === "friends" ? openModal(data.friends.length === 0 ? "add-friend" : data.friends.length === 1 ? "add-expense" : "choose-friend-expense", data.friends[0]?.user_id) : openModal(data.groups.length === 0 ? "create-group" : data.groups.length === 1 ? "group-expense" : "choose-group-expense", data.groups[0]?.id)} className="h-12 shadow-primary-action">
+          <Plus />{subTab === "friends" ? "Add Expense" : "Add Group Expense"}
+        </Button>
+        {subTab === "friends" ? (
+          <div className="grid grid-cols-2 gap-2">
+            <Button onClick={() => openModal("add-friend")} variant="quiet" className="h-12"><UserPlus />Add Friend</Button>
+            <Button onClick={() => openModal("friend-requests")} variant="quiet" className="h-12">Requests</Button>
+          </div>
+        ) : (
+          <Button onClick={() => openModal("create-group")} variant="quiet" className="h-12"><Plus />Create Group</Button>
+        )}
+      </section>
+
       {subTab === "friends" ? (
         <section>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-bold tracking-tight text-foreground">Friends</h2>
-            <div className="flex gap-2">
-              <button onClick={() => openModal("friend-requests")} className="text-sm font-semibold text-primary">Requests</button>
-              <button onClick={() => openModal("add-friend")} className="text-sm font-semibold text-primary">Add</button>
-            </div>
           </div>
           <div className="mb-3 flex items-center gap-2 rounded-full border border-input bg-background px-4 py-3 shadow-soft">
             <Search className="size-4 text-muted-foreground" />
             <input value={query} onChange={(e) => setQuery(e.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Search friends" />
           </div>
           <div className="space-y-3">
-            {filteredFriends.length === 0 ? <EmptyCard text="No friends found." /> : filteredFriends.map((friend) => (
-              <button key={friend.user_id} onClick={() => openModal("friend-details", friend.user_id)} className="flex w-full items-center justify-between rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
+            {filteredFriends.length === 0 ? <EmptyCard text={data.friends.length === 0 ? "Add friends to start splitting expenses" : "No friends found."} /> : filteredFriends.map((friend) => {
+              const balances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null });
+              const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+              const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+              const net = owedToMe - iOwe;
+              return (
+              <button key={friend.user_id} onClick={() => openDetail("friend", friend.user_id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
                 <div className="flex items-center gap-3">
                   <span className="grid size-11 place-items-center rounded-full bg-elevated font-bold text-primary">{displayName(friend).charAt(0).toUpperCase()}</span>
                   <div><h3 className="font-bold text-foreground">{displayName(friend)}</h3><p className="text-sm text-muted-foreground">@{friend.username || "user"}</p></div>
                 </div>
-                <ChevronRight className="size-4 text-muted-foreground" />
+                <div className="shrink-0 text-right">
+                  <p className={`text-sm font-bold ${net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground"}`}>{net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled"}</p>
+                  <ChevronRight className="ml-auto mt-1 size-4 text-muted-foreground" />
+                </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         </section>
       ) : (
         <>
           <section>
-            <SectionHeader title="Groups" action="Create" onAction={() => openModal("create-group")} />
+            <SectionHeader title="Groups" />
             <div className="space-y-3">
-              {data.groups.length === 0 ? <EmptyCard text="No groups yet." /> : data.groups.map((group) => {
-                const groupSpend = data.expenses.filter((expense) => expense.group_id === group.id).reduce((sum, expense) => sum + expense.amount, 0);
+              {data.groups.length === 0 ? <EmptyCard text="Create a group to split shared expenses" /> : data.groups.map((group) => {
+                const balances = computeGroupBalances(data.expenses, data.settlements, group, currentUserId);
+                const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+                const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+                const net = owedToMe - iOwe;
                 return (
-                  <button onClick={() => openModal("group-details", group.id)} key={group.id} className="w-full rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
-                    <div className="flex items-center justify-between">
+                  <button onClick={() => openDetail("group", group.id)} key={group.id} className="w-full rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <span className="grid size-11 place-items-center rounded-full bg-elevated text-xl">{group.emoji || "🏠"}</span>
                         <div><h3 className="font-bold text-foreground">{group.name}</h3><p className="text-sm text-muted-foreground">{group.group_members.length} members</p></div>
                       </div>
-                      <p className="font-bold text-foreground">{money(groupSpend)}</p>
+                      <p className={`shrink-0 text-right text-sm font-bold ${net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground"}`}>{net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled"}</p>
                     </div>
                   </button>
                 );
               })}
             </div>
           </section>
-          {data.groups[0] && (
-            <GroupSummaryCard group={data.groups[0]} expenses={data.expenses} currentUserId={currentUserId} openModal={openModal} />
-          )}
         </>
       )}
     </main>
@@ -657,7 +749,7 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
 };
 
 const GroupSummaryCard = ({ group, expenses, currentUserId, openModal }: { group: GroupRow; expenses: ExpenseRow[]; currentUserId: string; openModal: (type: ModalType, item?: string) => void }) => {
-  const balances = computeGroupBalances(expenses, group);
+  const balances = computeGroupBalances(expenses, [], group, currentUserId);
   const groupExpenses = expenses.filter((expense) => expense.group_id === group.id);
   const mine = balances.filter((balance) => balance.toUserId === currentUserId);
   const owed = mine.reduce((sum, balance) => sum + balance.amount, 0);
@@ -679,6 +771,126 @@ const GroupSummaryCard = ({ group, expenses, currentUserId, openModal }: { group
         <Button onClick={() => openModal("settle-up", group.id)} variant="quiet" className="h-11"><ArrowRight />Settle</Button>
       </div>
     </section>
+  );
+};
+
+type HistoryItem = { id: string; created_at: string | null; kind: "expense" | "settlement"; title: string; detail: string; amount: number };
+
+const BalanceLabel = ({ amount }: { amount: number }) => (
+  <p className={`text-sm font-bold ${amount > 0 ? "text-success" : amount < 0 ? "text-warning" : "text-muted-foreground"}`}>
+    {amount > 0 ? `You are owed ${money(amount)}` : amount < 0 ? `You owe ${money(Math.abs(amount))}` : "Settled"}
+  </p>
+);
+
+const DetailHeader = ({ title, subtitle, balance, onBack }: { title: string; subtitle: string; balance: number; onBack: () => void }) => (
+  <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
+    <button onClick={onBack} className="mb-4 inline-flex items-center gap-2 text-sm font-bold text-primary"><ArrowLeft className="size-4" />Back to Split</button>
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        <h2 className="truncate text-2xl font-bold tracking-tight text-foreground">{title}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+      </div>
+      <div className="shrink-0 text-right"><BalanceLabel amount={balance} /></div>
+    </div>
+  </section>
+);
+
+const FriendDetailView = ({ friend, data, currentUserId, openModal, onBack }: { friend: FriendProfile; data: AppData; currentUserId: string; openModal: (type: ModalType, item?: string) => void; onBack: () => void }) => {
+  const balances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null });
+  const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+  const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+  const net = owedToMe - iOwe;
+  const expenses = data.expenses.filter((expense) => !expense.group_id && (expense.paid_by === friend.user_id || expense.paid_by === currentUserId) && expense.expense_splits?.some((split) => split.user_id === friend.user_id || split.user_id === currentUserId));
+  const settlements = data.settlements.filter((settlement) => !settlement.group_id && [settlement.from_user_id, settlement.to_user_id].includes(friend.user_id) && [settlement.from_user_id, settlement.to_user_id].includes(currentUserId));
+  const history: HistoryItem[] = [
+    ...expenses.map((expense) => ({
+      id: expense.id,
+      created_at: expense.created_at,
+      kind: "expense" as const,
+      title: expense.category || "Expense",
+      detail: `${expense.paid_by === currentUserId ? "You" : displayName(friend)} paid ${money(expense.amount)}${expense.split_type ? ` - ${expense.split_type} split` : ""}`,
+      amount: expense.amount,
+    })),
+    ...settlements.map((settlement) => ({
+      id: settlement.id,
+      created_at: settlement.created_at,
+      kind: "settlement" as const,
+      title: "Settlement",
+      detail: `${settlement.from_user_id === currentUserId ? "You" : displayName(friend)} paid ${settlement.to_user_id === currentUserId ? "you" : displayName(friend)}${settlement.note ? ` - ${settlement.note}` : ""}`,
+      amount: settlement.amount,
+    })),
+  ].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+  return (
+    <main className="space-y-6">
+      <DetailHeader title={displayName(friend)} subtitle={`@${friend.username || "user"}`} balance={net} onBack={onBack} />
+      <section className="grid grid-cols-2 gap-3">
+        <Button onClick={() => openModal("add-expense", friend.user_id)} className="h-12 shadow-primary-action"><Plus />Add Expense</Button>
+        <Button onClick={() => openModal("settle-up", friend.user_id)} variant="quiet" className="h-12"><Check />Settle Up</Button>
+      </section>
+      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
+        <SectionHeader title="Settlement history" />
+        <div className="space-y-2">{settlements.length === 0 ? <EmptyCard text="No settlements yet." /> : settlements.map((settlement) => <div key={settlement.id} className="rounded-2xl bg-elevated p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-foreground">{settlement.from_user_id === currentUserId ? "You" : displayName(friend)} paid {settlement.to_user_id === currentUserId ? "you" : displayName(friend)}</span><span className="font-bold text-primary">{money(settlement.amount)}</span></div><p className="mt-1 text-xs text-muted-foreground">{dateLabel(settlement.created_at)}{settlement.note ? ` - ${settlement.note}` : ""}</p></div>)}</div>
+      </section>
+      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
+        <SectionHeader title="History" />
+        <div className="space-y-3">
+          {history.length === 0 ? <EmptyCard text="No expenses yet. Add your first expense" /> : history.map((item) => (
+            <article key={`${item.kind}-${item.id}`} className="rounded-2xl bg-elevated p-4 shadow-soft">
+              <div className="flex items-start justify-between gap-3">
+                <div><h3 className="font-bold text-foreground">{item.title}</h3><p className="mt-1 text-sm text-muted-foreground">{item.detail}</p><p className="mt-1 text-xs text-muted-foreground">{dateLabel(item.created_at)}</p></div>
+                <p className="font-bold text-foreground">{money(item.amount)}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+      <Button variant="destructive" className="w-full" onClick={() => openModal("remove-friend", friend.user_id)}><UserMinus />Remove Friend</Button>
+    </main>
+  );
+};
+
+const GroupDetailView = ({ group, data, currentUserId, openModal, onBack }: { group: GroupRow; data: AppData; currentUserId: string; openModal: (type: ModalType, item?: string) => void; onBack: () => void }) => {
+  const balances = computeGroupBalances(data.expenses, data.settlements, group, currentUserId);
+  const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+  const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+  const net = owedToMe - iOwe;
+  const groupExpenses = data.expenses.filter((expense) => expense.group_id === group.id);
+  const settlements = data.settlements.filter((settlement) => settlement.group_id === group.id);
+  const history: HistoryItem[] = [
+    ...groupExpenses.map((expense) => ({ id: expense.id, created_at: expense.created_at, kind: "expense" as const, title: expense.category || "Expense", detail: `${expense.payer_profile?.user_id === currentUserId ? "You" : displayName(expense.payer_profile)} paid ${money(expense.amount)}`, amount: expense.amount })),
+    ...settlements.map((settlement) => ({ id: settlement.id, created_at: settlement.created_at, kind: "settlement" as const, title: "Settlement", detail: `${settlement.from_user_id === currentUserId ? "You" : displayName(settlement.from_profile)} paid ${settlement.to_user_id === currentUserId ? "you" : displayName(settlement.to_profile)}`, amount: settlement.amount })),
+  ].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+  return (
+    <main className="space-y-6">
+      <DetailHeader title={`${group.emoji || ""} ${group.name}`.trim()} subtitle={`${group.group_members.length} members`} balance={net} onBack={onBack} />
+      <section className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <Button onClick={() => openModal("group-expense", group.id)} className="h-12 shadow-primary-action"><Plus />Add Group Expense</Button>
+        <Button onClick={() => openModal("settle-up", group.id)} variant="quiet" className="h-12"><Check />Settle Up</Button>
+        <Button onClick={() => openModal("invite-members", group.id)} variant="quiet" className="h-12"><LinkIcon />Invite Members</Button>
+      </section>
+      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
+        <SectionHeader title="Who owes whom" />
+        <div className="space-y-2">{balances.length === 0 ? <EmptyCard text="All settled" /> : balances.map((balance) => <div key={`${balance.fromUserId}-${balance.toUserId}`} className="flex items-center justify-between rounded-2xl bg-elevated p-3 text-sm"><span className="font-semibold text-foreground">{balance.fromName} owes {balance.toName}</span><span className="font-bold text-primary">{money(balance.amount)}</span></div>)}</div>
+      </section>
+      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
+        <SectionHeader title="Members" />
+        <div className="grid gap-2 sm:grid-cols-2">{group.group_members.map((member) => <div key={member.user_id} className="rounded-2xl bg-elevated p-3"><p className="font-bold text-foreground">{member.user_id === currentUserId ? "You" : displayName(member.profiles)}</p><p className="text-xs text-muted-foreground">@{member.profiles.username || "user"}</p></div>)}</div>
+      </section>
+      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
+        <SectionHeader title="Settlement history" />
+        <div className="space-y-2">{settlements.length === 0 ? <EmptyCard text="No settlements yet." /> : settlements.map((settlement) => <div key={settlement.id} className="rounded-2xl bg-elevated p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="font-semibold text-foreground">{settlement.from_user_id === currentUserId ? "You" : displayName(settlement.from_profile)} paid {settlement.to_user_id === currentUserId ? "you" : displayName(settlement.to_profile)}</span><span className="font-bold text-primary">{money(settlement.amount)}</span></div><p className="mt-1 text-xs text-muted-foreground">{dateLabel(settlement.created_at)}{settlement.note ? ` - ${settlement.note}` : ""}</p></div>)}</div>
+      </section>
+      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
+        <SectionHeader title="Latest activity" />
+        <div className="space-y-3">{history.length === 0 ? <EmptyCard text="No expenses yet. Add your first expense" /> : history.map((item) => <article key={`${item.kind}-${item.id}`} className="rounded-2xl bg-elevated p-4 shadow-soft"><div className="flex items-start justify-between gap-3"><div><h3 className="font-bold text-foreground">{item.title}</h3><p className="mt-1 text-sm text-muted-foreground">{item.detail}</p><p className="mt-1 text-xs text-muted-foreground">{dateLabel(item.created_at)}</p></div><p className="font-bold text-foreground">{money(item.amount)}</p></div></article>)}</div>
+      </section>
+      <section className="grid grid-cols-2 gap-2">
+        <Button variant="quiet" onClick={() => openModal("edit-group", group.id)}><Pencil />Edit Group</Button>
+        <Button variant="destructive" onClick={() => openModal("delete-group", group.id)}><Trash2 />Delete Group</Button>
+      </section>
+    </main>
   );
 };
 
@@ -765,19 +977,20 @@ const ProfileView = ({ profile, email, createdAt, theme, onThemeToggle, onSave, 
   );
 };
 
-const ExpenseForm = ({ userId, friends, group, expense, onSubmit, onCancel }: { userId: string; friends: FriendProfile[]; group?: GroupRow; expense?: ExpenseRow; onSubmit: (payload: { expense: ExpensePayload; splits: Array<{ user_id: string; amount_owed: number }>; expenseId?: string }) => Promise<void>; onCancel: () => void }) => {
+const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCancel }: { userId: string; friends: FriendProfile[]; friend?: FriendProfile; group?: GroupRow; expense?: ExpenseRow; onSubmit: (payload: { expense: ExpensePayload; splits: Array<{ user_id: string; amount_owed: number }>; expenseId?: string }) => Promise<void>; onCancel: () => void }) => {
   const isEdit = Boolean(expense);
-  const members = group ? group.group_members.map((member) => ({ user_id: member.user_id, name: member.user_id === userId ? "You" : displayName(member.profiles) })) : [{ user_id: userId, name: "You" }, ...friends.map((friend) => ({ user_id: friend.user_id, name: displayName(friend) }))];
+  const members = group ? group.group_members.map((member) => ({ user_id: member.user_id, name: member.user_id === userId ? "You" : displayName(member.profiles) })) : friend ? [{ user_id: userId, name: "You" }, { user_id: friend.user_id, name: displayName(friend) }] : [{ user_id: userId, name: "You" }, ...friends.map((item) => ({ user_id: item.user_id, name: displayName(item) }))];
   const [name, setName] = useState(expense?.category || "");
   const [date, setDate] = useState(expense?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
   const [amount, setAmount] = useState(expense ? String(expense.amount) : "");
   const [note, setNote] = useState(expense?.note || "");
   const [status, setStatus] = useState<"pending" | "cleared">(expense?.status === "cleared" ? "cleared" : "pending");
-  const [splitOn, setSplitOn] = useState(Boolean(group || expense?.expense_splits?.length));
+  const [splitOn, setSplitOn] = useState(Boolean(group || friend || expense?.expense_splits?.length));
   const [strategy, setStrategy] = useState<SplitStrategy>((expense?.split_type as SplitStrategy) || "equal");
-  const [participants, setParticipants] = useState<string[]>(group ? members.map((member) => member.user_id) : [userId]);
+  const [participants, setParticipants] = useState<string[]>(group || friend ? members.map((member) => member.user_id) : [userId]);
   const [payer, setPayer] = useState(expense?.paid_by || userId);
   const [splitValues, setSplitValues] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
 
   const parsedAmount = Number(amount);
   const selectedMembers = members.filter((member) => participants.includes(member.user_id));
@@ -790,7 +1003,7 @@ const ExpenseForm = ({ userId, friends, group, expense, onSubmit, onCancel }: { 
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!name.trim() || !parsedAmount || parsedAmount <= 0) return;
+    if (!name.trim() || !parsedAmount || parsedAmount <= 0 || submitting) return;
 
     const splits: Array<{ user_id: string; amount_owed: number }> = [];
     if (splitOn) {
@@ -814,21 +1027,26 @@ const ExpenseForm = ({ userId, friends, group, expense, onSubmit, onCancel }: { 
       }
     }
 
-    await onSubmit({
-      expenseId: expense?.id,
-      expense: {
-        user_id: expense?.user_id || userId,
-        paid_by: splitOn ? payer : userId,
-        category: name.trim(),
-        amount: parsedAmount,
-        note: note.trim() || null,
-        status,
-        split_type: splitOn ? strategy : "none",
-        group_id: group?.id || expense?.group_id || null,
-        created_at: new Date(date).toISOString(),
-      },
-      splits,
-    });
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        expenseId: expense?.id,
+        expense: {
+          user_id: expense?.user_id || userId,
+          paid_by: splitOn ? payer : userId,
+          category: name.trim(),
+          amount: parsedAmount,
+          note: note.trim() || null,
+          status,
+          split_type: splitOn ? strategy : "none",
+          group_id: group?.id || expense?.group_id || null,
+          created_at: new Date(date).toISOString(),
+        },
+        splits,
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -847,7 +1065,7 @@ const ExpenseForm = ({ userId, friends, group, expense, onSubmit, onCancel }: { 
           </div>
         </div>
       )}
-      {!group && (
+      {!group && !friend && (
         <label className="flex items-center justify-between rounded-2xl bg-elevated p-4 text-sm font-semibold text-foreground">
           <span>Split with friends</span>
           <button type="button" onClick={() => setSplitOn((value) => !value)} className={`relative h-6 w-11 rounded-full transition-colors ${splitOn ? "bg-primary" : "bg-muted"}`}>
@@ -895,7 +1113,7 @@ const ExpenseForm = ({ userId, friends, group, expense, onSubmit, onCancel }: { 
       )}
       <div className="flex gap-2 pt-2">
         <Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" className="flex-1">{isEdit ? "Save" : "Add"}</Button>
+        <Button type="submit" className="flex-1" disabled={submitting}>{submitting ? "Saving..." : isEdit ? "Save" : "Add"}</Button>
       </div>
     </form>
   );
@@ -996,6 +1214,60 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
   );
 };
 
+const PickerList = ({ items, emptyText, onPick }: { items: Array<{ id: string; title: string; subtitle: string }>; emptyText: string; onPick: (id: string) => void }) => (
+  <div className="space-y-3">
+    {items.length === 0 ? <EmptyCard text={emptyText} /> : items.map((item) => (
+      <button key={item.id} type="button" onClick={() => onPick(item.id)} className="flex w-full items-center justify-between rounded-2xl bg-elevated p-4 text-left shadow-soft">
+        <div><p className="font-bold text-foreground">{item.title}</p><p className="text-sm text-muted-foreground">{item.subtitle}</p></div>
+        <ChevronRight className="size-4 text-muted-foreground" />
+      </button>
+    ))}
+  </div>
+);
+
+const SettleForm = ({ currentUserId, friend, group, balances, defaultAmount, onSubmit, onCancel }: { currentUserId: string; friend?: FriendProfile; group?: GroupRow; balances: DebtBalance[]; defaultAmount: number; onSubmit: (payload: { from_user_id: string; to_user_id: string; amount: number; group_id?: string | null; note?: string | null }) => Promise<void>; onCancel: () => void }) => {
+  const firstBalance = balances[0];
+  const [fromUserId, setFromUserId] = useState(firstBalance?.fromUserId || currentUserId);
+  const [toUserId, setToUserId] = useState(firstBalance?.toUserId || friend?.user_id || currentUserId);
+  const [amount, setAmount] = useState(defaultAmount > 0 ? String(defaultAmount.toFixed(2)) : "");
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const members = group ? group.group_members.map((member) => ({ user_id: member.user_id, name: member.user_id === currentUserId ? "You" : displayName(member.profiles) })) : [{ user_id: currentUserId, name: "You" }, ...(friend ? [{ user_id: friend.user_id, name: displayName(friend) }] : [])];
+  const parsed = Number(amount);
+  const pickSuggestion = (balance: DebtBalance) => {
+    setFromUserId(balance.fromUserId);
+    setToUserId(balance.toUserId);
+    setAmount(balance.amount.toFixed(2));
+  };
+
+  return (
+    <form className="space-y-4" onSubmit={async (event) => {
+      event.preventDefault();
+      if (!parsed || parsed <= 0 || fromUserId === toUserId || submitting) return;
+      setSubmitting(true);
+      try {
+        await onSubmit({ from_user_id: fromUserId, to_user_id: toUserId, amount: parsed, group_id: group?.id || null, note: note.trim() || null });
+      } finally {
+        setSubmitting(false);
+      }
+    }}>
+      {balances.length > 0 && (
+        <div className="space-y-2 rounded-2xl bg-elevated p-3">
+          <p className="text-xs font-bold uppercase text-muted-foreground">Suggested settlements</p>
+          {balances.map((balance) => <button key={`${balance.fromUserId}-${balance.toUserId}`} type="button" onClick={() => pickSuggestion(balance)} className="flex w-full items-center justify-between rounded-xl bg-background px-3 py-2 text-left text-sm"><span className="font-semibold text-foreground">{balance.fromName} pays {balance.toName}</span><span className="font-bold text-primary">{money(balance.amount)}</span></button>)}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-sm font-semibold text-foreground">From<select value={fromUserId} onChange={(event) => setFromUserId(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm">{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>
+        <label className="text-sm font-semibold text-foreground">To<select value={toUserId} onChange={(event) => setToUserId(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm">{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>
+      </div>
+      <Field label="Amount" type="number" placeholder="0" value={amount} onChange={setAmount} />
+      <Textarea label="Note (optional)" placeholder="Paid by UPI, cash..." value={note} onChange={setNote} />
+      <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button type="submit" className="flex-1" disabled={submitting || !parsed || parsed <= 0 || fromUserId === toUserId}>{submitting ? "Saving..." : "Confirm Settlement"}</Button></div>
+    </form>
+  );
+};
+
 const ActionModal = ({
   modal,
   data,
@@ -1018,7 +1290,8 @@ const ActionModal = ({
   const group = data.groups.find((item) => item.id === modal.item) || data.groups.find((item) => item.id === expense?.group_id);
   const friend = data.friends.find((item) => item.user_id === modal.item);
   const groupExpenses = group ? data.expenses.filter((item) => item.group_id === group.id) : [];
-  const balances = group ? computeGroupBalances(data.expenses, group) : [];
+  const balances = group ? computeGroupBalances(data.expenses, data.settlements, group, currentUserId) : [];
+  const friendBalances = friend ? buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null }) : [];
 
   const title =
     type === "add-expense" ? "Add expense" :
@@ -1029,14 +1302,17 @@ const ActionModal = ({
     type === "delete-expense" ? "Delete expense" :
     type === "clear-expense" ? "Mark as cleared" :
     type === "create-group" ? "Create group" :
+    type === "choose-friend-expense" ? "Choose friend" :
+    type === "choose-group-expense" ? "Choose group" :
     type === "edit-group" ? "Edit group" :
     type === "delete-group" ? "Delete group" :
     type === "invite-members" ? "Invite members" :
     type === "group-details" ? group?.name || "Group details" :
     type === "friend-details" ? `${displayName(friend)} details` :
     type === "add-friend" ? "Add friend" :
+    type === "remove-friend" ? "Remove friend" :
     type === "friend-requests" ? "Friend requests" :
-    type === "settle-up" ? `Settle up - ${group?.name || ""}` :
+    type === "settle-up" ? `Settle up - ${group?.name || displayName(friend) || ""}` :
     type === "logout" ? "Logout" :
     type === "notifications" ? "Notifications" : "Saved";
 
@@ -1046,19 +1322,30 @@ const ActionModal = ({
   };
 
   const saveExpense = async ({ expense: payload, splits, expenseId }: { expense: ExpensePayload; splits: Array<{ user_id: string; amount_owed: number }>; expenseId?: string }) => {
-    if (expenseId) {
-      const { error } = await supabase.from("expenses").update(payload).eq("id", expenseId);
-      if (error) throw error;
-      await supabase.from("expense_splits").delete().eq("expense_id", expenseId);
-      if (splits.length) await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: expenseId, has_paid: payload.status === "cleared" })));
-    } else {
-      const { data: inserted, error } = await supabase.from("expenses").insert(payload).select("id").single();
-      if (error || !inserted) throw error;
-      if (splits.length) await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: inserted.id, has_paid: payload.status === "cleared" })));
-      if (payload.group_id) supabase.functions.invoke("send-expense-notification", { body: { expense_id: inserted.id } }).catch(() => undefined);
+    try {
+      if (expenseId) {
+        const { error } = await supabase.from("expenses").update(payload).eq("id", expenseId);
+        if (error) throw error;
+        await supabase.from("expense_splits").delete().eq("expense_id", expenseId);
+        if (splits.length) {
+          const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: expenseId, has_paid: payload.status === "cleared" })));
+          if (splitError) throw splitError;
+        }
+      } else {
+        const { data: inserted, error } = await supabase.from("expenses").insert(payload).select("id").single();
+        if (error || !inserted) throw error;
+        if (splits.length) {
+          const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: inserted.id, has_paid: payload.status === "cleared" })));
+          if (splitError) throw splitError;
+        }
+        if (payload.group_id) supabase.functions.invoke("send-expense-notification", { body: { expense_id: inserted.id } }).catch(() => undefined);
+      }
+      toast({ title: "Expense saved", description: "Balances and history were updated." });
+      await closeAndRefresh();
+    } catch (error) {
+      toast({ title: "Save failed", description: error instanceof Error ? error.message : "Could not save expense.", variant: "destructive" });
+      throw error;
     }
-    toast({ title: "Saved" });
-    await closeAndRefresh();
   };
 
   const deleteExpense = async () => {
@@ -1108,8 +1395,11 @@ const ActionModal = ({
         </DialogHeader>
 
         {(type === "add-expense" || type === "group-expense" || type === "edit-expense") && (
-          <ExpenseForm userId={currentUserId} friends={data.friends} group={type === "group-expense" ? group : undefined} expense={type === "edit-expense" ? expense : undefined} onSubmit={saveExpense} onCancel={onClose} />
+          <ExpenseForm userId={currentUserId} friends={data.friends} friend={type === "add-expense" ? friend : undefined} group={type === "group-expense" ? group : undefined} expense={type === "edit-expense" ? expense : undefined} onSubmit={saveExpense} onCancel={onClose} />
         )}
+
+        {type === "choose-friend-expense" && <PickerList items={data.friends.map((item) => ({ id: item.user_id, title: displayName(item), subtitle: `@${item.username || "user"}` }))} emptyText="Add friends to start splitting expenses" onPick={(id) => openModal("add-expense", id)} />}
+        {type === "choose-group-expense" && <PickerList items={data.groups.map((item) => ({ id: item.id, title: item.name, subtitle: `${item.group_members.length} members` }))} emptyText="Create a group to split shared expenses" onPick={(id) => openModal("group-expense", id)} />}
 
         {type === "log-tiffin" && <TiffinForm userId={currentUserId} defaultCategory={modal.item} onSubmit={async (payload) => { const { error } = await supabase.from("expenses").insert(payload); if (error) throw error; await closeAndRefresh(); }} onCancel={onClose} />}
         {(type === "create-group" || type === "edit-group") && <CreateGroupForm friends={data.friends} group={type === "edit-group" ? group : undefined} onSubmit={saveGroup} onCancel={onClose} />}
@@ -1159,15 +1449,14 @@ const ActionModal = ({
           </div>
         )}
 
-        {type === "settle-up" && group && (
-          <div className="space-y-2 rounded-2xl bg-elevated p-4 text-sm">
-            {balances.length === 0 ? <p className="text-muted-foreground">Nothing to settle.</p> : balances.map((balance) => <div key={`${balance.fromUserId}-${balance.toUserId}`} className="flex items-center justify-between gap-2"><span className="text-muted-foreground">{balance.fromName} pays {balance.toName}</span><Button size="sm" onClick={async () => { const ids = groupExpenses.filter((item) => item.paid_by === balance.toUserId).flatMap((item) => item.expense_splits?.filter((split) => split.user_id === balance.fromUserId && !split.has_paid).map((split) => split.id) || []); if (ids.length) await supabase.from("expense_splits").update({ has_paid: true }).in("id", ids); await closeAndRefresh(); }}>{money(balance.amount)}</Button></div>)}
-          </div>
+        {type === "settle-up" && (group || friend) && (
+          <SettleForm currentUserId={currentUserId} friend={friend} group={group} balances={group ? balances : friendBalances} defaultAmount={(group ? balances : friendBalances).find((balance) => balance.fromUserId === currentUserId || balance.toUserId === currentUserId)?.amount || 0} onSubmit={saveSettlement} onCancel={onClose} />
         )}
 
         {type === "delete-expense" && <ConfirmBox text={`Delete "${expense?.category || "expense"}"?`} action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
         {type === "clear-expense" && <ConfirmBox text={`Mark "${expense?.category || "expense"}" as cleared?`} action="Mark cleared" onCancel={onClose} onConfirm={clearExpense} />}
         {type === "delete-group" && group && <ConfirmBox text={`Delete "${group.name}" and its group data?`} action="Delete" destructive onCancel={onClose} onConfirm={async () => { await supabase.from("groups").delete().eq("id", group.id); await closeAndRefresh(); }} />}
+        {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { await supabase.from("connections").delete().eq("id", friend.connection_id); await closeAndRefresh(); }} />}
         {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
         {type === "notifications" && <EmptyCard text={`${data.incomingRequests.length} incoming friend request(s), ${data.outgoingRequests.length} pending sent request(s).`} />}
         {type === "chart-details" && <div className="rounded-2xl bg-elevated p-4 text-sm text-muted-foreground">Spendova uses your live expenses, split debts, and food logs for this summary.</div>}
@@ -1210,7 +1499,13 @@ const ConfirmBox = ({ text, action, destructive, onCancel, onConfirm }: { text: 
 
 const Index = () => {
   const { user, profile, loading: authLoading } = useAuth();
-  const [activeTab, setActiveTab] = useState<TabKey>("home");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const params = useParams();
+  const isSplitRoute = location.pathname.startsWith("/split");
+  const friendDetailId = location.pathname.startsWith("/split/friend/") ? params.id : undefined;
+  const groupDetailId = location.pathname.startsWith("/split/group/") ? params.id : undefined;
+  const [activeTab, setActiveTabState] = useState<TabKey>(isSplitRoute ? "split" : "home");
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [modal, setModal] = useState<ModalState>({ type: null });
   const { data, loading, refresh } = useSpendovaData(user?.id);
@@ -1224,10 +1519,26 @@ const Index = () => {
 
   if (!authLoading && !user) return <Navigate to="/login" replace />;
 
-  const title = tabs.find((tab) => tab.key === activeTab)?.label ?? "Home";
+  const setActiveTab = (tab: TabKey) => {
+    setActiveTabState(tab);
+    if (tab === "split") navigate("/split");
+    else if (location.pathname.startsWith("/split")) navigate("/dashboard");
+  };
+
+  const saveSettlement = async (payload: { from_user_id: string; to_user_id: string; amount: number; group_id?: string | null; note?: string | null }) => {
+    const { error } = await supabase.from("split_settlements" as never).insert(payload as never);
+    if (error) {
+      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Settlement saved" });
+    await closeAndRefresh();
+  };
+  const activeContentTab: TabKey = isSplitRoute ? "split" : activeTab;
+  const title = friendDetailId ? "Friend" : groupDetailId ? "Group" : tabs.find((tab) => tab.key === activeContentTab)?.label ?? "Home";
   const toggleTheme = () => setTheme((current) => (current === "dark" ? "light" : "dark"));
   const openModal = (type: ModalType, item?: string) => setModal({ type, item });
-  const summary = user ? getSummary(data.expenses, user.id) : getSummary([], "");
+  const summary = user ? getSummary(data.expenses, user.id, data.settlements) : getSummary([], "");
 
   const saveProfile = async (fullName: string, username: string) => {
     if (!user) return;
@@ -1243,22 +1554,30 @@ const Index = () => {
     return <div className="grid min-h-screen place-items-center bg-background text-foreground">Loading Spendova...</div>;
   }
 
+  const friendDetail = friendDetailId ? data.friends.find((friend) => friend.user_id === friendDetailId) : undefined;
+  const groupDetail = groupDetailId ? data.groups.find((group) => group.id === groupDetailId) : undefined;
+  const backToSplit = () => navigate("/split");
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto min-h-screen max-w-3xl px-4 pb-36 sm:px-6">
         <AppHeader title={title === "Home" ? "Overview" : title} theme={theme} onThemeToggle={toggleTheme} openModal={openModal} />
-        {activeTab === "home" && <HomeView expenses={data.expenses} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
-        {activeTab === "personal" && <PersonalView expenses={data.expenses} summary={summary} currentUserId={user.id} openModal={openModal} />}
-        {activeTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
-        {activeTab === "tiffin" && <TiffinView expenses={data.expenses} openModal={openModal} />}
-        {activeTab === "profile" && <ProfileView profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
+        {friendDetailId && !friendDetail && <EmptyCard text="Friend not found." />}
+        {groupDetailId && !groupDetail && <EmptyCard text="Group not found." />}
+        {friendDetail && <FriendDetailView friend={friendDetail} data={data} currentUserId={user.id} openModal={openModal} onBack={backToSplit} />}
+        {groupDetail && <GroupDetailView group={groupDetail} data={data} currentUserId={user.id} openModal={openModal} onBack={backToSplit} />}
+        {!friendDetailId && !groupDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} summary={summary} currentUserId={user.id} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && activeContentTab === "tiffin" && <TiffinView expenses={data.expenses} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && activeContentTab === "profile" && <ProfileView profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
         <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p>
       </div>
       <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-3xl px-4 pb-4">
         <div className="grid grid-cols-5 rounded-[1.4rem] border border-border/80 bg-card p-2 shadow-panel backdrop-blur">
           {tabs.map((tab) => {
             const Icon = tab.icon;
-            const active = activeTab === tab.key;
+            const active = activeContentTab === tab.key;
             return (
               <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`flex flex-col items-center gap-1 rounded-2xl px-1 py-2 text-[11px] font-bold transition-all ${active ? "bg-primary text-primary-foreground shadow-primary-action" : "text-muted-foreground hover:text-foreground"}`}>
                 <Icon className="size-5" />
