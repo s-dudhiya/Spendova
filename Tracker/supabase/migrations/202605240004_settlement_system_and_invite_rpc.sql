@@ -18,6 +18,14 @@ ADD COLUMN IF NOT EXISTS expense_id uuid REFERENCES public.expenses(id) ON DELET
 ALTER TABLE public.expense_splits
 ADD COLUMN IF NOT EXISTS amount_paid numeric NOT NULL DEFAULT 0;
 
+CREATE TABLE IF NOT EXISTS public.split_settlement_applications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  settlement_id uuid NOT NULL REFERENCES public.split_settlements(id) ON DELETE CASCADE,
+  split_id uuid NOT NULL REFERENCES public.expense_splits(id) ON DELETE CASCADE,
+  amount numeric NOT NULL CHECK (amount > 0),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 UPDATE public.expense_splits
 SET amount_paid = amount_owed
 WHERE COALESCE(has_paid, false) = true
@@ -89,6 +97,10 @@ DECLARE
   v_split record;
   v_apply numeric;
   v_settlement_id uuid;
+  v_forward_open numeric := 0;
+  v_reverse_open numeric := 0;
+  v_net_required numeric := 0;
+  v_is_full_net_friend_settlement boolean := false;
 BEGIN
   IF v_auth IS NULL THEN
     RAISE EXCEPTION 'Authentication required';
@@ -106,6 +118,82 @@ BEGIN
   INSERT INTO public.split_settlements (from_user_id, to_user_id, amount, group_id, expense_id, note)
   VALUES (p_from_user_id, p_to_user_id, p_amount, p_group_id, p_expense_id, p_note)
   RETURNING id INTO v_settlement_id;
+
+  IF p_group_id IS NULL AND p_expense_id IS NULL THEN
+    SELECT COALESCE(SUM(es.amount_owed - COALESCE(es.amount_paid, 0)), 0) INTO v_forward_open
+    FROM public.expense_splits es
+    JOIN public.expenses e ON e.id = es.expense_id
+    WHERE e.group_id IS NULL
+      AND es.user_id = p_from_user_id
+      AND e.paid_by = p_to_user_id
+      AND COALESCE(es.amount_paid, 0) < es.amount_owed
+      AND e.created_at <= now();
+
+    SELECT COALESCE(SUM(es.amount_owed - COALESCE(es.amount_paid, 0)), 0) INTO v_reverse_open
+    FROM public.expense_splits es
+    JOIN public.expenses e ON e.id = es.expense_id
+    WHERE e.group_id IS NULL
+      AND es.user_id = p_to_user_id
+      AND e.paid_by = p_from_user_id
+      AND COALESCE(es.amount_paid, 0) < es.amount_owed
+      AND e.created_at <= now();
+
+    v_net_required := v_forward_open - v_reverse_open;
+    v_is_full_net_friend_settlement :=
+      v_forward_open > 0
+      AND ABS(p_amount - v_net_required) <= 0.01;
+
+    IF v_is_full_net_friend_settlement THEN
+      FOR v_split IN
+        SELECT es.id, es.amount_owed, COALESCE(es.amount_paid, 0) AS amount_paid
+        FROM public.expense_splits es
+        JOIN public.expenses e ON e.id = es.expense_id
+        WHERE e.group_id IS NULL
+          AND e.created_at <= now()
+          AND (
+            (es.user_id = p_from_user_id AND e.paid_by = p_to_user_id)
+            OR
+            (es.user_id = p_to_user_id AND e.paid_by = p_from_user_id)
+          )
+          AND COALESCE(es.amount_paid, 0) < es.amount_owed
+        ORDER BY e.created_at ASC
+      LOOP
+        v_apply := v_split.amount_owed - v_split.amount_paid;
+        INSERT INTO public.split_settlement_applications (settlement_id, split_id, amount)
+        VALUES (v_settlement_id, v_split.id, v_apply);
+
+        UPDATE public.expense_splits
+        SET amount_paid = amount_owed,
+            has_paid = true,
+            updated_at = now()
+        WHERE id = v_split.id;
+      END LOOP;
+
+      UPDATE public.expenses e
+      SET status = 'cleared',
+          updated_at = now()
+      WHERE e.group_id IS NULL
+        AND e.created_at <= now()
+        AND (
+          e.paid_by = p_from_user_id
+          OR e.paid_by = p_to_user_id
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM public.expense_splits es
+          WHERE es.expense_id = e.id
+            AND (es.user_id = p_from_user_id OR es.user_id = p_to_user_id)
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM public.expense_splits es
+          WHERE es.expense_id = e.id
+            AND COALESCE(es.amount_paid, 0) < es.amount_owed
+        );
+
+      RETURN v_settlement_id;
+    END IF;
+  END IF;
 
   FOR v_split IN
     SELECT es.id, es.amount_owed, COALESCE(es.amount_paid, 0) AS amount_paid
@@ -125,6 +213,8 @@ BEGIN
         has_paid = COALESCE(amount_paid, 0) + v_apply >= amount_owed,
         updated_at = now()
     WHERE id = v_split.id;
+    INSERT INTO public.split_settlement_applications (settlement_id, split_id, amount)
+    VALUES (v_settlement_id, v_split.id, v_apply);
     v_remaining := v_remaining - v_apply;
   END LOOP;
 
@@ -201,6 +291,7 @@ DECLARE
   v_remaining numeric;
   v_split record;
   v_reverse numeric;
+  v_has_applications boolean := false;
 BEGIN
   IF v_auth IS NULL THEN
     RAISE EXCEPTION 'Authentication required';
@@ -218,8 +309,43 @@ BEGIN
     RAISE EXCEPTION 'Only involved users can delete this settlement';
   END IF;
 
-  v_remaining := v_settlement.amount;
+  SELECT EXISTS (
+    SELECT 1 FROM public.split_settlement_applications
+    WHERE settlement_id = p_settlement_id
+  ) INTO v_has_applications;
 
+  IF v_has_applications THEN
+    FOR v_split IN
+      SELECT app.split_id AS id, app.amount
+      FROM public.split_settlement_applications app
+      WHERE app.settlement_id = p_settlement_id
+    LOOP
+      UPDATE public.expense_splits
+      SET amount_paid = GREATEST(COALESCE(amount_paid, 0) - v_split.amount, 0),
+          has_paid = GREATEST(COALESCE(amount_paid, 0) - v_split.amount, 0) >= amount_owed,
+          updated_at = now()
+      WHERE id = v_split.id;
+    END LOOP;
+
+    UPDATE public.expenses e
+    SET status = 'pending',
+        updated_at = now()
+    WHERE EXISTS (
+      SELECT 1
+      FROM public.split_settlement_applications app
+      JOIN public.expense_splits es ON es.id = app.split_id
+      WHERE app.settlement_id = p_settlement_id
+        AND es.expense_id = e.id
+        AND COALESCE(es.amount_paid, 0) < es.amount_owed
+    );
+
+    DELETE FROM public.split_settlements
+    WHERE id = p_settlement_id;
+
+    RETURN true;
+  END IF;
+
+  v_remaining := v_settlement.amount;
   FOR v_split IN
     SELECT es.id, COALESCE(es.amount_paid, 0) AS amount_paid, es.amount_owed
     FROM public.expense_splits es
@@ -260,3 +386,72 @@ BEGIN
   RETURN true;
 END;
 $$;
+
+DO $$
+DECLARE
+  v_settlement record;
+  v_forward_open numeric;
+  v_reverse_open numeric;
+  v_net_required numeric;
+  v_split record;
+  v_apply numeric;
+BEGIN
+  FOR v_settlement IN
+    SELECT s.*
+    FROM public.split_settlements s
+    WHERE s.group_id IS NULL
+      AND s.expense_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.split_settlement_applications app
+        WHERE app.settlement_id = s.id
+      )
+    ORDER BY s.created_at ASC
+  LOOP
+    SELECT COALESCE(SUM(es.amount_owed - COALESCE(es.amount_paid, 0)), 0) INTO v_forward_open
+    FROM public.expense_splits es
+    JOIN public.expenses e ON e.id = es.expense_id
+    WHERE e.group_id IS NULL
+      AND es.user_id = v_settlement.from_user_id
+      AND e.paid_by = v_settlement.to_user_id
+      AND e.created_at <= v_settlement.created_at
+      AND COALESCE(es.amount_paid, 0) < es.amount_owed;
+
+    SELECT COALESCE(SUM(es.amount_owed - COALESCE(es.amount_paid, 0)), 0) INTO v_reverse_open
+    FROM public.expense_splits es
+    JOIN public.expenses e ON e.id = es.expense_id
+    WHERE e.group_id IS NULL
+      AND es.user_id = v_settlement.to_user_id
+      AND e.paid_by = v_settlement.from_user_id
+      AND e.created_at <= v_settlement.created_at
+      AND COALESCE(es.amount_paid, 0) < es.amount_owed;
+
+    v_net_required := (v_forward_open + v_settlement.amount) - v_reverse_open;
+
+    IF ABS(v_settlement.amount - v_net_required) <= 0.01 THEN
+      FOR v_split IN
+        SELECT es.id, es.amount_owed, COALESCE(es.amount_paid, 0) AS amount_paid
+        FROM public.expense_splits es
+        JOIN public.expenses e ON e.id = es.expense_id
+        WHERE e.group_id IS NULL
+          AND e.created_at <= v_settlement.created_at
+          AND (
+            (es.user_id = v_settlement.from_user_id AND e.paid_by = v_settlement.to_user_id)
+            OR
+            (es.user_id = v_settlement.to_user_id AND e.paid_by = v_settlement.from_user_id)
+          )
+          AND COALESCE(es.amount_paid, 0) < es.amount_owed
+      LOOP
+        v_apply := v_split.amount_owed - v_split.amount_paid;
+        INSERT INTO public.split_settlement_applications (settlement_id, split_id, amount)
+        VALUES (v_settlement.id, v_split.id, v_apply);
+
+        UPDATE public.expense_splits
+        SET amount_paid = amount_owed,
+            has_paid = true,
+            updated_at = now()
+        WHERE id = v_split.id;
+      END LOOP;
+    END IF;
+  END LOOP;
+END $$;
