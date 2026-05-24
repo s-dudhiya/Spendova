@@ -694,6 +694,100 @@ function getSummary(expenses: ExpenseRow[], userId: string, settlements: SplitSe
   return { totalLent, totalOwed, net: totalLent - totalOwed, personal, personalPending, personalCleared, tiffinPending, tiffinCleared };
 }
 
+type ChartMode = "day" | "week" | "month" | "year" | "custom";
+type ChartRange = "7d" | "30d" | "3m" | "6m" | "1y";
+
+const expenseImpactForUser = (expense: ExpenseRow, userId: string) => Math.max(Number(getExpenseShare(expense, userId) || 0), 0);
+const expenseSpendType = (expense: ExpenseRow) => {
+  if (expense.category === "tiffin" || expense.category === "delivery") return "tiffin";
+  if (expense.group_id) return "group";
+  if (expense.expense_splits?.length) return "split";
+  return "personal";
+};
+
+const getRangeStart = (range: ChartRange) => {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  if (range === "7d") start.setDate(start.getDate() - 6);
+  if (range === "30d") start.setDate(start.getDate() - 29);
+  if (range === "3m") start.setMonth(start.getMonth() - 3);
+  if (range === "6m") start.setMonth(start.getMonth() - 6);
+  if (range === "1y") start.setFullYear(start.getFullYear() - 1);
+  return start;
+};
+
+const bucketKey = (date: Date, mode: ChartMode) => {
+  if (mode === "day") return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${date.getHours()}`;
+  if (mode === "year") return `${date.getFullYear()}-${date.getMonth()}`;
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+};
+
+const bucketLabel = (date: Date, mode: ChartMode) => {
+  if (mode === "day") return date.toLocaleTimeString("en-IN", { hour: "numeric" });
+  if (mode === "week") return date.toLocaleDateString("en-IN", { weekday: "short" });
+  if (mode === "month" || mode === "custom") return String(date.getDate());
+  return date.toLocaleDateString("en-IN", { month: "short" });
+};
+
+function buildSpendingChart(expenses: ExpenseRow[], userId: string, mode: ChartMode, range: ChartRange, customStart: string, customEnd: string) {
+  const now = new Date();
+  const start = mode === "custom" && customStart ? new Date(`${customStart}T00:00:00`) : getRangeStart(range);
+  const end = mode === "custom" && customEnd ? new Date(`${customEnd}T23:59:59`) : now;
+  const buckets = new Map<string, { label: string; value: number; date: Date }>();
+  const cursor = new Date(start);
+  cursor.setMinutes(0, 0, 0);
+  while (cursor <= end) {
+    const key = bucketKey(cursor, mode);
+    buckets.set(key, { label: bucketLabel(cursor, mode), value: 0, date: new Date(cursor) });
+    if (mode === "day") cursor.setHours(cursor.getHours() + 1);
+    else if (mode === "year") cursor.setMonth(cursor.getMonth() + 1);
+    else cursor.setDate(cursor.getDate() + 1);
+  }
+  expenses.forEach((expense) => {
+    if (!expense.created_at) return;
+    const date = new Date(expense.created_at);
+    if (date < start || date > end) return;
+    const key = bucketKey(date, mode);
+    const existing = buckets.get(key) || { label: bucketLabel(date, mode), value: 0, date };
+    existing.value += expenseImpactForUser(expense, userId);
+    buckets.set(key, existing);
+  });
+  return [...buckets.values()].sort((a, b) => a.date.getTime() - b.date.getTime());
+}
+
+function getSpendingAnalytics(expenses: ExpenseRow[], userId: string) {
+  const totals = { personal: 0, split: 0, tiffin: 0, group: 0 };
+  const byCategory: Record<string, number> = {};
+  const byDay: Record<string, number> = {};
+  const byMonth: Record<string, number> = {};
+  let total = 0;
+  expenses.forEach((expense) => {
+    const impact = expenseImpactForUser(expense, userId);
+    if (impact <= 0) return;
+    const type = expenseSpendType(expense);
+    totals[type] += impact;
+    total += impact;
+    const category = expense.category || type;
+    byCategory[category] = (byCategory[category] || 0) + impact;
+    const date = expense.created_at ? new Date(expense.created_at) : new Date();
+    const dayKey = date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+    const monthKey = date.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+    byDay[dayKey] = (byDay[dayKey] || 0) + impact;
+    byMonth[monthKey] = (byMonth[monthKey] || 0) + impact;
+  });
+  const topEntry = (items: Record<string, number>, dir: "high" | "low") => Object.entries(items).sort((a, b) => dir === "high" ? b[1] - a[1] : a[1] - b[1])[0];
+  const days = Math.max(Object.keys(byDay).length, 1);
+  const months = Math.max(Object.keys(byMonth).length, 1);
+  const weekly = total / Math.max(days / 7, 1);
+  const currentMonth = new Date();
+  const previousMonth = new Date(currentMonth);
+  previousMonth.setMonth(currentMonth.getMonth() - 1);
+  const currentMonthTotal = expenses.filter((expense) => expense.created_at && new Date(expense.created_at).getMonth() === currentMonth.getMonth() && new Date(expense.created_at).getFullYear() === currentMonth.getFullYear()).reduce((sum, expense) => sum + expenseImpactForUser(expense, userId), 0);
+  const previousMonthTotal = expenses.filter((expense) => expense.created_at && new Date(expense.created_at).getMonth() === previousMonth.getMonth() && new Date(expense.created_at).getFullYear() === previousMonth.getFullYear()).reduce((sum, expense) => sum + expenseImpactForUser(expense, userId), 0);
+  const trend = previousMonthTotal > 0 ? ((currentMonthTotal - previousMonthTotal) / previousMonthTotal) * 100 : currentMonthTotal > 0 ? 100 : 0;
+  return { total, totals, highestCategory: topEntry(byCategory, "high"), lowestCategory: topEntry(byCategory, "low"), averageDaily: total / days, averageWeekly: weekly, averageMonthly: total / months, topDay: topEntry(byDay, "high"), topMonth: topEntry(byMonth, "high"), trend };
+}
+
 function computeGroupBalances(expenses: ExpenseRow[], settlements: SplitSettlementRow[], group: GroupRow, currentUserId?: string) {
   const balances = buildDebtBalances(expenses, settlements, { currentUserId, groupId: group.id });
   const memberNames = Object.fromEntries(group.group_members.map((member) => [member.user_id, member.user_id === currentUserId ? "You" : displayName(member.profiles)]));
@@ -704,6 +798,10 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
   const [range, setRange] = useState<"week" | "month" | "year">("month");
   const [status, setStatus] = useState<"all" | "pending" | "cleared">("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [chartMode, setChartMode] = useState<ChartMode>("week");
+  const [chartRange, setChartRange] = useState<ChartRange>("7d");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
   const clear = () => { setRange("month"); setStatus("all"); };
   const activeFilterCount = (range !== "month" ? 1 : 0) + (status !== "all" ? 1 : 0);
   const rangedExpenses = filterExpensesByRange(expenses, range);
@@ -728,6 +826,8 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
   const trendLabel = `${rawTrend > 0 ? "+" : ""}${Number(rawTrend.toFixed(1)).toString().replace(".0", "")}%`;
   const TrendIcon = trendDirection === "up" ? TrendingUp : trendDirection === "down" ? TrendingDown : ArrowRight;
   const trendClass = trendDirection === "up" ? "bg-warning/15 text-warning" : trendDirection === "down" ? "bg-success/15 text-success" : "bg-muted text-muted-foreground";
+  const chartData = useMemo(() => buildSpendingChart(expenses, userId, chartMode, chartRange, customStart, customEnd), [expenses, userId, chartMode, chartRange, customStart, customEnd]);
+  const chartMax = Math.max(...chartData.map((item) => item.value), 1);
 
   return (
     <main className="space-y-6">
@@ -753,13 +853,46 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
 
       <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
         <SectionHeader title="Spending chart" action="Details" onAction={() => openModal("chart-details")} />
-        <button onClick={() => openModal("chart-details")} className="flex h-32 w-full items-end gap-3 rounded-2xl bg-elevated p-4" aria-label="Weekly spending bar chart">
-          {[summary.personal, summary.totalLent, summary.totalOwed, summary.tiffinPending, summary.tiffinCleared, summary.personalPending, summary.personalCleared].map((value, index) => {
-            const max = Math.max(summary.personal, summary.totalLent, summary.totalOwed, summary.tiffinPending, summary.tiffinCleared, 1);
-            return <span key={index} className="flex flex-1 flex-col items-center gap-2"><span className="w-full rounded-full bg-primary/80" style={{ height: `${Math.max(8, (value / max) * 100)}%` }} /></span>;
-          })}
-        </button>
-        <div className="mt-3 flex justify-between text-xs font-medium text-muted-foreground"><span>Personal</span><span>Lent</span><span>Owed</span><span>Food</span></div>
+        <div className="mb-3 flex gap-1 overflow-x-auto rounded-full bg-elevated p-1">
+          {(["day", "week", "month", "year", "custom"] as const).map((mode) => (
+            <button key={mode} type="button" onClick={() => setChartMode(mode)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold capitalize ${chartMode === mode ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{mode}</button>
+          ))}
+        </div>
+        <div className="mb-3 flex gap-1 overflow-x-auto">
+          {[
+            ["7d", "Last 7 Days"],
+            ["30d", "Last 30 Days"],
+            ["3m", "Last 3 Months"],
+            ["6m", "Last 6 Months"],
+            ["1y", "Last Year"],
+          ].map(([value, label]) => (
+            <button key={value} type="button" onClick={() => setChartRange(value as ChartRange)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${chartRange === value ? "bg-primary text-primary-foreground" : "bg-elevated text-muted-foreground"}`}>{label}</button>
+          ))}
+        </div>
+        {chartMode === "custom" ? (
+          <div className="mb-3 grid grid-cols-2 gap-2">
+            <input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} className="rounded-full border border-input bg-background px-3 py-2 text-xs font-semibold" />
+            <input type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} className="rounded-full border border-input bg-background px-3 py-2 text-xs font-semibold" />
+          </div>
+        ) : null}
+        {chartData.every((item) => item.value <= 0) ? (
+          <div className="grid h-32 place-items-center rounded-2xl bg-elevated p-4 text-center">
+            <div><CircleDollarSign className="mx-auto mb-2 size-6 text-muted-foreground" /><p className="text-sm font-bold text-muted-foreground">No spending data available</p></div>
+          </div>
+        ) : (
+          <>
+            <button onClick={() => openModal("chart-details")} className="flex h-32 w-full items-end gap-2 overflow-x-auto rounded-2xl bg-elevated p-4" aria-label="Spending bar chart">
+              {chartData.map((item) => (
+                <span key={`${item.label}-${item.date.toISOString()}`} className="flex min-w-5 flex-1 flex-col items-center gap-2">
+                  <span title={`${item.label}: ${money(item.value)}`} className="w-full rounded-full bg-primary/80" style={{ height: `${Math.max(8, (item.value / chartMax) * 100)}%` }} />
+                </span>
+              ))}
+            </button>
+            <div className="mt-3 flex justify-between gap-2 overflow-hidden text-xs font-medium text-muted-foreground">
+              {chartData.slice(0, 6).map((item) => <span key={item.date.toISOString()} className="truncate">{item.label}</span>)}
+            </div>
+          </>
+        )}
       </section>
 
       <section>
@@ -1557,6 +1690,43 @@ const NotificationsList = ({ data, currentUserId }: { data: AppData; currentUser
           <p className="mt-0.5 text-xs font-medium text-muted-foreground">{item.subtitle}</p>
         </div>
       ))}
+    </div>
+  );
+};
+
+const SpendingDetails = ({ expenses, currentUserId }: { expenses: ExpenseRow[]; currentUserId: string }) => {
+  const analytics = useMemo(() => getSpendingAnalytics(expenses, currentUserId), [expenses, currentUserId]);
+  if (analytics.total <= 0) return <EmptyCard text="No spending data available" />;
+  const trendUp = analytics.trend >= 0;
+  const rows = [
+    ["Highest spending category", analytics.highestCategory ? `${analytics.highestCategory[0]} · ${money(analytics.highestCategory[1])}` : "None"],
+    ["Lowest spending category", analytics.lowestCategory ? `${analytics.lowestCategory[0]} · ${money(analytics.lowestCategory[1])}` : "None"],
+    ["Average daily spend", money(analytics.averageDaily)],
+    ["Average weekly spend", money(analytics.averageWeekly)],
+    ["Average monthly spend", money(analytics.averageMonthly)],
+    ["Total personal", money(analytics.totals.personal)],
+    ["Total split", money(analytics.totals.split)],
+    ["Total tiffin", money(analytics.totals.tiffin)],
+    ["Total group", money(analytics.totals.group)],
+    ["Top spending day", analytics.topDay ? `${analytics.topDay[0]} · ${money(analytics.topDay[1])}` : "None"],
+    ["Top spending month", analytics.topMonth ? `${analytics.topMonth[0]} · ${money(analytics.topMonth[1])}` : "None"],
+  ];
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between rounded-2xl bg-elevated p-4">
+        <span className="text-sm font-bold text-foreground">Spending trend</span>
+        <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm font-bold ${trendUp ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"}`}>
+          {trendUp ? <TrendingUp className="size-4" /> : <TrendingDown className="size-4" />}{trendUp ? "+" : ""}{Number(analytics.trend.toFixed(1)).toString().replace(".0", "")}%
+        </span>
+      </div>
+      <div className="overflow-hidden rounded-2xl bg-elevated/70">
+        {rows.map(([label, value], index) => (
+          <div key={label} className={`flex items-center justify-between gap-4 px-4 py-3 text-sm ${index < rows.length - 1 ? "border-b border-border/60" : ""}`}>
+            <span className="text-muted-foreground">{label}</span>
+            <span className="text-right font-bold text-foreground">{value}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
@@ -2464,7 +2634,7 @@ const ActionModal = ({
         {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} />}
         {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
         {type === "notifications" && <NotificationsList data={data} currentUserId={currentUserId} />}
-        {type === "chart-details" && <div className="rounded-2xl bg-elevated p-4 text-sm text-muted-foreground">Spendova uses your live expenses, split debts, and food logs for this summary.</div>}
+        {type === "chart-details" && <SpendingDetails expenses={data.expenses} currentUserId={currentUserId} />}
         {type === "saved" && <EmptyCard text="Saved." />}
       </DialogContent>
     </Dialog>
