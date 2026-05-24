@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -23,6 +24,8 @@ import {
   Split,
   Sun,
   Trash2,
+  TrendingDown,
+  TrendingUp,
   User,
   UserMinus,
   UserPlus,
@@ -273,6 +276,73 @@ const SectionHeader = ({ title, action, onAction }: { title: string; action?: st
   </div>
 );
 
+type DateFilter = "all" | "today" | "week" | "month" | "year";
+type AmountSort = "newest" | "oldest" | "amount-desc" | "amount-asc";
+
+const filterByDate = (value: string | null | undefined, filter: DateFilter) => {
+  if (filter === "all") return true;
+  if (!value) return false;
+  const date = new Date(value);
+  const now = new Date();
+  if (Number.isNaN(date.getTime())) return false;
+  if (filter === "today") return date.toDateString() === now.toDateString();
+  const start = new Date(now);
+  if (filter === "week") start.setDate(now.getDate() - 7);
+  if (filter === "month") start.setMonth(now.getMonth() - 1);
+  if (filter === "year") start.setFullYear(now.getFullYear() - 1);
+  return date >= start;
+};
+
+const sortByDateOrAmount = <T,>(items: T[], sort: AmountSort, getDate: (item: T) => string | null | undefined, getAmount: (item: T) => number) => {
+  return [...items].sort((a, b) => {
+    if (sort === "amount-desc") return getAmount(b) - getAmount(a);
+    if (sort === "amount-asc") return getAmount(a) - getAmount(b);
+    const dateA = new Date(getDate(a) || 0).getTime();
+    const dateB = new Date(getDate(b) || 0).getTime();
+    return sort === "oldest" ? dateA - dateB : dateB - dateA;
+  });
+};
+
+const FilterTrigger = ({ count, onClick }: { count: number; onClick: () => void }) => (
+  <button type="button" onClick={onClick} className="inline-flex items-center gap-1 text-xs font-bold text-primary">
+    <Filter className="size-3.5" />Filter{count > 0 ? ` (${count})` : ""}
+  </button>
+);
+
+const FilterSheet = ({ open, onOpenChange, title, onClear, children }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; onClear: () => void; children: ReactNode }) => (
+  <Drawer open={open} onOpenChange={onOpenChange}>
+    <DrawerContent className="mx-auto max-w-3xl rounded-t-3xl border-border bg-card px-4 pb-5">
+      <DrawerHeader className="px-0 pb-2 text-left">
+        <DrawerTitle>{title}</DrawerTitle>
+        <DrawerDescription>Filters update the list immediately.</DrawerDescription>
+      </DrawerHeader>
+      <div className="space-y-4">
+        {children}
+        <div className="flex gap-2 pt-1">
+          <Button type="button" variant="quiet" className="flex-1" onClick={onClear}>Clear filters</Button>
+          <Button type="button" className="flex-1" onClick={() => onOpenChange(false)}>Apply</Button>
+        </div>
+      </div>
+    </DrawerContent>
+  </Drawer>
+);
+
+const FilterField = ({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) => (
+  <label className="block text-sm font-semibold text-foreground">
+    {label}
+    <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-medium">
+      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+    </select>
+  </label>
+);
+
+const FilterEmptyState = ({ onClear }: { onClear: () => void }) => (
+  <div className="rounded-2xl border border-dashed border-border bg-card p-6 text-center">
+    <p className="text-sm font-medium text-muted-foreground">No results match your filters.</p>
+    <Button type="button" variant="quiet" className="mt-4" onClick={onClear}>Clear filters</Button>
+  </div>
+);
+
 const Field = ({
   label,
   placeholder,
@@ -429,6 +499,71 @@ function getExpenseShare(expense: ExpenseRow, userId: string) {
   return expense.expense_splits?.find((split) => split.user_id === userId)?.amount_owed || 0;
 }
 
+function isPersonalOnlyExpense(expense: ExpenseRow) {
+  return !expense.group_id
+    && expense.category !== "tiffin"
+    && expense.category !== "delivery"
+    && (!expense.expense_splits || expense.expense_splits.length === 0);
+}
+
+function splitRemaining(split?: ExpenseSplitRow) {
+  if (!split) return 0;
+  const paid = Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0);
+  return Math.max(Number(split.amount_owed || 0) - paid, 0);
+}
+
+function getPersonalExpenseDisplay(expense: ExpenseRow, currentUserId: string, groups: GroupRow[], friends: FriendProfile[], allExpenses: ExpenseRow[], settlements: SplitSettlementRow[]) {
+  const personalOnly = isPersonalOnlyExpense(expense);
+  if (personalOnly) {
+    return {
+      amount: Number(expense.amount || 0),
+      status: expense.status === "cleared" ? "cleared" : "pending",
+      context: expense.note || "",
+      canClear: expense.status !== "cleared",
+    };
+  }
+
+  const payerName = expense.paid_by === currentUserId
+    ? "You"
+    : displayName(expense.payer_profile || friends.find((friend) => friend.user_id === expense.paid_by));
+  const mySplit = expense.expense_splits?.find((split) => split.user_id === currentUserId);
+  const otherSplits = (expense.expense_splits || []).filter((split) => split.user_id !== currentUserId);
+  const otherRemaining = otherSplits.reduce((sum, split) => sum + splitRemaining(split), 0);
+  const source = expense.group_id ? "Group" : "Split";
+  const friendCounterpartyId = !expense.group_id
+    ? (expense.paid_by === currentUserId ? otherSplits[0]?.user_id : expense.paid_by)
+    : undefined;
+  const relatedBalances = expense.group_id
+    ? buildDebtBalances(allExpenses, settlements, { currentUserId, groupId: expense.group_id })
+    : friendCounterpartyId
+      ? buildDebtBalances(allExpenses, settlements, { currentUserId, friendId: friendCounterpartyId, groupId: null })
+      : [];
+  const relatedNet = relatedBalances.reduce((sum, balance) => {
+    if (balance.toUserId === currentUserId) return sum + balance.amount;
+    if (balance.fromUserId === currentUserId) return sum - balance.amount;
+    return sum;
+  }, 0);
+  const netSettled = Math.abs(relatedNet) <= 0.009;
+
+  if (expense.paid_by === currentUserId) {
+    const group = groups.find((item) => item.id === expense.group_id);
+    const receivableImpact = otherSplits.reduce((sum, split) => sum + Number(split.amount_owed || 0), 0);
+    const context = expense.group_id
+      ? netSettled ? `${source} · ${group?.name || "You paid"}` : `${source} · Others owe you`
+      : netSettled ? `${source} · You paid` : `${source} · ${displayName(otherSplits[0]?.profiles)} owes you`;
+    return { amount: receivableImpact, status: netSettled || otherRemaining <= 0.009 ? "cleared" : "pending", context, canClear: false };
+  }
+
+  const myRemaining = splitRemaining(mySplit);
+  const amount = Number(mySplit?.amount_owed || getExpenseShare(expense, currentUserId) || expense.amount || 0);
+  return {
+    amount,
+    status: netSettled || myRemaining <= 0.009 ? "cleared" : "pending",
+    context: `${source} · You ${netSettled || myRemaining <= 0.009 ? "owed" : "owe"} ${payerName}`,
+    canClear: false,
+  };
+}
+
 type DebtBalance = { fromUserId: string; toUserId: string; fromName: string; toName: string; amount: number };
 
 function getProfileName(userId: string, profiles: Record<string, string>, currentUserId?: string) {
@@ -496,11 +631,32 @@ function getSummary(expenses: ExpenseRow[], userId: string, settlements: SplitSe
     const isFood = expense.category === "tiffin" || expense.category === "delivery";
     const isPayer = expense.paid_by === userId;
     const mySplit = expense.expense_splits?.find((split) => split.user_id === userId);
+    const personalOnly = isPersonalOnlyExpense(expense);
+    const otherSplits = (expense.expense_splits || []).filter((split) => split.user_id !== userId);
+    const counterpartyId = !expense.group_id ? (isPayer ? otherSplits[0]?.user_id : expense.paid_by) : undefined;
+    const relatedBalances = expense.group_id
+      ? buildDebtBalances(expenses, settlements, { currentUserId: userId, groupId: expense.group_id })
+      : counterpartyId
+        ? buildDebtBalances(expenses, settlements, { currentUserId: userId, friendId: counterpartyId, groupId: null })
+        : [];
+    const relatedNet = relatedBalances.reduce((sum, balance) => {
+      if (balance.toUserId === userId) return sum + balance.amount;
+      if (balance.fromUserId === userId) return sum - balance.amount;
+      return sum;
+    }, 0);
+    const netSettled = Math.abs(relatedNet) <= 0.009;
 
     if (!isFood) {
-      const share = getExpenseShare(expense, userId);
+      const share = personalOnly
+        ? Number(expense.amount || 0)
+        : isPayer
+          ? otherSplits.reduce((sum, split) => sum + Number(split.amount_owed || 0), 0)
+          : Number(mySplit?.amount_owed || 0);
       personal += share;
-      if (expense.status === "cleared" || mySplit?.has_paid) personalCleared += share;
+      const remaining = isPayer
+        ? otherSplits.reduce((sum, split) => sum + splitRemaining(split), 0)
+        : splitRemaining(mySplit);
+      if (personalOnly ? expense.status === "cleared" : netSettled || remaining <= 0.009) personalCleared += share;
       else personalPending += share;
     } else if (expense.status === "cleared") {
       tiffinCleared += expense.amount;
@@ -526,11 +682,31 @@ function computeGroupBalances(expenses: ExpenseRow[], settlements: SplitSettleme
 const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; userId: string; setTab: (tab: TabKey) => void; openModal: (type: ModalType, item?: string) => void }) => {
   const [range, setRange] = useState<"week" | "month" | "year">("month");
   const [status, setStatus] = useState<"all" | "pending" | "cleared">("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const clear = () => { setRange("month"); setStatus("all"); };
+  const activeFilterCount = (range !== "month" ? 1 : 0) + (status !== "all" ? 1 : 0);
   const rangedExpenses = filterExpensesByRange(expenses, range);
   const filteredExpenses = rangedExpenses.filter((expense) => status === "all" || expense.status === status);
   const summary = getSummary(filteredExpenses, userId, settlements);
   const recent = filteredExpenses.slice(0, 3);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const isSameDay = (value: string | null | undefined, date: Date) => {
+    if (!value) return false;
+    const itemDate = new Date(value);
+    return itemDate.getFullYear() === date.getFullYear() && itemDate.getMonth() === date.getMonth() && itemDate.getDate() === date.getDate();
+  };
+  const daySpend = (date: Date) => expenses
+    .filter((expense) => isSameDay(expense.created_at, date))
+    .reduce((sum, expense) => sum + getExpenseShare(expense, userId), 0);
+  const todayTotalSpend = daySpend(today);
+  const yesterdayTotalSpend = daySpend(yesterday);
+  const rawTrend = yesterdayTotalSpend > 0 ? ((todayTotalSpend - yesterdayTotalSpend) / yesterdayTotalSpend) * 100 : todayTotalSpend > 0 ? 100 : 0;
+  const trendDirection = yesterdayTotalSpend === 0 && todayTotalSpend > 0 ? "up" : rawTrend > 0 ? "up" : rawTrend < 0 ? "down" : "flat";
+  const trendLabel = `${rawTrend > 0 ? "+" : ""}${Number(rawTrend.toFixed(1)).toString().replace(".0", "")}%`;
+  const TrendIcon = trendDirection === "up" ? TrendingUp : trendDirection === "down" ? TrendingDown : ArrowRight;
+  const trendClass = trendDirection === "up" ? "bg-warning/15 text-warning" : trendDirection === "down" ? "bg-success/15 text-success" : "bg-muted text-muted-foreground";
 
   return (
     <main className="space-y-6">
@@ -538,30 +714,11 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
         <p className="text-sm font-medium text-muted-foreground">Net balance</p>
         <div className="mt-2 flex items-end justify-between gap-3">
           <div><p className="text-4xl font-bold tracking-tight text-foreground">{money(Math.abs(summary.net))}</p><p className="mt-1 text-sm text-muted-foreground">Across personal, tiffin, and splits</p></div>
-          <span className={`rounded-full px-3 py-1 text-sm font-bold ${summary.net >= 0 ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>{summary.net >= 0 ? "positive" : "owed"}</span>
+          <span title="Compared with yesterday" className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${trendClass}`} aria-label={`${trendLabel} compared with yesterday`}><TrendIcon className="size-3.5" />{trendLabel}</span>
         </div>
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <button onClick={() => openModal("chart-details")} className="rounded-2xl bg-elevated p-4 text-left shadow-soft"><p className="text-xs font-semibold text-muted-foreground">Total lent</p><p className="mt-1 text-xl font-bold text-foreground">{money(summary.totalLent)}</p></button>
-          <button onClick={() => openModal("chart-details")} className="rounded-2xl bg-elevated p-4 text-left shadow-soft"><p className="text-xs font-semibold text-muted-foreground">Total owed</p><p className="mt-1 text-xl font-bold text-foreground">{money(summary.totalOwed)}</p></button>
-        </div>
-      </section>
-
-      <section className="rounded-[1.25rem] bg-card p-4 shadow-soft">
-        <div className="mb-3 flex items-center justify-between">
-          <p className="flex items-center gap-2 text-sm font-bold text-foreground"><Filter className="size-4" /> Filters</p>
-          <button onClick={clear} className="text-xs font-semibold text-primary">Clear</button>
-        </div>
-        <div className="space-y-2">
-          <div className="flex gap-1 rounded-full bg-elevated p-1">
-            {(["week", "month", "year"] as const).map((r) => (
-              <button key={r} onClick={() => setRange(r)} className={`flex-1 rounded-full px-3 py-1.5 text-xs font-bold capitalize transition-colors ${range === r ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{r}</button>
-            ))}
-          </div>
-          <div className="flex gap-1 rounded-full bg-elevated p-1">
-            {(["all", "pending", "cleared"] as const).map((s) => (
-              <button key={s} onClick={() => setStatus(s)} className={`flex-1 rounded-full px-3 py-1.5 text-xs font-bold capitalize transition-colors ${status === s ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{s}</button>
-            ))}
-          </div>
+        <div className="mt-5 grid grid-cols-2 items-start gap-3">
+          <button onClick={() => openModal("chart-details")} className="grid content-start rounded-2xl bg-elevated p-4 text-left shadow-soft"><p className="text-xs font-semibold leading-none text-muted-foreground">Total lent</p><p className="mt-2 text-xl font-bold leading-none text-foreground">{money(summary.totalLent)}</p></button>
+          <button onClick={() => openModal("chart-details")} className="grid content-start rounded-2xl bg-elevated p-4 text-left shadow-soft"><p className="text-xs font-semibold leading-none text-muted-foreground">Total owed</p><p className="mt-2 text-xl font-bold leading-none text-foreground">{money(summary.totalOwed)}</p></button>
         </div>
       </section>
 
@@ -585,9 +742,12 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
       </section>
 
       <section>
-        <SectionHeader title="Recent activity" />
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-bold tracking-tight text-foreground">Recent activity</h2>
+          <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
+        </div>
         <div className="space-y-3">
-          {recent.length === 0 ? <EmptyCard text="No activity yet." /> : recent.map((expense) => (
+          {recent.length === 0 ? (expenses.length === 0 ? <EmptyCard text="No activity yet." /> : <FilterEmptyState onClear={clear} />) : recent.map((expense) => (
             <div key={expense.id} className="flex items-center justify-between rounded-2xl bg-card p-4 shadow-soft">
               <div><h3 className="font-bold text-foreground">{expense.category || "Expense"}</h3><p className="text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p></div>
               <div className="text-right"><p className="font-bold text-foreground">{money(expense.amount)}</p><StatusPill status={expense.status || "pending"} /></div>
@@ -595,6 +755,11 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
           ))}
         </div>
       </section>
+
+      <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Overview activity filters" onClear={clear}>
+        <FilterField label="Date" value={range} onChange={(value) => setRange(value as "week" | "month" | "year")} options={[{ value: "week", label: "This week" }, { value: "month", label: "This month" }, { value: "year", label: "This year" }]} />
+        <FilterField label="Status" value={status} onChange={(value) => setStatus(value as "all" | "pending" | "cleared")} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "cleared", label: "Cleared" }]} />
+      </FilterSheet>
 
       <section>
         <SectionHeader title="Shortcuts" />
@@ -612,8 +777,26 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
 
 const EmptyCard = ({ text }: { text: string }) => <div className="rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm font-medium text-muted-foreground">{text}</div>;
 
-const PersonalView = ({ expenses, summary, currentUserId, openModal }: { expenses: ExpenseRow[]; summary: ReturnType<typeof getSummary>; currentUserId: string; openModal: (type: ModalType, item?: string) => void }) => {
-  const personalExpenses = expenses.filter((expense) => expense.category !== "tiffin" && expense.category !== "delivery" && !expense.group_id);
+const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, friends, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; summary: ReturnType<typeof getSummary>; currentUserId: string; groups: GroupRow[]; friends: FriendProfile[]; openModal: (type: ModalType, item?: string) => void }) => {
+  const defaultFilters = { status: "all", date: "all", sort: "newest", category: "all" };
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState(defaultFilters);
+  const personalExpenses = expenses.filter((expense) => expense.category !== "tiffin" && expense.category !== "delivery" && (expense.paid_by === currentUserId || expense.expense_splits?.some((split) => split.user_id === currentUserId)));
+  const categories = Array.from(new Set(personalExpenses.map((expense) => expense.category || "Other"))).sort();
+  const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
+  const clearFilters = () => setFilters(defaultFilters);
+  const visibleExpenses = sortByDateOrAmount(
+    personalExpenses.filter((expense) => {
+      const display = getPersonalExpenseDisplay(expense, currentUserId, groups, friends, expenses, settlements);
+      const expenseStatus = display.status;
+      if (filters.status !== "all" && expenseStatus !== filters.status) return false;
+      if (filters.category !== "all" && (expense.category || "Other") !== filters.category) return false;
+      return filterByDate(expense.created_at, filters.date as DateFilter);
+    }),
+    filters.sort as AmountSort,
+    (expense) => expense.created_at,
+    (expense) => Number(getPersonalExpenseDisplay(expense, currentUserId, groups, friends, expenses, settlements).amount || 0),
+  );
   return (
     <main className="space-y-6">
       <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
@@ -623,24 +806,43 @@ const PersonalView = ({ expenses, summary, currentUserId, openModal }: { expense
           {[["Total", money(summary.personal)], ["Pending", money(summary.personalPending)], ["Cleared", money(summary.personalCleared)]].map(([label, value]) => <div key={label} className="rounded-2xl bg-elevated p-3 shadow-soft"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-bold text-foreground">{value}</p></div>)}
         </div>
       </section>
-      <section>
-        <SectionHeader title="Personal expenses" action="Add" onAction={() => openModal("add-expense")} />
+      <section className="pb-16">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-bold tracking-tight text-foreground">Personal expenses</h2>
+          <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
+        </div>
         <div className="space-y-3">
-          {personalExpenses.length === 0 ? <EmptyCard text="No personal expenses yet." /> : personalExpenses.map((expense) => (
-            <article key={expense.id} className="rounded-2xl bg-card p-4 shadow-soft">
-              <div className="flex items-start justify-between gap-3">
-                <div><h3 className="font-bold text-foreground">{expense.category || "Expense"}</h3><p className="mt-1 text-sm text-muted-foreground">{dateLabel(expense.created_at)}{expense.note ? ` - ${expense.note}` : ""}</p></div>
-                <div className="text-right"><p className="font-bold text-foreground">{money(getExpenseShare(expense, currentUserId) || expense.amount)}</p><StatusPill status={expense.status || "pending"} /></div>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button onClick={() => openModal("edit-expense", expense.id)} variant="quiet" size="sm"><Pencil />Edit</Button>
-                <Button onClick={() => openModal("delete-expense", expense.id)} variant="quiet" size="sm"><Trash2 />Delete</Button>
-                {expense.status === "pending" && <Button onClick={() => openModal("clear-expense", expense.id)} variant="quiet" size="sm"><Check />Clear</Button>}
-              </div>
-            </article>
-          ))}
+          {personalExpenses.length === 0 ? <EmptyCard text="No personal expenses yet." /> : visibleExpenses.length === 0 ? <FilterEmptyState onClear={clearFilters} /> : visibleExpenses.map((expense) => {
+            const display = getPersonalExpenseDisplay(expense, currentUserId, groups, friends, expenses, settlements);
+            return (
+              <article key={expense.id} className="rounded-2xl bg-card p-4 shadow-soft">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-bold text-foreground">{expense.category || "Expense"}</h3>
+                    {display.context ? <p className="mt-1 text-sm font-medium text-muted-foreground">{display.context}</p> : null}
+                    <p className="mt-1 text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p>
+                  </div>
+                  <div className="text-right"><p className="font-bold text-foreground">{money(display.amount)}</p><StatusPill status={display.status} /></div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button onClick={() => openModal("edit-expense", expense.id)} variant="quiet" size="sm"><Pencil />Edit</Button>
+                  <Button onClick={() => openModal("delete-expense", expense.id)} variant="quiet" size="sm"><Trash2 />Delete</Button>
+                  {display.canClear && <Button onClick={() => openModal("clear-expense", expense.id)} variant="quiet" size="sm"><Check />Clear</Button>}
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
+      <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Personal expense filters" onClear={clearFilters}>
+        <FilterField label="Status" value={filters.status} onChange={(status) => setFilters((current) => ({ ...current, status }))} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "cleared", label: "Cleared" }]} />
+        <FilterField label="Date" value={filters.date} onChange={(date) => setFilters((current) => ({ ...current, date }))} options={[{ value: "all", label: "All dates" }, { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "month", label: "This month" }, { value: "year", label: "This year" }]} />
+        <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "amount-desc", label: "Amount high to low" }, { value: "amount-asc", label: "Amount low to high" }]} />
+        <FilterField label="Category" value={filters.category} onChange={(category) => setFilters((current) => ({ ...current, category }))} options={[{ value: "all", label: "All categories" }, ...categories.map((category) => ({ value: category, label: category }))]} />
+      </FilterSheet>
+      <button onClick={() => openModal("add-expense")} className="fixed bottom-28 right-4 z-20 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-bold text-primary-foreground shadow-primary-action sm:right-8">
+        <Plus className="size-4" />Add expense
+      </button>
     </main>
   );
 };
@@ -649,8 +851,46 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
   const navigate = useNavigate();
   const [subTab, setSubTabState] = useState<"friends" | "groups">(() => (sessionStorage.getItem("spendova-split-tab") === "groups" ? "groups" : "friends"));
   const [query, setQuery] = useState("");
-  const filteredFriends = data.friends.filter((friend) => displayName(friend).toLowerCase().includes(query.toLowerCase()) || (friend.username || "").toLowerCase().includes(query.toLowerCase()));
+  const defaultFilters = { balance: "all", sort: "highest" };
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState(defaultFilters);
   const summary = getSummary(data.expenses, currentUserId, data.settlements);
+  const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
+  const clearFilters = () => setFilters(defaultFilters);
+  const matchesBalanceFilter = (net: number) => {
+    if (filters.balance === "owed") return net > 0.009;
+    if (filters.balance === "owe") return net < -0.009;
+    if (filters.balance === "settled") return Math.abs(net) <= 0.009;
+    return true;
+  };
+  const friendItems = data.friends.map((friend) => {
+    const balances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null });
+    const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+    const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+    const latest = data.expenses.filter((expense) => !expense.group_id && (expense.paid_by === friend.user_id || expense.expense_splits?.some((split) => split.user_id === friend.user_id))).reduce((max, expense) => Math.max(max, new Date(expense.created_at || 0).getTime()), 0);
+    return { friend, net: owedToMe - iOwe, latest };
+  });
+  const groupItems = data.groups.map((group) => {
+    const balances = computeGroupBalances(data.expenses, data.settlements, group, currentUserId);
+    const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+    const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+    const latest = data.expenses.filter((expense) => expense.group_id === group.id).reduce((max, expense) => Math.max(max, new Date(expense.created_at || 0).getTime()), 0);
+    return { group, net: owedToMe - iOwe, latest };
+  });
+  const sortSplitItems = <T extends { net: number; latest: number }>(items: T[], getName: (item: T) => string) => [...items].sort((a, b) => {
+    if (filters.sort === "lowest") return Math.abs(a.net) - Math.abs(b.net);
+    if (filters.sort === "az") return getName(a).localeCompare(getName(b));
+    if (filters.sort === "recent") return b.latest - a.latest;
+    return Math.abs(b.net) - Math.abs(a.net);
+  });
+  const filteredFriends = sortSplitItems(
+    friendItems.filter(({ friend, net }) => (displayName(friend).toLowerCase().includes(query.toLowerCase()) || (friend.username || "").toLowerCase().includes(query.toLowerCase())) && matchesBalanceFilter(net)),
+    ({ friend }) => displayName(friend),
+  );
+  const filteredGroups = sortSplitItems(
+    groupItems.filter(({ group, net }) => group.name.toLowerCase().includes(query.toLowerCase()) && matchesBalanceFilter(net)),
+    ({ group }) => group.name,
+  );
   const setSubTab = (value: "friends" | "groups") => {
     sessionStorage.setItem("spendova-split-tab", value);
     setSubTabState(value);
@@ -701,17 +941,14 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
         <section>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-bold tracking-tight text-foreground">Friends</h2>
+            <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
           </div>
           <div className="mb-3 flex items-center gap-2 rounded-full border border-input bg-background px-4 py-3 shadow-soft">
             <Search className="size-4 text-muted-foreground" />
             <input value={query} onChange={(e) => setQuery(e.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Search friends" />
           </div>
           <div className="space-y-3">
-            {filteredFriends.length === 0 ? <EmptyCard text={data.friends.length === 0 ? "Add friends to start splitting expenses" : "No friends found."} /> : filteredFriends.map((friend) => {
-              const balances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null });
-              const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
-              const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
-              const net = owedToMe - iOwe;
+            {filteredFriends.length === 0 ? (data.friends.length === 0 ? <EmptyCard text="Add friends to start splitting expenses" /> : <FilterEmptyState onClear={clearFilters} />) : filteredFriends.map(({ friend, net }) => {
               return (
               <button key={friend.user_id} onClick={() => openDetail("friend", friend.user_id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
                 <div className="flex items-center gap-3">
@@ -730,13 +967,12 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
       ) : (
         <>
           <section>
-            <SectionHeader title="Groups" />
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-bold tracking-tight text-foreground">Groups</h2>
+              <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
+            </div>
             <div className="space-y-3">
-              {data.groups.length === 0 ? <EmptyCard text="Create a group to split shared expenses" /> : data.groups.map((group) => {
-                const balances = computeGroupBalances(data.expenses, data.settlements, group, currentUserId);
-                const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
-                const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
-                const net = owedToMe - iOwe;
+              {data.groups.length === 0 ? <EmptyCard text="Create a group to split shared expenses" /> : filteredGroups.length === 0 ? <FilterEmptyState onClear={clearFilters} /> : filteredGroups.map(({ group, net }) => {
                 return (
                   <button onClick={() => openDetail("group", group.id)} key={group.id} className="w-full rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
                     <div className="flex items-center justify-between gap-3">
@@ -753,6 +989,10 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
           </section>
         </>
       )}
+      <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title={`${subTab === "friends" ? "Friend" : "Group"} filters`} onClear={clearFilters}>
+        <FilterField label="Balance" value={filters.balance} onChange={(balance) => setFilters((current) => ({ ...current, balance }))} options={[{ value: "all", label: "All" }, { value: "owe", label: "You owe" }, { value: "owed", label: "You are owed" }, { value: "settled", label: "Settled" }]} />
+        <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "highest", label: "Highest balance first" }, { value: "lowest", label: "Lowest balance first" }, { value: "az", label: "A to Z" }, { value: "recent", label: "Recently active" }]} />
+      </FilterSheet>
     </main>
   );
 };
@@ -785,7 +1025,7 @@ const GroupSummaryCard = ({ group, expenses, currentUserId, openModal }: { group
 
 type HistoryItem = { id: string; created_at: string | null; kind: "expense" | "settlement"; title: string; detail: string; amount: number };
 type FriendActivityStatus = "pending" | "partial" | "paid";
-type FriendActivityItem = HistoryItem & { impact: number; remainingImpact: number; status: FriendActivityStatus; icon: typeof CircleDollarSign };
+type FriendActivityItem = HistoryItem & { impact: number; remainingImpact: number; status: FriendActivityStatus; paidById: string; icon: typeof CircleDollarSign };
 type SettlementPayload = { from_user_id: string; to_user_id: string; amount: number; group_id?: string | null; note?: string | null; created_at?: string; settlementId?: string };
 
 const BalanceLabel = ({ amount }: { amount: number }) => (
@@ -822,10 +1062,14 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
   const [actionItem, setActionItem] = useState<FriendActivityItem | null>(null);
   const [quickSettleItem, setQuickSettleItem] = useState<FriendActivityItem | null>(null);
   const [quickSettling, setQuickSettling] = useState(false);
+  const defaultFilters = { type: "all", status: "all", date: "all", sort: "newest", paidBy: "anyone" };
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState(defaultFilters);
   const balances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null });
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const net = owedToMe - iOwe;
+  const friendNetSettled = Math.abs(net) <= 0.009;
   const balanceText = net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled";
   const balanceClass = net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground";
   const expenses = data.expenses.filter((expense) => !expense.group_id && (expense.paid_by === friend.user_id || expense.paid_by === currentUserId) && expense.expense_splits?.some((split) => split.user_id === friend.user_id || split.user_id === currentUserId));
@@ -840,8 +1084,8 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
         : expense.expense_splits?.find((split) => split.user_id === currentUserId);
       const paidAmount = Number(targetSplit?.amount_paid || (targetSplit?.has_paid ? targetSplit.amount_owed : 0) || 0);
       const remaining = Math.max(Number(targetSplit?.amount_owed || 0) - paidAmount, 0);
-      const remainingImpact = impact < 0 ? -remaining : remaining;
-      const status: FriendActivityStatus = remaining <= 0.009 ? "paid" : paidAmount > 0 ? "partial" : "pending";
+      const remainingImpact = friendNetSettled ? 0 : impact < 0 ? -remaining : remaining;
+      const status: FriendActivityStatus = friendNetSettled || remaining <= 0.009 ? "paid" : paidAmount > 0 ? "partial" : "pending";
       const item = {
         id: expense.id,
         created_at: expense.created_at,
@@ -852,6 +1096,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
         impact,
         remainingImpact: Number(remainingImpact.toFixed(2)),
         status,
+        paidById: expense.paid_by,
       };
       return { ...item, icon: getFriendActivityIcon(item) };
     }),
@@ -866,10 +1111,25 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
         impact: settlement.from_user_id === currentUserId ? -Number(settlement.amount) : Number(settlement.amount),
         remainingImpact: 0,
         status: "paid" as const,
+        paidById: settlement.from_user_id,
       };
       return { ...item, icon: getFriendActivityIcon(item) };
     }),
   ].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+  const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
+  const clearFilters = () => setFilters(defaultFilters);
+  const filteredActivity = sortByDateOrAmount(
+    activity.filter((item) => {
+      if (filters.type !== "all" && item.kind !== (filters.type === "expenses" ? "expense" : "settlement")) return false;
+      if (filters.status !== "all" && item.status !== filters.status) return false;
+      if (filters.paidBy === "me" && item.paidById !== currentUserId) return false;
+      if (filters.paidBy === "friend" && item.paidById !== friend.user_id) return false;
+      return filterByDate(item.created_at, filters.date as DateFilter);
+    }),
+    filters.sort as AmountSort,
+    (item) => item.created_at,
+    (item) => Math.abs(item.impact || item.amount || 0),
+  );
   const openActivity = (item: FriendActivityItem) => {
     navigate(item.kind === "settlement" ? `/split/settlement/${item.id}` : `/split/expense/${item.id}`);
   };
@@ -959,6 +1219,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-bold text-foreground">Activity</h2>
+          <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
         </div>
         <div className="overflow-hidden rounded-2xl bg-card shadow-soft">
           {activity.length === 0 ? (
@@ -972,7 +1233,9 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
           ) : (
             <div className="relative">
               <span className="absolute left-9 top-8 bottom-8 w-px bg-border/70" aria-hidden="true" />
-              {activity.map((item, index) => {
+              {filteredActivity.length === 0 ? (
+                <div className="p-4"><FilterEmptyState onClear={clearFilters} /></div>
+              ) : filteredActivity.map((item, index) => {
                 const Icon = item.icon;
                 const impactClass = item.impact > 0 ? "text-success" : item.impact < 0 ? "text-destructive" : "text-muted-foreground";
                 const statusLabel = item.status === "paid" ? "Paid" : item.status === "partial" ? "Partial" : "Pending";
@@ -1032,6 +1295,14 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
         <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
       </button>
       </main>
+
+      <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Activity filters" onClear={clearFilters}>
+        <FilterField label="Type" value={filters.type} onChange={(type) => setFilters((current) => ({ ...current, type }))} options={[{ value: "all", label: "All" }, { value: "expenses", label: "Expenses" }, { value: "settlements", label: "Settlements" }]} />
+        <FilterField label="Status" value={filters.status} onChange={(status) => setFilters((current) => ({ ...current, status }))} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "partial", label: "Partial" }, { value: "paid", label: "Paid / Settled" }]} />
+        <FilterField label="Date" value={filters.date} onChange={(date) => setFilters((current) => ({ ...current, date }))} options={[{ value: "all", label: "All dates" }, { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "month", label: "This month" }, { value: "year", label: "This year" }]} />
+        <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "amount-desc", label: "Amount high to low" }, { value: "amount-asc", label: "Amount low to high" }]} />
+        <FilterField label="Paid by" value={filters.paidBy} onChange={(paidBy) => setFilters((current) => ({ ...current, paidBy }))} options={[{ value: "anyone", label: "Anyone" }, { value: "me", label: "Me" }, { value: "friend", label: displayName(friend) }]} />
+      </FilterSheet>
 
       <Drawer open={Boolean(actionItem)} onOpenChange={(open) => !open && closeActions()}>
         <DrawerContent className="mx-auto max-w-3xl rounded-t-3xl border-border bg-card px-4 pb-5">
@@ -1275,6 +1546,9 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
   const [actionExpense, setActionExpense] = useState<ExpenseRow | null>(null);
   const [participantsExpense, setParticipantsExpense] = useState<ExpenseRow | null>(null);
+  const defaultFilters = { status: "all", paidBy: "anyone", date: "all", sort: "newest", splitType: "all" };
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState(defaultFilters);
   const groupExpenses = data.expenses.filter((expense) => expense.group_id === group.id).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
   const totalSpent = groupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const balances = computeGroupBalances(data.expenses, data.settlements, group, currentUserId);
@@ -1326,6 +1600,21 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
     const split = expense.expense_splits?.find((item) => item.user_id === userId);
     return expense.paid_by === userId || Boolean(split?.has_paid) || Number(split?.amount_paid || 0) >= Number(split?.amount_owed || 0);
   };
+  const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
+  const clearFilters = () => setFilters(defaultFilters);
+  const filteredGroupExpenses = sortByDateOrAmount(
+    groupExpenses.filter((expense) => {
+      const status = getExpenseStatus(expense);
+      if (filters.status !== "all" && status !== filters.status) return false;
+      if (filters.paidBy === "me" && expense.paid_by !== currentUserId) return false;
+      if (filters.paidBy !== "anyone" && filters.paidBy !== "me" && expense.paid_by !== filters.paidBy) return false;
+      if (filters.splitType !== "all" && (expense.split_type || "equal") !== filters.splitType) return false;
+      return filterByDate(expense.created_at, filters.date as DateFilter);
+    }),
+    filters.sort as AmountSort,
+    (expense) => expense.created_at,
+    (expense) => Number(expense.amount || 0),
+  );
 
   return (
     <>
@@ -1384,9 +1673,10 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
         <section>
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-xs font-bold uppercase tracking-wide text-foreground">Expense History</h2>
+            <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
           </div>
           <div className="space-y-3">
-            {groupExpenses.length === 0 ? <EmptyCard text="No group expenses yet. Add your first expense" /> : groupExpenses.map((expense) => {
+            {groupExpenses.length === 0 ? <EmptyCard text="No group expenses yet. Add your first expense" /> : filteredGroupExpenses.length === 0 ? <FilterEmptyState onClear={clearFilters} /> : filteredGroupExpenses.map((expense) => {
               const status = getExpenseStatus(expense);
               const expanded = expandedExpenseId === expense.id;
               const payerName = expense.paid_by === currentUserId ? "You" : displayName(expense.payer_profile || memberMap[expense.paid_by]?.profiles);
@@ -1439,6 +1729,14 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
           </div>
         </section>
       </main>
+
+      <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Group expense filters" onClear={clearFilters}>
+        <FilterField label="Status" value={filters.status} onChange={(status) => setFilters((current) => ({ ...current, status }))} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "partial", label: "Partial" }, { value: "settled", label: "Settled" }]} />
+        <FilterField label="Paid by" value={filters.paidBy} onChange={(paidBy) => setFilters((current) => ({ ...current, paidBy }))} options={[{ value: "anyone", label: "Anyone" }, { value: "me", label: "Me" }, ...group.group_members.filter((member) => member.user_id !== currentUserId).map((member) => ({ value: member.user_id, label: displayName(member.profiles) }))]} />
+        <FilterField label="Date" value={filters.date} onChange={(date) => setFilters((current) => ({ ...current, date }))} options={[{ value: "all", label: "All dates" }, { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "month", label: "This month" }, { value: "year", label: "This year" }]} />
+        <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "amount-desc", label: "Amount high to low" }, { value: "amount-asc", label: "Amount low to high" }]} />
+        <FilterField label="Split type" value={filters.splitType} onChange={(splitType) => setFilters((current) => ({ ...current, splitType }))} options={[{ value: "all", label: "All" }, { value: "equal", label: "Equal split" }, { value: "exact", label: "Exact split" }, { value: "percentage", label: "Percentage" }]} />
+      </FilterSheet>
 
       <Drawer open={Boolean(actionExpense)} onOpenChange={(open) => !open && setActionExpense(null)}>
         <DrawerContent className="mx-auto max-w-3xl rounded-t-3xl border-border bg-card px-4 pb-5">
@@ -2032,6 +2330,10 @@ const ActionModal = ({
 
   const clearExpense = async () => {
     if (!expense) return;
+    if (!isPersonalOnlyExpense(expense)) {
+      toast({ title: "Cannot clear here", description: "Split and group expenses must be settled from the Split page.", variant: "destructive" });
+      return;
+    }
     const { error } = await supabase.from("expenses").update({ status: "cleared" }).eq("id", expense.id);
     if (error) toast({ title: "Update failed", description: error.message, variant: "destructive" });
     else {
@@ -2287,7 +2589,7 @@ const Index = () => {
         {settlementDetail && <SettlementDetailView settlement={settlementDetail} currentUserId={user.id} onBack={backToSplit} onDelete={deleteSettlement} />}
         {groupDetail && <GroupDetailView group={groupDetail} data={data} currentUserId={user.id} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} summary={summary} currentUserId={user.id} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} settlements={data.settlements} summary={summary} currentUserId={user.id} groups={data.groups} friends={data.friends} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "tiffin" && <TiffinView expenses={data.expenses} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "profile" && <ProfileView profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
