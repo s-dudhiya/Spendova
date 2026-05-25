@@ -1814,45 +1814,46 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
 
   return (
     <>
-      <main className="space-y-4 pt-4 pb-8">
-        <header className="flex items-center gap-3">
+      <main className="space-y-5 pt-4 pb-32">
+        <header className="flex items-center gap-2 sm:gap-3">
           <button onClick={onBack} className="grid size-9 shrink-0 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Back to Split">
             <ArrowLeft className="size-4" />
           </button>
           <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-elevated text-2xl shadow-soft">{group.emoji || "🏠"}</div>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 pr-1">
             <h1 className="truncate text-xl font-bold text-foreground">{group.name}</h1>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{group.group_members.length} members</p>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <p className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{group.group_members.length} members</p>
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${balanceChipClass}`}>{balanceChipText}</span>
             </div>
           </div>
-          <button onClick={() => openModal("invite-members", group.id)} className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Invite members"><UserPlus className="size-4" /></button>
-          {isOwner ? <button onClick={() => openModal("edit-group", group.id)} className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Manage group"><Pencil className="size-4" /></button> : null}
-          <button onClick={() => openModal("leave-group", group.id)} className="grid size-9 place-items-center rounded-full text-destructive hover:bg-destructive/10" aria-label="Leave group"><UserMinus className="size-4" /></button>
-          {isOwner ? <button onClick={() => openModal("delete-group", group.id)} className="grid size-9 place-items-center rounded-full text-destructive hover:bg-destructive/10" aria-label="Delete group"><Trash2 className="size-4" /></button> : null}
+          <div className="flex shrink-0 items-center gap-1">
+            <button onClick={() => openModal("invite-members", group.id)} className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Invite members"><UserPlus className="size-4" /></button>
+            {isOwner ? <button onClick={() => openModal("edit-group", group.id)} className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Manage group"><Pencil className="size-4" /></button> : null}
+            {isOwner ? <button onClick={() => openModal("delete-group", group.id)} className="grid size-9 place-items-center rounded-full text-destructive hover:bg-destructive/10" aria-label="Delete group"><Trash2 className="size-4" /></button> : null}
+          </div>
         </header>
 
-        <section className="grid grid-cols-2 gap-3">
-          <div className="rounded-[20px] border border-border/70 bg-card p-4">
+        <section className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
+          <div className="flex min-h-[104px] flex-col justify-between rounded-[20px] border border-border/70 bg-card p-4">
             <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Total spent</p>
-            <p className="mt-2 text-2xl font-black text-foreground">{money(totalSpent)}</p>
+            <p className="mt-2 truncate text-2xl font-black text-foreground">{money(totalSpent)}</p>
           </div>
-          <div className="rounded-[20px] border border-border/70 bg-card p-4">
+          <div className="flex min-h-[104px] flex-col justify-between rounded-[20px] border border-border/70 bg-card p-4">
             <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Expenses</p>
             <p className="mt-2 text-2xl font-black text-foreground">{groupExpenses.length}</p>
           </div>
         </section>
 
-        <section className="rounded-[20px] border border-border/70 bg-card p-4">
+        <section className="overflow-visible rounded-[20px] border border-border/70 bg-card p-4">
           <h2 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Members</h2>
-          <div className="mt-3 flex gap-4 overflow-x-auto pb-1">
+          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-4 overflow-visible pb-1">
             {group.group_members.map((member) => {
               const name = member.user_id === currentUserId ? "You" : displayName(member.profiles).split(" ")[0];
               const canRemoveMember = isOwner && member.user_id !== currentUserId && member.user_id !== group.created_by;
               const selected = selectedMemberId === member.user_id;
               return (
-                <div key={member.user_id} className="w-14 shrink-0 text-center">
+                <div key={member.user_id} className="w-16 shrink-0 overflow-visible text-center">
                   <div
                     role="button"
                     tabIndex={0}
@@ -1863,11 +1864,11 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
                         setSelectedMemberId(selected ? null : member.user_id);
                       }
                     }}
-                    className="relative mx-auto grid size-11 place-items-center rounded-2xl bg-primary text-base font-bold text-primary-foreground shadow-primary-action"
+                    className="relative z-0 mx-auto grid size-11 overflow-visible place-items-center rounded-2xl bg-primary text-base font-bold text-primary-foreground shadow-primary-action"
                     aria-label={`Select ${name}`}
                   >
                     {displayName(member.profiles).charAt(0).toUpperCase()}
-                    {member.user_id === group.created_by ? <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-warning text-primary-foreground"><Crown className="size-2.5" /></span> : null}
+                    {member.user_id === group.created_by ? <span className="absolute -right-1 -top-1 z-10 grid size-4 place-items-center rounded-full bg-warning text-primary-foreground"><Crown className="size-2.5" /></span> : null}
                     {selected && canRemoveMember ? (
                       <span
                         role="button"
@@ -1884,27 +1885,27 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
                             openModal("remove-group-member", `${group.id}:${member.user_id}`);
                           }
                         }}
-                        className="absolute -right-2 -top-2 grid size-5 place-items-center rounded-full bg-destructive text-destructive-foreground shadow-soft ring-2 ring-card"
+                        className="absolute -right-1.5 -top-1.5 z-20 grid size-6 place-items-center rounded-full bg-destructive text-destructive-foreground shadow-soft ring-2 ring-card"
                       >
                         <X className="size-3" />
                       </span>
                     ) : null}
                   </div>
-                  <p className="mt-1 truncate text-xs font-bold text-foreground">{name}</p>
+                  <p className="mt-1.5 truncate text-center text-xs font-bold text-foreground">{name}</p>
                 </div>
               );
             })}
           </div>
         </section>
 
-        <section className="grid grid-cols-[2fr_1fr] gap-3">
-          <Button onClick={() => openModal("group-expense", group.id)} className="h-[52px] rounded-2xl shadow-primary-action"><Plus />Add Group Expense</Button>
-          <Button onClick={() => openModal("settle-up", group.id)} variant="outline" className="h-[52px] rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary"><Check />Settle Up</Button>
+        <section className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <Button onClick={() => openModal("group-expense", group.id)} className="h-[52px] w-full rounded-2xl shadow-primary-action"><Plus />Add Group Expense</Button>
+          <Button onClick={() => openModal("settle-up", group.id)} variant="outline" className="h-[52px] w-full rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary"><Check />Settle Up</Button>
         </section>
         <Button onClick={() => openModal("leave-group", group.id)} variant="quiet" className="h-11 w-full rounded-2xl text-destructive hover:bg-destructive/10 hover:text-destructive"><UserMinus />Leave Group</Button>
 
-        <section>
-          <div className="mb-2 flex items-center justify-between">
+        <section className="pt-2">
+          <div className="mb-3 flex items-center justify-between">
             <h2 className="text-xs font-bold uppercase tracking-wide text-foreground">Expense History</h2>
             <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
           </div>
