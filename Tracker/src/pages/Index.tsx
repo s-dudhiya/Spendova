@@ -2458,6 +2458,7 @@ const ActionModal = ({
   const { toast } = useToast();
   const { signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const type = modal.type;
   const expense = data.expenses.find((item) => item.id === modal.item);
   const settlement = data.settlements.find((item) => item.id === modal.item);
@@ -2500,6 +2501,11 @@ const ActionModal = ({
   const closeAndRefresh = async () => {
     await refresh();
     onClose();
+  };
+  const closeRefreshAndReturnToSplit = async () => {
+    await refresh();
+    onClose();
+    navigate("/split", { replace: true });
   };
 
   const saveExpense = async ({ expense: payload, splits, expenseId }: { expense: ExpensePayload; splits: Array<{ user_id: string; amount_owed: number }>; expenseId?: string }) => {
@@ -2561,7 +2567,8 @@ const ActionModal = ({
       toast({ title: "Delete failed", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Expense deleted", description: "Balances were updated for everyone involved." });
-      await closeAndRefresh();
+      if (location.pathname.startsWith("/split/")) await closeRefreshAndReturnToSplit();
+      else await closeAndRefresh();
     }
   };
 
@@ -2700,9 +2707,7 @@ const ActionModal = ({
       return;
     }
     toast({ title: "Left group", description: `You left ${group.name}.` });
-    await refresh();
-    onClose();
-    navigate("/split");
+    await closeRefreshAndReturnToSplit();
   };
 
   const deleteAccount = async () => {
@@ -2787,10 +2792,10 @@ const ActionModal = ({
 
         {type === "delete-expense" && <ConfirmBox title="Delete expense?" text="This will update balances for everyone involved." action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
         {type === "clear-expense" && <ConfirmBox text={`Mark "${expense?.category || "expense"}" as cleared?`} action="Mark cleared" onCancel={onClose} onConfirm={clearExpense} />}
-        {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { if (group.created_by !== currentUserId) { toast({ title: "Delete failed", description: "Only the group owner can delete this group.", variant: "destructive" }); return; } const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; } toast({ title: "Group deleted" }); await closeAndRefresh(); }} />}
+        {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { if (group.created_by !== currentUserId) { toast({ title: "Delete failed", description: "Only the group owner can delete this group.", variant: "destructive" }); return; } const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; } toast({ title: "Group deleted" }); await closeRefreshAndReturnToSplit(); }} />}
         {type === "leave-group" && group && <ConfirmBox title="Leave group?" text="Are you sure you want to leave this group?" action="Leave Group" destructive onCancel={onClose} onConfirm={leaveGroup} />}
         {type === "remove-group-member" && memberGroup && memberToRemove && <ConfirmBox title="Remove member?" text={`Remove ${displayName(memberToRemove.profiles)} from ${memberGroup.name}?`} action="Remove" destructive onCancel={onClose} onConfirm={removeGroupMember} />}
-        {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} />}
+        {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeRefreshAndReturnToSplit(); }} />}
         {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
         {type === "delete-account" && <ConfirmBox title="Delete account?" text="This will permanently delete your account and related data. This action cannot be undone." action="Delete Account" destructive onCancel={onClose} onConfirm={deleteAccount} />}
         {type === "notifications" && <NotificationsList data={data} currentUserId={currentUserId} />}
@@ -2978,7 +2983,7 @@ const Index = () => {
     }
     toast({ title: "Settlement deleted", description: "Balances were restored." });
     await refresh();
-    navigate("/split");
+    navigate("/split", { replace: true });
   };
   const showingDetailPage = Boolean(friendDetail || groupDetail || expenseDetail || settlementDetail);
 
@@ -2986,10 +2991,10 @@ const Index = () => {
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto min-h-screen max-w-3xl px-4 pb-36 sm:px-6">
         {!showingDetailPage && <AppHeader title={title === "Home" ? "Overview" : title} theme={theme} onThemeToggle={toggleTheme} onProfile={() => navigate("/profile")} openModal={openModal} />}
-        {friendDetailId && !friendDetail && <EmptyCard text="Friend not found." />}
-        {groupDetailId && !groupDetail && <EmptyCard text="Group not found." />}
-        {expenseDetailId && !expenseDetail && <EmptyCard text="Expense not found." />}
-        {settlementDetailId && !settlementDetail && <EmptyCard text="Settlement not found." />}
+        {friendDetailId && !friendDetail && <Navigate to="/split" replace />}
+        {groupDetailId && !groupDetail && <Navigate to="/split" replace />}
+        {expenseDetailId && !expenseDetail && <Navigate to="/split" replace />}
+        {settlementDetailId && !settlementDetail && <Navigate to="/split" replace />}
         {friendDetail && <FriendDetailView friend={friendDetail} data={data} currentUserId={user.id} theme={theme} onThemeToggle={toggleTheme} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
         {expenseDetail && <ExpenseDetailView expense={expenseDetail} settlements={data.settlements} currentUserId={user.id} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
         {settlementDetail && <SettlementDetailView settlement={settlementDetail} currentUserId={user.id} onBack={backToSplit} onDelete={deleteSettlement} />}
