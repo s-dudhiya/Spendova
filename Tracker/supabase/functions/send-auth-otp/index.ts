@@ -35,12 +35,12 @@ async function hashOtp(email: string, purpose: string, otp: string) {
 function otpEmailHtml(otp: string) {
   return `<!DOCTYPE html>
 <html>
-<body style="margin:0;padding:30px;background:#F7F5FF;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1A1A1A;">
-  <div style="max-width:520px;margin:auto;background:#ffffff;border-radius:20px;padding:35px;border:1px solid #ECE8FF;">
+<body style="margin:0;padding:20px;background:#F7F5FF;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1A1A1A;">
+  <div style="max-width:480px;width:100%;box-sizing:border-box;margin:auto;background:#ffffff;border-radius:18px;padding:28px;border:1px solid #ECE8FF;">
     <div style="font-size:13px;color:#8D88A8;letter-spacing:1px;font-weight:700;">SPENDOVA</div>
     <h1 style="margin:10px 0 20px;font-size:24px;">Your verification code</h1>
     <p style="color:#5B5B6A;font-size:15px;line-height:1.7;">Your verification code is:</p>
-    <div style="margin:22px 0;padding:18px;border-radius:14px;background:#F4EEFF;border:1px solid #E5D8FF;text-align:center;font-size:32px;font-weight:800;letter-spacing:8px;color:#6D28D9;">${otp}</div>
+    <div style="margin:20px 0;padding:16px;border-radius:14px;background:#F4EEFF;border:1px solid #E5D8FF;text-align:center;font-size:30px;font-weight:800;letter-spacing:4px;color:#6D28D9;box-sizing:border-box;">${otp}</div>
     <p style="color:#5B5B6A;font-size:15px;line-height:1.7;">This code expires in 10 minutes.</p>
     <p style="color:#8D88A8;font-size:13px;line-height:1.6;">If you did not request this, you can ignore this email.</p>
   </div>

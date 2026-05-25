@@ -188,7 +188,7 @@ export default function VerifyOtp() {
 
           {!resetToken ? (
             <div className="space-y-4">
-              <div className="grid grid-cols-6 gap-2">
+              <div className="flex w-full flex-nowrap items-center justify-center gap-1.5 overflow-hidden sm:gap-2.5 md:gap-3">
                 {digits.map((digit, index) => (
                   <input
                     key={index}
@@ -202,7 +202,7 @@ export default function VerifyOtp() {
                     }}
                     onKeyDown={(event) => handleKeyDown(index, event)}
                     onChange={(event) => handleDigitChange(index, event.target.value)}
-                    className="h-12 rounded-xl border border-[#cbbdff] bg-[#f4f0ff] text-center text-lg font-black text-[#171445] outline-none focus:border-[#7c3aed] focus:bg-white focus:ring-2 focus:ring-[#8b5cf6]/20"
+                    className="box-border aspect-square h-[calc((100vw-60px)/6)] min-h-9 w-[calc((100vw-60px)/6)] min-w-9 max-w-[42px] flex-shrink rounded-xl border border-[#cbbdff] bg-[#f4f0ff] text-center text-base font-black text-[#171445] outline-none focus:border-[#7c3aed] focus:bg-white focus:ring-2 focus:ring-[#8b5cf6]/20 sm:h-12 sm:min-h-12 sm:w-12 sm:min-w-12 sm:max-w-12 sm:text-xl md:h-14 md:min-h-14 md:w-14 md:min-w-14 md:max-w-14"
                   />
                 ))}
               </div>
