@@ -19,7 +19,6 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": [
-    "vite.config.ts",
-    "admin-mailer.ts"
+    "vite.config.ts"
   ]
 }
