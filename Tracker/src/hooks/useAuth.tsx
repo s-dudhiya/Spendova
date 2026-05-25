@@ -8,6 +8,7 @@ interface Profile {
   user_id: string;
   full_name: string | null;
   username: string | null;
+  email_verified?: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -17,9 +18,6 @@ interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signUp: (email: string, password: string, fullName: string, username: string, redirectTo?: string) => Promise<{ error: any }>;
-  resetPassword: (email: string) => Promise<{ error: any }>;
-  updatePassword: (password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   loading: boolean;
 }
@@ -109,59 +107,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       console.error("Supabase sign-in error", error);
       toast({ title: "Sign In Failed", description: error.message, variant: "destructive" });
+      return { error };
     }
-    return { error };
-  };
 
-  const signUp = async (email: string, password: string, fullName: string, username: string, redirectTo?: string) => {
-    const callbackUrl = new URL(`${window.location.origin}/auth/callback`);
-    if (redirectTo) callbackUrl.searchParams.set("redirect", redirectTo);
-
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: callbackUrl.toString(), data: { full_name: fullName, username: username } }
-    });
-
-    if (error) {
-      console.error("Supabase sign-up error", error);
-      toast({ title: "Sign Up Failed", description: error.message, variant: "destructive" });
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('email_verified')
+      .eq('user_id', data.user.id)
+      .maybeSingle();
+    if (profileError) console.error("Profile verification lookup failed", profileError);
+    if (profileData && profileData.email_verified === false) {
+      await supabase.auth.signOut();
+      const verifyError = new Error("Please verify your email with the 6-digit code before logging in.");
+      toast({ title: "Verification Required", description: verifyError.message, variant: "destructive" });
+      return { error: verifyError };
     }
-    else toast({ title: "Sign Up Successful", description: "Please check your email to confirm your account." });
-
-    return { error };
-  };
-
-  const resetPassword = async (email: string) => {
-    const redirectUrl = `${window.location.origin}/reset-password`;
-
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: redirectUrl,
-    });
-
-    if (error) {
-      console.error("Supabase password recovery error", error);
-      toast({ title: "Reset Password Failed", description: error.message, variant: "destructive" });
-    }
-    else toast({ title: "Check Your Email", description: "A password reset link has been sent to your email." });
-
-    return { error };
-  };
-
-  const updatePassword = async (password: string) => {
-    const { error } = await supabase.auth.updateUser({ password });
-
-    if (error) {
-      console.error("Supabase update password error", error);
-      toast({ title: "Update Failed", description: error.message, variant: "destructive" });
-    }
-    else toast({ title: "Password Updated", description: "Your password has been successfully updated." });
-
-    return { error };
+    return { error: null };
   };
 
   const signOut = async () => {
@@ -184,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const value = { user, session, profile, signIn, signUp, resetPassword, updatePassword, signOut, loading };
+  const value = { user, session, profile, signIn, signOut, loading };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
