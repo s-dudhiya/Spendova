@@ -8,6 +8,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import Admin from "./pages/Admin.tsx";
 import Auth from "./pages/Auth.tsx";
+import AuthCallback from "./pages/AuthCallback.tsx";
 import Index from "./pages/Index.tsx";
 import InviteAccept from "./pages/InviteAccept.tsx";
 import Maintenance from "./pages/Maintenance.tsx";
@@ -68,6 +69,7 @@ const AppRoutes = () => {
       <Route path="/forgot-password" element={<Auth mode="forgot" />} />
       <Route path="/reset-password" element={<Auth mode="reset" />} />
       <Route path="/auth" element={<Auth mode="login" />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/invite" element={<InviteAccept />} />
       <Route path="/accept-invite" element={<InviteAccept />} />
       {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

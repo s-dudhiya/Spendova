@@ -69,6 +69,8 @@ type ModalType =
   | "group-details"
   | "edit-group"
   | "delete-group"
+  | "leave-group"
+  | "remove-group-member"
   | "invite-members"
   | "group-expense"
   | "choose-friend-expense"
@@ -79,6 +81,7 @@ type ModalType =
   | "friend-requests"
   | "settle-up"
   | "logout"
+  | "delete-account"
   | "saved"
   | null;
 
@@ -1737,6 +1740,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
   const [actionExpense, setActionExpense] = useState<ExpenseRow | null>(null);
   const [participantsExpense, setParticipantsExpense] = useState<ExpenseRow | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const defaultFilters = { status: "all", paidBy: "anyone", date: "all", sort: "newest", splitType: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
@@ -1748,6 +1752,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const net = owedToMe - iOwe;
   const balanceChipText = net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled";
   const balanceChipClass = net > 0 ? "bg-success/15 text-success" : net < 0 ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground";
+  const isOwner = group.created_by === currentUserId;
   const memberMap = Object.fromEntries(group.group_members.map((member) => [member.user_id, member]));
   const getExpenseStatus = (expense: ExpenseRow) => {
     const splits = expense.expense_splits || [];
@@ -1824,8 +1829,9 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
             </div>
           </div>
           <button onClick={() => openModal("invite-members", group.id)} className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Invite members"><UserPlus className="size-4" /></button>
-          <button onClick={() => openModal("edit-group", group.id)} className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Manage group"><Pencil className="size-4" /></button>
-          <button onClick={() => openModal("delete-group", group.id)} className="grid size-9 place-items-center rounded-full text-destructive hover:bg-destructive/10" aria-label="Delete group"><Trash2 className="size-4" /></button>
+          {isOwner ? <button onClick={() => openModal("edit-group", group.id)} className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Manage group"><Pencil className="size-4" /></button> : null}
+          <button onClick={() => openModal("leave-group", group.id)} className="grid size-9 place-items-center rounded-full text-destructive hover:bg-destructive/10" aria-label="Leave group"><UserMinus className="size-4" /></button>
+          {isOwner ? <button onClick={() => openModal("delete-group", group.id)} className="grid size-9 place-items-center rounded-full text-destructive hover:bg-destructive/10" aria-label="Delete group"><Trash2 className="size-4" /></button> : null}
         </header>
 
         <section className="grid grid-cols-2 gap-3">
@@ -1844,11 +1850,46 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
           <div className="mt-3 flex gap-4 overflow-x-auto pb-1">
             {group.group_members.map((member) => {
               const name = member.user_id === currentUserId ? "You" : displayName(member.profiles).split(" ")[0];
+              const canRemoveMember = isOwner && member.user_id !== currentUserId && member.user_id !== group.created_by;
+              const selected = selectedMemberId === member.user_id;
               return (
                 <div key={member.user_id} className="w-14 shrink-0 text-center">
-                  <div className="relative mx-auto grid size-11 place-items-center rounded-2xl bg-primary text-base font-bold text-primary-foreground shadow-primary-action">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedMemberId(selected ? null : member.user_id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedMemberId(selected ? null : member.user_id);
+                      }
+                    }}
+                    className="relative mx-auto grid size-11 place-items-center rounded-2xl bg-primary text-base font-bold text-primary-foreground shadow-primary-action"
+                    aria-label={`Select ${name}`}
+                  >
                     {displayName(member.profiles).charAt(0).toUpperCase()}
-                    {member.user_id === group.created_by || member.user_id === currentUserId ? <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-warning text-primary-foreground"><Crown className="size-2.5" /></span> : null}
+                    {member.user_id === group.created_by ? <span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-warning text-primary-foreground"><Crown className="size-2.5" /></span> : null}
+                    {selected && canRemoveMember ? (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Remove ${name}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openModal("remove-group-member", `${group.id}:${member.user_id}`);
+                        }}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openModal("remove-group-member", `${group.id}:${member.user_id}`);
+                          }
+                        }}
+                        className="absolute -right-2 -top-2 grid size-5 place-items-center rounded-full bg-destructive text-destructive-foreground shadow-soft ring-2 ring-card"
+                      >
+                        <X className="size-3" />
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-1 truncate text-xs font-bold text-foreground">{name}</p>
                 </div>
@@ -1861,6 +1902,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
           <Button onClick={() => openModal("group-expense", group.id)} className="h-[52px] rounded-2xl shadow-primary-action"><Plus />Add Group Expense</Button>
           <Button onClick={() => openModal("settle-up", group.id)} variant="outline" className="h-[52px] rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary"><Check />Settle Up</Button>
         </section>
+        <Button onClick={() => openModal("leave-group", group.id)} variant="quiet" className="h-11 w-full rounded-2xl text-destructive hover:bg-destructive/10 hover:text-destructive"><UserMinus />Leave Group</Button>
 
         <section>
           <div className="mb-2 flex items-center justify-between">
@@ -2053,6 +2095,11 @@ const ProfileView = ({ profile, email, createdAt, theme, onThemeToggle, onSave, 
             <button onClick={() => openModal("logout")} className="w-full rounded-full bg-destructive/15 px-4 py-3 font-bold text-destructive">Logout</button>
           </div>
         </div>
+      </section>
+      <section className="rounded-[1.25rem] border border-destructive/30 bg-card p-5 shadow-panel">
+        <p className="text-sm font-bold text-foreground">Danger zone</p>
+        <p className="mt-1 text-sm text-muted-foreground">Delete your account and related data permanently.</p>
+        <button onClick={() => openModal("delete-account")} className="mt-4 w-full rounded-full bg-destructive/15 px-4 py-3 font-bold text-destructive">Delete Account</button>
       </section>
     </main>
   );
@@ -2410,10 +2457,14 @@ const ActionModal = ({
 }) => {
   const { toast } = useToast();
   const { signOut } = useAuth();
+  const navigate = useNavigate();
   const type = modal.type;
   const expense = data.expenses.find((item) => item.id === modal.item);
   const settlement = data.settlements.find((item) => item.id === modal.item);
   const group = data.groups.find((item) => item.id === modal.item) || data.groups.find((item) => item.id === expense?.group_id);
+  const [memberGroupId, memberUserId] = type === "remove-group-member" && modal.item ? modal.item.split(":") : [];
+  const memberGroup = memberGroupId ? data.groups.find((item) => item.id === memberGroupId) : undefined;
+  const memberToRemove = memberGroup?.group_members.find((member) => member.user_id === memberUserId);
   const settlementFriendId = settlement ? (settlement.from_user_id === currentUserId ? settlement.to_user_id : settlement.from_user_id) : undefined;
   const friend = data.friends.find((item) => item.user_id === modal.item) || data.friends.find((item) => item.user_id === settlementFriendId);
   const groupExpenses = group ? data.expenses.filter((item) => item.group_id === group.id) : [];
@@ -2433,6 +2484,8 @@ const ActionModal = ({
     type === "choose-group-expense" ? "Choose group" :
     type === "edit-group" ? "Edit group" :
     type === "delete-group" ? "Delete group" :
+    type === "leave-group" ? "Leave group" :
+    type === "remove-group-member" ? "Remove member" :
     type === "invite-members" ? "Invite members" :
     type === "group-details" ? group?.name || "Group details" :
     type === "friend-details" ? `${displayName(friend)} details` :
@@ -2441,6 +2494,7 @@ const ActionModal = ({
     type === "friend-requests" ? "Friend requests" :
     type === "settle-up" ? `Settle up - ${group?.name || displayName(friend) || ""}` :
     type === "logout" ? "Logout" :
+    type === "delete-account" ? "Delete Account" :
     type === "notifications" ? "Notifications" : "Saved";
 
   const closeAndRefresh = async () => {
@@ -2472,7 +2526,15 @@ const ActionModal = ({
           const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: inserted.id, amount_paid: payload.status === "cleared" ? split.amount_owed : 0, has_paid: payload.status === "cleared" })));
           if (splitError) throw splitError;
         }
-        if (payload.group_id) supabase.functions.invoke("send-expense-notification", { body: { expense_id: inserted.id } }).catch(() => undefined);
+        if (payload.group_id) {
+          supabase.functions
+            .invoke("send-expense-notification", { body: { expense_id: inserted.id } })
+            .then(({ data, error }) => {
+              if (error) console.error("Expense notification failed", error);
+              else if (data?.emailSent === false) console.warn("Expense notification skipped", data);
+            })
+            .catch((error) => console.error("Expense notification failed", error));
+        }
       }
       toast({ title: "Expense saved", description: "Balances and history were updated." });
       await closeAndRefresh();
@@ -2538,14 +2600,21 @@ const ActionModal = ({
 
   const saveGroup = async (payload: { name: string; emoji: string; description: string; memberIds: string[]; groupId?: string }) => {
     if (payload.groupId) {
+      const existingGroup = data.groups.find((item) => item.id === payload.groupId);
+      if (existingGroup && existingGroup.created_by !== currentUserId) {
+        toast({ title: "Update failed", description: "Only the group owner can edit this group.", variant: "destructive" });
+        return;
+      }
       const { error } = await supabase.from("groups").update({ name: payload.name, emoji: payload.emoji, description: payload.description || null } as never).eq("id", payload.groupId);
       if (error) throw error;
+      toast({ title: "Group updated" });
     } else {
       const { data: inserted, error } = await supabase.from("groups").insert({ name: payload.name, emoji: payload.emoji, description: payload.description || null, created_by: currentUserId } as never).select("id").single();
       if (error || !inserted) throw error;
       const members = [{ group_id: inserted.id, user_id: currentUserId }, ...payload.memberIds.map((user_id) => ({ group_id: inserted.id, user_id }))];
       const { error: memberError } = await supabase.from("group_members").insert(members);
       if (memberError) throw memberError;
+      toast({ title: "Group created" });
     }
     await closeAndRefresh();
   };
@@ -2559,6 +2628,93 @@ const ActionModal = ({
       else toast({ title: "Invite sent" });
       await closeAndRefresh();
     }
+  };
+
+  const addMemberByUsername = async (username: string) => {
+    if (!group) return false;
+    const cleanUsername = username.trim().replace(/^@/, "").toLowerCase();
+    if (!cleanUsername) return false;
+    if (group.created_by !== currentUserId) {
+      toast({ title: "Add member failed", description: "Only the group owner can add members directly.", variant: "destructive" });
+      return false;
+    }
+    const { data: foundUser, error: lookupError } = await supabase
+      .from("profiles")
+      .select("user_id, full_name, username")
+      .eq("username", cleanUsername)
+      .maybeSingle();
+    if (lookupError) {
+      toast({ title: "Add member failed", description: lookupError.message, variant: "destructive" });
+      return false;
+    }
+    if (!foundUser) {
+      toast({ title: "User not found", description: "No account matches that username.", variant: "destructive" });
+      return false;
+    }
+    if (foundUser.user_id === currentUserId) {
+      toast({ title: "Cannot add yourself", description: "You are already in this group.", variant: "destructive" });
+      return false;
+    }
+    if (group.group_members.some((member) => member.user_id === foundUser.user_id)) {
+      toast({ title: "User already in group", description: `${displayName(foundUser)} is already a member.`, variant: "destructive" });
+      return false;
+    }
+    const { error } = await supabase.from("group_members").insert({ group_id: group.id, user_id: foundUser.user_id });
+    if (error) {
+      toast({ title: "Add member failed", description: error.message, variant: "destructive" });
+      return false;
+    }
+    toast({ title: "Member added successfully", description: `${displayName(foundUser)} was added to ${group.name}.` });
+    await closeAndRefresh();
+    return true;
+  };
+
+  const removeGroupMember = async () => {
+    if (!memberGroup || !memberToRemove) return;
+    if (memberGroup.created_by !== currentUserId) {
+      toast({ title: "Remove failed", description: "Only the group owner can remove members.", variant: "destructive" });
+      return;
+    }
+    if (memberToRemove.user_id === memberGroup.created_by) {
+      toast({ title: "Remove failed", description: "The group owner cannot be removed.", variant: "destructive" });
+      return;
+    }
+    const { error } = await supabase.from("group_members").delete().eq("group_id", memberGroup.id).eq("user_id", memberToRemove.user_id);
+    if (error) {
+      toast({ title: "Remove failed", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Member removed", description: `${displayName(memberToRemove.profiles)} was removed from the group.` });
+    await closeAndRefresh();
+  };
+
+  const leaveGroup = async () => {
+    if (!group) return;
+    if (group.created_by === currentUserId) {
+      toast({ title: "Cannot leave group", description: "Group owners must delete the group or transfer ownership before leaving.", variant: "destructive" });
+      return;
+    }
+    const { error } = await supabase.from("group_members").delete().eq("group_id", group.id).eq("user_id", currentUserId);
+    if (error) {
+      toast({ title: "Leave failed", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Left group", description: `You left ${group.name}.` });
+    await refresh();
+    onClose();
+    navigate("/split");
+  };
+
+  const deleteAccount = async () => {
+    const { error } = await supabase.functions.invoke("delete-account");
+    if (error) {
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Account deleted", description: "Your account and related data were deleted." });
+    await supabase.auth.signOut();
+    onClose();
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -2586,7 +2742,7 @@ const ActionModal = ({
               {group.group_members.map((member) => (
                 <div key={member.user_id} className="flex items-center justify-between rounded-2xl bg-elevated p-3 text-sm">
                   <span className="font-semibold text-foreground">{member.user_id === currentUserId ? "You" : displayName(member.profiles)}</span>
-                  <button onClick={async () => { const { error } = await supabase.from("group_members").delete().eq("group_id", group.id).eq("user_id", member.user_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} className="text-xs font-bold text-destructive">Remove</button>
+                  {group.created_by === currentUserId && member.user_id !== currentUserId && member.user_id !== group.created_by ? <button onClick={() => openModal("remove-group-member", `${group.id}:${member.user_id}`)} className="text-xs font-bold text-destructive">Remove</button> : null}
                 </div>
               ))}
             </div>
@@ -2599,13 +2755,14 @@ const ActionModal = ({
               ))}
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="quiet" onClick={() => openModal("edit-group", group.id)}><Pencil />Edit</Button>
-              <Button variant="destructive" onClick={() => openModal("delete-group", group.id)}><Trash2 />Delete</Button>
+              {group.created_by === currentUserId ? <Button variant="quiet" onClick={() => openModal("edit-group", group.id)}><Pencil />Edit</Button> : null}
+              <Button variant="destructive" onClick={() => openModal("leave-group", group.id)}><UserMinus />Leave</Button>
+              {group.created_by === currentUserId ? <Button variant="destructive" onClick={() => openModal("delete-group", group.id)}><Trash2 />Delete</Button> : null}
             </div>
           </div>
         )}
 
-        {type === "invite-members" && group && <InviteMembers group={group} invites={data.groupInvites[group.id] || []} onInvite={sendInvite} />}
+        {type === "invite-members" && group && <InviteMembers group={group} invites={data.groupInvites[group.id] || []} currentUserId={currentUserId} onInvite={sendInvite} onAddByUsername={addMemberByUsername} />}
         {type === "add-friend" && <AddFriendForm currentUserId={currentUserId} friends={data.friends} requests={[...data.incomingRequests, ...data.outgoingRequests]} onRequest={async (receiverId) => { if (receiverId === currentUserId) { toast({ title: "Request failed", description: "You cannot send a friend request to yourself.", variant: "destructive" }); return; } const { error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: receiverId, status: "pending" }); if (error) toast({ title: "Request failed", description: error.message, variant: "destructive" }); else await closeAndRefresh(); }} onCancel={onClose} />}
 
         {type === "friend-requests" && (
@@ -2630,9 +2787,12 @@ const ActionModal = ({
 
         {type === "delete-expense" && <ConfirmBox title="Delete expense?" text="This will update balances for everyone involved." action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
         {type === "clear-expense" && <ConfirmBox text={`Mark "${expense?.category || "expense"}" as cleared?`} action="Mark cleared" onCancel={onClose} onConfirm={clearExpense} />}
-        {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} />}
+        {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { if (group.created_by !== currentUserId) { toast({ title: "Delete failed", description: "Only the group owner can delete this group.", variant: "destructive" }); return; } const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; } toast({ title: "Group deleted" }); await closeAndRefresh(); }} />}
+        {type === "leave-group" && group && <ConfirmBox title="Leave group?" text="Are you sure you want to leave this group?" action="Leave Group" destructive onCancel={onClose} onConfirm={leaveGroup} />}
+        {type === "remove-group-member" && memberGroup && memberToRemove && <ConfirmBox title="Remove member?" text={`Remove ${displayName(memberToRemove.profiles)} from ${memberGroup.name}?`} action="Remove" destructive onCancel={onClose} onConfirm={removeGroupMember} />}
         {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} />}
         {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
+        {type === "delete-account" && <ConfirmBox title="Delete account?" text="This will permanently delete your account and related data. This action cannot be undone." action="Delete Account" destructive onCancel={onClose} onConfirm={deleteAccount} />}
         {type === "notifications" && <NotificationsList data={data} currentUserId={currentUserId} />}
         {type === "chart-details" && <SpendingDetails expenses={data.expenses} currentUserId={currentUserId} />}
         {type === "saved" && <EmptyCard text="Saved." />}
@@ -2641,11 +2801,28 @@ const ActionModal = ({
   );
 };
 
-const InviteMembers = ({ group, invites, onInvite }: { group: GroupRow; invites: InviteRow[]; onInvite: (email: string) => Promise<void> }) => {
+const InviteMembers = ({
+  group,
+  invites,
+  currentUserId,
+  onInvite,
+  onAddByUsername,
+}: {
+  group: GroupRow;
+  invites: InviteRow[];
+  currentUserId: string;
+  onInvite: (email: string) => Promise<void>;
+  onAddByUsername: (username: string) => Promise<boolean>;
+}) => {
+  const { toast } = useToast();
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [activeMode, setActiveMode] = useState<"email" | "username">("email");
   const [submitting, setSubmitting] = useState(false);
+  const [adding, setAdding] = useState(false);
   const inviteToken = invites.find((invite) => invite.status === "pending")?.token;
   const link = inviteToken ? `${window.location.origin}/accept-invite?token=${inviteToken}` : "";
+  const canAddByUsername = group.created_by === currentUserId;
   const submitInvite = async () => {
     if (submitting || !email.trim()) return;
     setSubmitting(true);
@@ -2655,15 +2832,52 @@ const InviteMembers = ({ group, invites, onInvite }: { group: GroupRow; invites:
       setSubmitting(false);
     }
   };
+  const submitUsername = async () => {
+    if (adding || !username.trim()) return;
+    setAdding(true);
+    try {
+      const added = await onAddByUsername(username);
+      if (added) setUsername("");
+    } finally {
+      setAdding(false);
+    }
+  };
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 rounded-2xl bg-elevated p-3">
-        <input readOnly value={link || "Send an invite to generate a link"} className="min-w-0 flex-1 bg-transparent text-xs font-mono outline-none" />
-        <Button size="sm" variant="quiet" disabled={!link} onClick={() => navigator.clipboard?.writeText(link)}><Copy />Copy</Button>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 rounded-full bg-elevated p-1">
+        <button type="button" onClick={() => setActiveMode("email")} className={`rounded-full px-3 py-2 text-sm font-bold ${activeMode === "email" ? "bg-primary text-primary-foreground shadow-primary-action" : "text-muted-foreground"}`}>Invite by email</button>
+        <button type="button" onClick={() => setActiveMode("username")} className={`rounded-full px-3 py-2 text-sm font-bold ${activeMode === "username" ? "bg-primary text-primary-foreground shadow-primary-action" : "text-muted-foreground"}`}>Add by username</button>
       </div>
-      <Field label="Invite by email" type="email" value={email} onChange={setEmail} placeholder="friend@email.com" />
-      <Button className="w-full" onClick={submitInvite} disabled={submitting || !email.trim()}>{submitting ? "Sending..." : "Send invite"}</Button>
-      {invites.length > 0 && <div className="space-y-2">{invites.map((invite) => <div key={invite.id} className="rounded-2xl bg-elevated p-3 text-sm"><span className="font-semibold">{invite.email}</span><span className="ml-2 text-muted-foreground">{invite.status}</span></div>)}</div>}
+      {activeMode === "email" ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 rounded-2xl bg-elevated p-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-foreground">Generate invite link</p>
+              {link ? <p className="truncate text-xs font-medium text-muted-foreground">{link}</p> : <p className="text-xs font-medium text-muted-foreground">Send an email invite first.</p>}
+            </div>
+            <Button
+              size="sm"
+              variant="quiet"
+              disabled={!link}
+              onClick={async () => {
+                await navigator.clipboard?.writeText(link);
+                toast({ title: "Invite link copied" });
+              }}
+            >
+              <Copy />Copy link
+            </Button>
+          </div>
+          <Field label="Invite by email" type="email" value={email} onChange={setEmail} placeholder="friend@email.com" />
+          <Button className="w-full" onClick={submitInvite} disabled={submitting || !email.trim()}>{submitting ? "Sending..." : "Send invite"}</Button>
+          {invites.length > 0 && <div className="space-y-2">{invites.map((invite) => <div key={invite.id} className="rounded-2xl bg-elevated p-3 text-sm"><span className="font-semibold">{invite.email}</span><span className="ml-2 text-muted-foreground">{invite.status}</span></div>)}</div>}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <Field label="Add by username" value={username} onChange={(value) => setUsername(value.toLowerCase().replace(/^@/, "").replace(/[^a-z0-9_]/g, ""))} placeholder="Enter username" />
+          {!canAddByUsername ? <p className="rounded-2xl bg-destructive/10 p-3 text-sm font-medium text-destructive">Only the group owner can add members directly.</p> : null}
+          <Button className="w-full" onClick={submitUsername} disabled={adding || !username.trim() || !canAddByUsername}>{adding ? "Adding..." : "Add member"}</Button>
+        </div>
+      )}
     </div>
   );
 };

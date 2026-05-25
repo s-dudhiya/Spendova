@@ -25,6 +25,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const INACTIVITY_TIMEOUT = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -33,7 +34,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  const INACTIVITY_TIMEOUT = 60 * 60 * 1000; // 1 hour
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Auto-logout due to inactivity
@@ -110,38 +110,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) toast({ title: "Sign In Failed", description: error.message, variant: "destructive" });
+    if (error) {
+      console.error("Supabase sign-in error", error);
+      toast({ title: "Sign In Failed", description: error.message, variant: "destructive" });
+    }
     return { error };
   };
 
   const signUp = async (email: string, password: string, fullName: string, username: string, redirectTo?: string) => {
-    // If no explicit redirect is provided, fallback to the site's origin (works for both local and prod)
-    const baseRedirect = redirectTo
-      ? `${window.location.origin}${redirectTo}`
-      : `${window.location.origin}/dashboard`;
+    const callbackUrl = new URL(`${window.location.origin}/auth/callback`);
+    if (redirectTo) callbackUrl.searchParams.set("redirect", redirectTo);
 
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: baseRedirect, data: { full_name: fullName, username: username } }
+      options: { emailRedirectTo: callbackUrl.toString(), data: { full_name: fullName, username: username } }
     });
 
-    if (error) toast({ title: "Sign Up Failed", description: error.message, variant: "destructive" });
+    if (error) {
+      console.error("Supabase sign-up error", error);
+      toast({ title: "Sign Up Failed", description: error.message, variant: "destructive" });
+    }
     else toast({ title: "Sign Up Successful", description: "Please check your email to confirm your account." });
 
     return { error };
   };
 
   const resetPassword = async (email: string) => {
-    const envAppUrl = import.meta.env.VITE_APP_URL?.replace(/\/$/, "");
-    const browserOrigin = typeof window !== "undefined" ? window.location.origin : "";
-    const redirectUrl = `${envAppUrl || browserOrigin}/reset-password`;
+    const redirectUrl = `${window.location.origin}/reset-password`;
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: redirectUrl,
     });
 
-    if (error) toast({ title: "Reset Password Failed", description: error.message, variant: "destructive" });
+    if (error) {
+      console.error("Supabase password recovery error", error);
+      toast({ title: "Reset Password Failed", description: error.message, variant: "destructive" });
+    }
     else toast({ title: "Check Your Email", description: "A password reset link has been sent to your email." });
 
     return { error };
@@ -150,7 +155,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updatePassword = async (password: string) => {
     const { error } = await supabase.auth.updateUser({ password });
 
-    if (error) toast({ title: "Update Failed", description: error.message, variant: "destructive" });
+    if (error) {
+      console.error("Supabase update password error", error);
+      toast({ title: "Update Failed", description: error.message, variant: "destructive" });
+    }
     else toast({ title: "Password Updated", description: "Your password has been successfully updated." });
 
     return { error };

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
-import { Eye, EyeOff, LockKeyhole, LogIn, Mail, ShieldCheck, User, UserRound } from "lucide-react";
+import { Eye, EyeOff, Loader2, LockKeyhole, LogIn, Mail, ShieldCheck, User, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
 
 type AuthMode = "login" | "register" | "forgot" | "reset";
@@ -59,8 +60,10 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
   const [username, setUsername] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [recoveryStatus, setRecoveryStatus] = useState<"checking" | "ready" | "invalid">(mode === "reset" ? "checking" : "ready");
   const [formError, setFormError] = useState("");
   const { user, loading, signIn, signUp, resetPassword, updatePassword } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -72,6 +75,61 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
+
+  useEffect(() => {
+    if (!isReset) return;
+
+    let active = true;
+    const code = searchParams.get("code");
+    const tokenHash = searchParams.get("token_hash");
+    const type = searchParams.get("type");
+
+    const processRecoveryUrl = async () => {
+      try {
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+        } else if (tokenHash && type) {
+          const { error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: type as "recovery",
+          });
+          if (error) throw error;
+        }
+      } catch (error) {
+        console.error("Supabase recovery URL error", error);
+        if (active) setRecoveryStatus("invalid");
+      }
+    };
+
+    const markReadyIfSessionExists = async () => {
+      await processRecoveryUrl();
+      const { data, error } = await supabase.auth.getSession();
+      if (!active) return;
+      if (error) {
+        console.error("Supabase recovery session error", error);
+        setRecoveryStatus("invalid");
+        return;
+      }
+      setRecoveryStatus(data.session ? "ready" : "checking");
+    };
+
+    markReadyIfSessionExists();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
+      if (event === "PASSWORD_RECOVERY" || session) setRecoveryStatus("ready");
+    });
+
+    const timer = window.setTimeout(() => {
+      if (active) setRecoveryStatus((current) => current === "checking" ? "invalid" : current);
+    }, 2500);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      subscription.unsubscribe();
+    };
+  }, [isReset, searchParams]);
 
   useEffect(() => {
     if (!isRegister || username.length === 0) {
@@ -104,6 +162,9 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
         ? "Choose a strong password to secure your Spendova account."
         : "Enter your email and we will send a password reset link.";
   const buttonLabel = submitting ? "Please wait..." : isLogin ? "Login" : isRegister ? "Register" : isReset ? "Update password" : "Send reset link";
+  const redirectParam = searchParams.get("redirect");
+  const loginLink = redirectParam ? `/login?redirect=${encodeURIComponent(redirectParam)}` : "/login";
+  const registerLink = redirectParam ? `/register?redirect=${encodeURIComponent(redirectParam)}` : "/register";
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -129,8 +190,19 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
           : await resetPassword(email);
     setSubmitting(false);
 
+    if (result.error) {
+      console.error("Auth form error", result.error);
+      setFormError(result.error.message || "Something went wrong. Please try again.");
+      return;
+    }
+
     if (!result.error && isLogin) navigate(redirect || "/dashboard", { replace: true });
-    if (!result.error && (isForgot || isReset)) navigate("/login", { replace: true });
+    if (!result.error && isForgot) navigate("/login", { replace: true });
+    if (!result.error && isReset) {
+      toast({ title: "Password updated", description: "Please sign in with your new password." });
+      await supabase.auth.signOut();
+      navigate("/login", { replace: true });
+    }
   };
 
   return (
@@ -155,6 +227,17 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
             <p className="mt-2 text-sm leading-6 text-[#6d638e]">{description}</p>
           </div>
 
+          {isReset && recoveryStatus === "checking" ? (
+            <div className="flex items-center justify-center gap-2 rounded-2xl bg-[#f4f0ff] px-4 py-5 text-sm font-semibold text-[#6d638e]">
+              <Loader2 className="size-4 animate-spin text-[#7c3aed]" />
+              Checking reset link...
+            </div>
+          ) : isReset && recoveryStatus === "invalid" ? (
+            <div className="space-y-4">
+              <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">This reset link is invalid or expired. Request a new password reset email.</p>
+              <Button type="button" onClick={() => navigate("/forgot-password", { replace: true })} className="h-12 w-full rounded-xl">Request new link</Button>
+            </div>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             {isRegister && <TextField label="Full name" value={fullName} onChange={setFullName} placeholder="Enter full name" icon={UserRound} />}
             {isRegister && (
@@ -180,6 +263,7 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
               {buttonLabel}
             </Button>
           </form>
+          )}
 
           <div className="mt-4 flex items-center gap-3 text-xs font-medium text-[#81769f]">
             <span className="h-px flex-1 bg-[#ddd3f6]" />
@@ -189,9 +273,9 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
 
           <div className="mt-3 text-center text-sm font-medium text-[#6d638e]">
             {isLogin ? (
-              <>New to Spendova? <Link to="/register" className="font-semibold text-[#6d28d9]">Create account</Link></>
+              <>New to Spendova? <Link to={registerLink} className="font-semibold text-[#6d28d9]">Create account</Link></>
             ) : (
-              <>Already have access? <Link to="/login" className="font-semibold text-[#6d28d9]">Login</Link></>
+              <>Already have access? <Link to={loginLink} className="font-semibold text-[#6d28d9]">Login</Link></>
             )}
           </div>
         </section>
