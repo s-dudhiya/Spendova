@@ -2,19 +2,11 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import nodemailer from 'npm:nodemailer'
+import { cleanMailHeader, emailTemplate, escapeHtml, fromAddress } from '../_shared/email-template.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-function escapeHtml(value: unknown) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
 }
 
 function money(value: number) {
@@ -29,42 +21,20 @@ function expenseEmailHtml(payerName: string, category: string, totalAmount: numb
   const safeTotalAmount = escapeHtml(money(totalAmount))
   const safeMyShare = escapeHtml(money(myShare))
 
-  return `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:30px;background:#F7F5FF;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <div style="max-width:520px;margin:auto;background:#ffffff;border-radius:20px;padding:35px;border:1px solid #ECE8FF;">
-    <div style="margin-bottom:28px;">
-      <div style="font-size:13px;color:#8D88A8;letter-spacing:1px;font-weight:600;">SPENDOVA</div>
-      <h1 style="margin:10px 0 0;color:#1A1A1A;font-size:24px;font-weight:700;">New expense added</h1>
-    </div>
-
-    <p style="color:#5B5B6A;font-size:15px;line-height:1.7;margin-bottom:25px;">
-      <strong style="color:#1A1A1A;">${safePayerName}</strong>
-      added a new expense in
-      <strong style="color:#8B6CFF;">${safeGroupName}</strong>.
-    </p>
-
-    ${safeNote ? `<p style="color:#5B5B6A;font-size:14px;line-height:1.6;margin:0 0 18px;padding:12px 14px;background:#FAF9FF;border:1px solid #F0EBFF;border-radius:12px;">${safeNote}</p>` : ''}
-
-    <div style="background:#FAF9FF;border-radius:14px;padding:18px;margin-bottom:14px;border:1px solid #F0EBFF;">
-      <div style="font-size:13px;color:#8D88A8;margin-bottom:6px;">Category</div>
-      <div style="font-size:18px;color:#1A1A1A;font-weight:600;">${safeCategory}</div>
-    </div>
-
-    <div style="background:#FAF9FF;border-radius:14px;padding:18px;margin-bottom:14px;border:1px solid #F0EBFF;">
-      <div style="font-size:13px;color:#8D88A8;margin-bottom:6px;">Total amount</div>
-      <div style="font-size:22px;color:#1A1A1A;font-weight:700;">INR ${safeTotalAmount}</div>
-    </div>
-
-    <div style="background:#F4EEFF;border-radius:14px;padding:18px;border:1px solid #E5D8FF;">
-      <div style="font-size:13px;color:#8B6CFF;margin-bottom:6px;font-weight:600;">Your share</div>
-      <div style="font-size:26px;color:#8B6CFF;font-weight:800;">INR ${safeMyShare}</div>
-    </div>
-
-    <p style="margin-top:30px;color:#8D88A8;font-size:13px;text-align:center;">Track expenses together with Spendova</p>
-  </div>
-</body>
-</html>`
+  return emailTemplate({
+    preview: `${payerName || 'Someone'} added an expense in ${groupName || 'your group'}.`,
+    title: 'New expense added',
+    body: [
+      `<strong style="color:#1f2230;">${safePayerName}</strong> added a new expense in <strong style="color:#1f2230;">${safeGroupName}</strong>.`,
+      safeNote ? `Note: ${safeNote}` : '',
+    ],
+    details: [
+      { label: 'Category', value: safeCategory },
+      { label: 'Total amount', value: `INR ${safeTotalAmount}` },
+      { label: 'Your share', value: `INR ${safeMyShare}`, highlight: true },
+    ],
+    footer: 'Spendova expense notification',
+  })
 }
 
 serve(async (req) => {
@@ -179,9 +149,9 @@ serve(async (req) => {
       if (!email) continue
       const share = Number(split.amount_owed || 0)
       await transporter.sendMail({
-        from: `Spendova <${SMTP_USER}>`,
+        from: fromAddress(SMTP_USER),
         to: email,
-        subject: `${payerName} added "${expense.category || 'Expense'}" - Your share INR ${money(share)}`,
+        subject: `${cleanMailHeader(payerName)} added "${cleanMailHeader(expense.category || 'Expense')}" - Your share INR ${money(share)}`,
         html: expenseEmailHtml(payerName, expense.category, expense.amount, share, groupName, expense.note),
       })
       sent += 1

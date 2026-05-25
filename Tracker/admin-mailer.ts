@@ -47,7 +47,7 @@ async function runAdminMailJob() {
     console.log("=================================\n");
 
     const bccPayload = emails.join(',');
-    const mailToLink = `mailto:?bcc=${bccPayload}&subject=ExpenseMate%20Maintenance%20Notice&body=Hi%20there,%0A%0AThe%20ExpenseMate%20platform%20will%20be%20undergoing%20maintenance.`;
+    const mailToLink = `mailto:?bcc=${bccPayload}&subject=Spendova%20Maintenance%20Notice&body=Hi%20there,%0A%0ASpendova%20will%20be%20undergoing%20maintenance.`;
 
     console.log(mailToLink);
 

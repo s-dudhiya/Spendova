@@ -2,6 +2,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import nodemailer from 'npm:nodemailer'
+import { cleanMailHeader, emailTemplate, escapeHtml, fromAddress } from '../_shared/email-template.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,61 +10,43 @@ const corsHeaders = {
 }
 
 function inviteEmailHtml(inviterName: string, groupName: string, inviteUrl: string) {
-  return `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#0f0f14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <div style="max-width:520px;margin:40px auto;background:#1a1a24;border-radius:24px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
-    <div style="background:linear-gradient(135deg,#6c47ff,#4f8bff);padding:40px 32px;text-align:center;">
-      <div style="font-size:48px;margin-bottom:12px;">💸</div>
-      <h1 style="color:#fff;margin:0;font-size:26px;font-weight:800;letter-spacing:-0.5px;">You're invited to Spendova</h1>
-    </div>
-    <div style="padding:32px;">
-      <p style="color:#c4c4d4;font-size:16px;line-height:1.6;margin:0 0 20px;">
-        <strong style="color:#fff;">${inviterName}</strong> invited you to join the group
-        <strong style="color:#7c6af7;">${groupName}</strong> on Spendova — the smartest way to split expenses with friends.
-      </p>
-      <div style="text-align:center;margin:28px 0;">
-        <a href="${inviteUrl}" style="display:inline-block;background:linear-gradient(135deg,#6c47ff,#4f8bff);color:#fff;text-decoration:none;padding:14px 36px;border-radius:50px;font-weight:700;font-size:16px;letter-spacing:0.3px;">
-          Accept Invite
-        </a>
-      </div>
-      <p style="color:#6b6b80;font-size:13px;text-align:center;margin:0;">
-        Button not working? Copy this link:<br>
-        <a href="${inviteUrl}" style="color:#7c6af7;word-break:break-all;">${inviteUrl}</a>
-      </p>
-    </div>
-    <div style="padding:20px 32px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;">
-      <p style="color:#6b6b80;font-size:12px;margin:0;">Spendova · Split smarter</p>
-    </div>
-  </div>
-</body>
-</html>`
+  const displayInviterName = inviterName || 'A Spendova user'
+  const displayGroupName = groupName || 'a group'
+  const safeInviterName = escapeHtml(displayInviterName)
+  const safeGroupName = escapeHtml(displayGroupName)
+  const safeInviteUrl = escapeHtml(inviteUrl)
+
+  return emailTemplate({
+    preview: `${displayInviterName} invited you to join ${displayGroupName} on Spendova.`,
+    title: 'You have been invited to a group',
+    body: [
+      `<strong style="color:#1f2230;">${safeInviterName}</strong> invited you to join <strong style="color:#1f2230;">${safeGroupName}</strong> on Spendova.`,
+      'Use the button below to review and accept the invitation. This invitation is valid for 14 days.',
+    ],
+    button: { label: 'Accept invitation', url: inviteUrl },
+    note: `If the button does not open, copy and paste this link into your browser:<br><a href="${safeInviteUrl}" style="color:#5b3fd6;word-break:break-all;text-decoration:none;">${safeInviteUrl}</a>`,
+    footer: 'Spendova account notification',
+  })
 }
 
 function notificationEmailHtml(inviterName: string, groupName: string, appUrl: string) {
-  return `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#0f0f14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <div style="max-width:520px;margin:40px auto;background:#1a1a24;border-radius:24px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
-    <div style="background:linear-gradient(135deg,#6c47ff,#4f8bff);padding:32px;text-align:center;">
-      <div style="font-size:40px;margin-bottom:10px;">👥</div>
-      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;">Group Invite</h1>
-    </div>
-    <div style="padding:28px;">
-      <p style="color:#c4c4d4;font-size:15px;line-height:1.6;margin:0 0 20px;">
-        <strong style="color:#fff;">${inviterName}</strong> added you to the group
-        <strong style="color:#7c6af7;">${groupName}</strong> on Spendova. Open the app to accept.
-      </p>
-      <div style="text-align:center;margin:24px 0;">
-        <a href="${appUrl}" style="display:inline-block;background:linear-gradient(135deg,#6c47ff,#4f8bff);color:#fff;text-decoration:none;padding:12px 32px;border-radius:50px;font-weight:700;">
-          Open Spendova
-        </a>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`
+  const displayInviterName = inviterName || 'A Spendova user'
+  const displayGroupName = groupName || 'a group'
+  const safeInviterName = escapeHtml(displayInviterName)
+  const safeGroupName = escapeHtml(displayGroupName)
+  const safeAppUrl = escapeHtml(appUrl)
+
+  return emailTemplate({
+    preview: `${displayInviterName} added you to ${displayGroupName} on Spendova.`,
+    title: 'Group invitation pending',
+    body: [
+      `<strong style="color:#1f2230;">${safeInviterName}</strong> added you to <strong style="color:#1f2230;">${safeGroupName}</strong> on Spendova.`,
+      'Open Spendova to review and accept the group invitation.',
+    ],
+    button: { label: 'Open Spendova', url: appUrl },
+    note: `If the button does not open, copy and paste this link into your browser:<br><a href="${safeAppUrl}" style="color:#5b3fd6;word-break:break-all;text-decoration:none;">${safeAppUrl}</a>`,
+    footer: 'Spendova account notification',
+  })
 }
 
 serve(async (req) => {
@@ -110,11 +93,9 @@ serve(async (req) => {
 
     const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
 
-    // Check if email already exists in the app
     const { data: usersData } = await supabaseAdmin.auth.admin.listUsers()
     const existingUser = usersData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase())
 
-    // Check if invite exists manually to avoid upsert UNIQUE constraint error
     const { data: existingInvite } = await supabaseAdmin
       .from('group_invites')
       .select('*')
@@ -122,7 +103,7 @@ serve(async (req) => {
       .eq('group_id', group_id)
       .maybeSingle()
 
-    let invite;
+    let invite
     if (existingInvite) {
       const { data, error: updateErr } = await supabaseAdmin
         .from('group_invites')
@@ -130,14 +111,14 @@ serve(async (req) => {
         .eq('id', existingInvite.id)
         .select('token').single()
       if (updateErr) throw updateErr
-      invite = data;
+      invite = data
     } else {
       const { data, error: insertErr } = await supabaseAdmin
         .from('group_invites')
         .insert({ group_id, invited_by: userData.user.id, email, status: 'pending', expires_at: expiresAt })
         .select('token').single()
       if (insertErr) throw insertErr
-      invite = data;
+      invite = data
     }
 
     const inviteUrl = `${appUrl}/accept-invite?token=${invite.token}`
@@ -145,17 +126,16 @@ serve(async (req) => {
     let subject: string
     let html: string
 
+    const subjectInviterName = cleanMailHeader(inviter_name)
+    const subjectGroupName = cleanMailHeader(group_name)
     if (existingUser) {
-      // Existing user — send notification
-      subject = `${inviter_name} added you to "${group_name}" on Spendova`
+      subject = `${subjectInviterName} added you to "${subjectGroupName}" on Spendova`
       html = notificationEmailHtml(inviter_name, group_name, inviteUrl)
     } else {
-      // New user — send invite with magic link
-      subject = `${inviter_name} invited you to split expenses on Spendova 💸`
+      subject = `${subjectInviterName} invited you to join "${subjectGroupName}" on Spendova`
       html = inviteEmailHtml(inviter_name, group_name, inviteUrl)
     }
 
-    // Setup SMTP (if credentials exist)
     const SMTP_HOST = Deno.env.get('SMTP_HOST') || 'smtp.gmail.com'
     const SMTP_PORT = parseInt(Deno.env.get('SMTP_PORT') || '465')
     const SMTP_USER = Deno.env.get('SMTP_USER')
@@ -170,11 +150,11 @@ serve(async (req) => {
         auth: { user: SMTP_USER, pass: SMTP_PASS },
         maxMessageSize: 100 * 1024 * 1024,
       })
-      await transporter.sendMail({ from: `Spendova <${SMTP_USER}>`, to: email, subject, html })
+      await transporter.sendMail({ from: fromAddress(SMTP_USER), to: email, subject, html })
       emailSent = true
     } else {
       emailReason = 'SMTP missing'
-      console.warn("SMTP credentials missing. Invite generated in DB but email not sent.");
+      console.warn('SMTP credentials missing. Invite generated in DB but email not sent.')
     }
 
     return new Response(JSON.stringify({ success: true, inviteCreated: true, emailSent, reason: emailReason, inviteUrl, isExistingUser: !!existingUser }), {

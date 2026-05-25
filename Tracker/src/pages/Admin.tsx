@@ -335,9 +335,9 @@ const AdminDashboard = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="message">HTML Email Body</Label>
-                  <Textarea id="message" placeholder="<p>Hi there,</p><p>We will be performing maintenance on...</p>" value={message} onChange={(event) => setMessage(event.target.value)} className="min-h-[250px] font-mono text-sm" />
-                  <p className="text-xs text-muted-foreground">You can use standard HTML tags like &lt;strong&gt;, &lt;br/&gt;, &lt;p&gt;, &lt;h1&gt;.</p>
+                  <Label htmlFor="message">Email Message</Label>
+                  <Textarea id="message" placeholder={"Hi there,\n\nWe will be performing scheduled maintenance on Spendova.\n\nThank you for your patience."} value={message} onChange={(event) => setMessage(event.target.value)} className="min-h-[250px] text-sm" />
+                  <p className="text-xs text-muted-foreground">Spendova will apply the official email layout automatically.</p>
                 </div>
 
                 <div className="space-y-3">

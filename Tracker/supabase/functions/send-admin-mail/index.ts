@@ -2,10 +2,27 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import nodemailer from 'npm:nodemailer'
+import { cleanMailHeader, emailTemplate, escapeHtml, fromAddress, stripHtml } from '../_shared/email-template.ts'
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+function adminEmailHtml(subject: string, htmlBody: string) {
+    const rawBody = String(htmlBody || '').trim()
+    const hasHtmlTags = /<\/?[a-z][\s\S]*>/i.test(rawBody)
+    const contentHtml = hasHtmlTags
+        ? `<div style="color:#3f4254;font-size:15px;line-height:1.65;">${rawBody}</div>`
+        : `<div style="color:#3f4254;font-size:15px;line-height:1.65;white-space:pre-line;">${escapeHtml(rawBody)}</div>`
+
+    return emailTemplate({
+        preview: stripHtml(rawBody).slice(0, 140) || subject,
+        title: subject,
+        body: [],
+        contentHtml,
+        footer: 'Spendova announcement',
+    })
 }
 
 serve(async (req) => {
@@ -132,11 +149,11 @@ serve(async (req) => {
         console.log(`Admin mail mode=${mode}; recipients=${mode === 'single' ? requestedEmail : emails.length}`);
         // Send using BCC to prevent exposing all emails
         const mailOptions: any = {
-            from: SMTP_USER,
+            from: fromAddress(SMTP_USER),
             ...(mode === 'single' ? { to: requestedEmail } : { to: SMTP_USER, bcc: emails }),
-            subject: subject,
-            text: htmlBody, // Provide text fallback (optional, but good)
-            html: htmlBody,
+            subject: cleanMailHeader(subject),
+            text: stripHtml(htmlBody),
+            html: adminEmailHtml(subject, htmlBody),
         };
 
         if (attachments && Array.isArray(attachments) && attachments.length > 0) {
