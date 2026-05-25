@@ -16,16 +16,16 @@ function inviteEmailHtml(inviterName: string, groupName: string, inviteUrl: stri
   <div style="max-width:520px;margin:40px auto;background:#1a1a24;border-radius:24px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
     <div style="background:linear-gradient(135deg,#6c47ff,#4f8bff);padding:40px 32px;text-align:center;">
       <div style="font-size:48px;margin-bottom:12px;">💸</div>
-      <h1 style="color:#fff;margin:0;font-size:26px;font-weight:800;letter-spacing:-0.5px;">You're invited to ExpenseMate</h1>
+      <h1 style="color:#fff;margin:0;font-size:26px;font-weight:800;letter-spacing:-0.5px;">You're invited to Spendova</h1>
     </div>
     <div style="padding:32px;">
       <p style="color:#c4c4d4;font-size:16px;line-height:1.6;margin:0 0 20px;">
         <strong style="color:#fff;">${inviterName}</strong> invited you to join the group
-        <strong style="color:#7c6af7;">${groupName}</strong> on ExpenseMate — the smartest way to split expenses with friends.
+        <strong style="color:#7c6af7;">${groupName}</strong> on Spendova — the smartest way to split expenses with friends.
       </p>
       <div style="text-align:center;margin:28px 0;">
         <a href="${inviteUrl}" style="display:inline-block;background:linear-gradient(135deg,#6c47ff,#4f8bff);color:#fff;text-decoration:none;padding:14px 36px;border-radius:50px;font-weight:700;font-size:16px;letter-spacing:0.3px;">
-          Accept Invite & Join 🎉
+          Accept Invite
         </a>
       </div>
       <p style="color:#6b6b80;font-size:13px;text-align:center;margin:0;">
@@ -34,7 +34,7 @@ function inviteEmailHtml(inviterName: string, groupName: string, inviteUrl: stri
       </p>
     </div>
     <div style="padding:20px 32px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;">
-      <p style="color:#6b6b80;font-size:12px;margin:0;">ExpenseMate · Split smarter</p>
+      <p style="color:#6b6b80;font-size:12px;margin:0;">Spendova · Split smarter</p>
     </div>
   </div>
 </body>
@@ -53,11 +53,11 @@ function notificationEmailHtml(inviterName: string, groupName: string, appUrl: s
     <div style="padding:28px;">
       <p style="color:#c4c4d4;font-size:15px;line-height:1.6;margin:0 0 20px;">
         <strong style="color:#fff;">${inviterName}</strong> added you to the group
-        <strong style="color:#7c6af7;">${groupName}</strong> on ExpenseMate. Open the app to accept.
+        <strong style="color:#7c6af7;">${groupName}</strong> on Spendova. Open the app to accept.
       </p>
       <div style="text-align:center;margin:24px 0;">
         <a href="${appUrl}" style="display:inline-block;background:linear-gradient(135deg,#6c47ff,#4f8bff);color:#fff;text-decoration:none;padding:12px 32px;border-radius:50px;font-weight:700;">
-          Open ExpenseMate
+          Open Spendova
         </a>
       </div>
     </div>
@@ -147,11 +147,11 @@ serve(async (req) => {
 
     if (existingUser) {
       // Existing user — send notification
-      subject = `${inviter_name} added you to "${group_name}" on ExpenseMate`
+      subject = `${inviter_name} added you to "${group_name}" on Spendova`
       html = notificationEmailHtml(inviter_name, group_name, inviteUrl)
     } else {
       // New user — send invite with magic link
-      subject = `${inviter_name} invited you to split expenses on ExpenseMate 💸`
+      subject = `${inviter_name} invited you to split expenses on Spendova 💸`
       html = inviteEmailHtml(inviter_name, group_name, inviteUrl)
     }
 
@@ -170,7 +170,7 @@ serve(async (req) => {
         auth: { user: SMTP_USER, pass: SMTP_PASS },
         maxMessageSize: 100 * 1024 * 1024,
       })
-      await transporter.sendMail({ from: `ExpenseMate <${SMTP_USER}>`, to: email, subject, html })
+      await transporter.sendMail({ from: `Spendova <${SMTP_USER}>`, to: email, subject, html })
       emailSent = true
     } else {
       emailReason = 'SMTP missing'

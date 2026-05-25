@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.expensemate.app',
+  appId: 'com.Spendova.app',
   appName: 'Spendova',
   webDir: 'dist',
   plugins: {

@@ -332,7 +332,7 @@ export default function Dashboard() {
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center shadow-lg shadow-primary/20 text-lg">
             💰
           </div>
-          <h1 className="text-lg font-extrabold tracking-tight text-foreground">ExpenseMate</h1>
+          <h1 className="text-lg font-extrabold tracking-tight text-foreground">Spendova</h1>
         </div>
         <div className="flex gap-2">
           <Button
