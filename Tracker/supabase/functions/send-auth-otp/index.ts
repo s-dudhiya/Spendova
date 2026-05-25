@@ -121,7 +121,7 @@ serve(async (req) => {
           if (existingProfile?.email_verified) return json({ error: 'An account with this email already exists' }, 409)
           await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
             password,
-            user_metadata: { full_name: fullName, username },
+            user_metadata: { full_name: fullName, username, spendova_custom_pending: true },
           })
           await supabaseAdmin.from('profiles').upsert({
             user_id: existingUser.id,
@@ -134,7 +134,7 @@ serve(async (req) => {
             email,
             password,
             email_confirm: true,
-            user_metadata: { full_name: fullName, username },
+            user_metadata: { full_name: fullName, username, spendova_custom_pending: true },
           })
           if (createError) throw createError
           await supabaseAdmin.from('profiles').upsert({

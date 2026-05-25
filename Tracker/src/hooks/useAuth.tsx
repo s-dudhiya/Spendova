@@ -120,11 +120,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('user_id', data.user.id)
       .maybeSingle();
     if (profileError) console.error("Profile verification lookup failed", profileError);
-    if (profileData && profileData.email_verified === false) {
+    const customSignupPending = data.user.user_metadata?.spendova_custom_pending === true;
+    if (profileData && profileData.email_verified === false && customSignupPending) {
       await supabase.auth.signOut();
       const verifyError = new Error("Please verify your email with the 6-digit code before logging in.");
       toast({ title: "Verification Required", description: verifyError.message, variant: "destructive" });
       return { error: verifyError };
+    }
+    if (profileData && profileData.email_verified === false && !customSignupPending) {
+      const { error: repairError } = await supabase
+        .from('profiles')
+        .update({ email_verified: true })
+        .eq('user_id', data.user.id);
+      if (repairError) console.error("Profile verification repair failed", repairError);
     }
     return { error: null };
   };

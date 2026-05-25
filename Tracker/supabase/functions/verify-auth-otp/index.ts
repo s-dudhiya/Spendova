@@ -74,6 +74,12 @@ serve(async (req) => {
       const user = usersData?.users?.find((item: any) => item.email?.toLowerCase() === email)
       if (!user) return json({ error: 'Account not found.' }, 404)
 
+      const metadata = user.user_metadata || {}
+      const { error: userUpdateError } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
+        user_metadata: { ...metadata, spendova_custom_pending: false },
+      })
+      if (userUpdateError) throw userUpdateError
+
       const { error: profileError } = await supabaseAdmin
         .from('profiles')
         .update({ email_verified: true })
