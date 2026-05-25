@@ -541,6 +541,15 @@ function getSplitExpenseDisplayStatus(expense: ExpenseRow, currentUserId: string
   return getExpenseSettlementState(expense, mySplit ? [mySplit] : []);
 }
 
+function getPersonalShareStatus(expense: ExpenseRow, currentUserId: string) {
+  if (isPersonalOnlyExpense(expense)) {
+    return expense.status === "cleared" ? "cleared" as const : "pending" as const;
+  }
+  if (expense.paid_by === currentUserId) return "cleared" as const;
+  const mySplit = expense.expense_splits?.find((split) => split.user_id === currentUserId);
+  return splitRemaining(mySplit) <= 0.009 ? "cleared" as const : "pending" as const;
+}
+
 function getFriendNetSettled(expense: ExpenseRow, currentUserId: string, allExpenses: ExpenseRow[], settlements: SplitSettlementRow[]) {
   if (expense.group_id) return false;
   const otherSplit = (expense.expense_splits || []).find((split) => split.user_id !== currentUserId);
@@ -572,32 +581,28 @@ function getPersonalExpenseDisplay(expense: ExpenseRow, currentUserId: string, g
   const payerName = expense.paid_by === currentUserId
     ? "You"
     : displayName(expense.payer_profile || friends.find((friend) => friend.user_id === expense.paid_by));
-  const otherSplits = (expense.expense_splits || []).filter((split) => split.user_id !== currentUserId);
-  const otherRemaining = otherSplits.reduce((sum, split) => sum + splitRemaining(split), 0);
   const source = expense.group_id ? "Group" : "Split";
-  const friendNetSettled = getFriendNetSettled(expense, currentUserId, allExpenses, settlements);
+  const personalStatus = getPersonalShareStatus(expense, currentUserId);
+  const myShare = Number(getExpenseShare(expense, currentUserId) || 0);
 
   if (expense.paid_by === currentUserId) {
     const group = groups.find((item) => item.id === expense.group_id);
-    const state = getSplitExpenseDisplayStatus(expense, currentUserId);
-    const receivableImpact = otherSplits.reduce((sum, split) => sum + Number(split.amount_owed || 0), 0);
     const context = expense.group_id
       ? `${source} · You paid${group?.name ? ` · ${group.name}` : ""}`
       : `${source} · You paid`;
-    return { amount: receivableImpact, status: friendNetSettled ? "cleared" as const : state.status, context, canClear: false, remainingAmount: friendNetSettled ? 0 : otherRemaining, originalAmount: state.originalAmount };
+    return { amount: myShare, status: personalStatus, context, canClear: false, remainingAmount: 0, originalAmount: myShare };
   }
 
   const mySplit = expense.expense_splits?.find((split) => split.user_id === currentUserId);
-  const state = getSplitExpenseDisplayStatus(expense, currentUserId);
   const myRemaining = splitRemaining(mySplit);
-  const amount = Number(mySplit?.amount_owed || getExpenseShare(expense, currentUserId) || expense.amount || 0);
+  const amount = Number(mySplit?.amount_owed || myShare || 0);
   return {
     amount,
-    status: friendNetSettled ? "cleared" as const : state.status,
+    status: personalStatus,
     context: `${source} · ${payerName} paid`,
     canClear: false,
-    remainingAmount: friendNetSettled ? 0 : myRemaining,
-    originalAmount: state.originalAmount,
+    remainingAmount: personalStatus === "cleared" ? 0 : myRemaining,
+    originalAmount: amount,
   };
 }
 
@@ -666,21 +671,15 @@ function getSummary(expenses: ExpenseRow[], userId: string, settlements: SplitSe
 
   expenses.forEach((expense) => {
     const isFood = expense.category === "tiffin" || expense.category === "delivery";
-    const isPayer = expense.paid_by === userId;
-    const mySplit = expense.expense_splits?.find((split) => split.user_id === userId);
     const personalOnly = isPersonalOnlyExpense(expense);
-    const otherSplits = (expense.expense_splits || []).filter((split) => split.user_id !== userId);
 
     if (!isFood) {
       const share = personalOnly
         ? Number(expense.amount || 0)
-        : isPayer
-          ? otherSplits.reduce((sum, split) => sum + Number(split.amount_owed || 0), 0)
-          : Number(mySplit?.amount_owed || 0);
+        : Number(getExpenseShare(expense, userId) || 0);
       personal += share;
-      const state = personalOnly ? getExpenseSettlementState(expense) : getSplitExpenseDisplayStatus(expense, userId);
-      const friendNetSettled = !personalOnly && !expense.group_id && getFriendNetSettled(expense, userId, expenses, settlements);
-      if (friendNetSettled || state.status === "cleared") personalCleared += share;
+      const status = getPersonalShareStatus(expense, userId);
+      if (status === "cleared") personalCleared += share;
       else personalPending += share;
     } else if (expense.status === "cleared") {
       tiffinCleared += expense.amount;
