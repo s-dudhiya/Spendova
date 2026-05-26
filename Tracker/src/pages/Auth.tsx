@@ -10,6 +10,9 @@ import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
 type AuthMode = "login" | "register" | "forgot" | "reset";
 type Theme = "light" | "dark";
 const AUTH_BRAND_IMAGE = "/brand/login-branding-image.png";
+const AUTH_BRAND_IMAGE_MOBILE = "/brand/login-branding-image-mobile.webp";
+const AUTH_BRAND_IMAGE_TABLET = "/brand/login-branding-image-tablet.webp";
+const AUTH_BRAND_IMAGE_DESKTOP = "/brand/login-branding-image-desktop.webp";
 const SIGNUP_PASSWORD_KEY = "spendova_pending_signup_password";
 
 const getInitialTheme = (): Theme => {
@@ -169,7 +172,21 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
       <div className="relative z-10 mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-[392px] flex-col items-center justify-center sm:min-h-[calc(100vh-3.5rem)]">
         <header className="text-center">
           <Link to="/" className="block h-[116px] overflow-hidden sm:h-[132px]" aria-label="Spendova home">
-            <img src={AUTH_BRAND_IMAGE} alt="Spendova" className="h-auto w-[21rem] max-w-none -translate-y-[52px] sm:w-[24rem] sm:-translate-y-[58px]" />
+            <picture>
+              <source media="(max-width: 640px)" srcSet={AUTH_BRAND_IMAGE_MOBILE} type="image/webp" />
+              <source media="(max-width: 1024px)" srcSet={AUTH_BRAND_IMAGE_TABLET} type="image/webp" />
+              <source srcSet={AUTH_BRAND_IMAGE_DESKTOP} type="image/webp" />
+              <img
+                src={AUTH_BRAND_IMAGE}
+                alt="Spendova"
+                width="400"
+                height="267"
+                loading="eager"
+                decoding="async"
+                fetchPriority="high"
+                className="h-auto w-[21rem] max-w-none -translate-y-[52px] sm:w-[24rem] sm:-translate-y-[58px]"
+              />
+            </picture>
           </Link>
         </header>
 

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Fingerprint, LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,15 +9,23 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { consumeFreshLoginUnlocked, isBiometricLockEnabled, unlockWithBiometric } from "@/lib/biometric-lock";
-import Admin from "./pages/Admin.tsx";
 import Auth from "./pages/Auth.tsx";
-import Index from "./pages/Index.tsx";
-import InviteAccept from "./pages/InviteAccept.tsx";
-import Maintenance from "./pages/Maintenance.tsx";
-import NotFound from "./pages/NotFound.tsx";
-import VerifyOtp from "./pages/VerifyOtp.tsx";
+
+const Admin = lazy(() => import("./pages/Admin.tsx"));
+const Index = lazy(() => import("./pages/Index.tsx"));
+const InviteAccept = lazy(() => import("./pages/InviteAccept.tsx"));
+const Maintenance = lazy(() => import("./pages/Maintenance.tsx"));
+const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const VerifyOtp = lazy(() => import("./pages/VerifyOtp.tsx"));
 
 const queryClient = new QueryClient();
+
+const ProtectedIndex = () => {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="grid min-h-screen place-items-center bg-background text-foreground">Loading Spendova...</div>;
+  if (!user) return <Auth mode="login" />;
+  return <Index />;
+};
 
 const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, signOut } = useAuth();
@@ -75,7 +83,6 @@ const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {
 const AppRoutes = () => {
   const location = useLocation();
   const [maintenance, setMaintenance] = useState(false);
-  const [checkingMaintenance, setCheckingMaintenance] = useState(true);
   const isAdminRoute = location.pathname.startsWith("/admin");
 
   useEffect(() => {
@@ -88,8 +95,6 @@ const AppRoutes = () => {
       } catch (error) {
         console.error("Failed to check maintenance mode", error);
         if (active) setMaintenance(false);
-      } finally {
-        if (active) setCheckingMaintenance(false);
       }
     };
 
@@ -101,36 +106,40 @@ const AppRoutes = () => {
     };
   }, []);
 
-  if (checkingMaintenance && !isAdminRoute) {
-    return <div className="grid min-h-screen place-items-center bg-background text-foreground">Loading Spendova...</div>;
+  if (maintenance && !isAdminRoute) {
+    return (
+      <Suspense fallback={<div className="grid min-h-screen place-items-center bg-background text-foreground">Loading Spendova...</div>}>
+        <Maintenance />
+      </Suspense>
+    );
   }
 
-  if (maintenance && !isAdminRoute) return <Maintenance />;
-
   return (
-    <Routes>
-      <Route path="/" element={<Index />} />
-      <Route path="/dashboard" element={<Index />} />
-      <Route path="/profile" element={<Index />} />
-      <Route path="/split" element={<Index />} />
-      <Route path="/split/friend/:id" element={<Index />} />
-      <Route path="/split/group/:id" element={<Index />} />
-      <Route path="/split/expense/:id" element={<Index />} />
-      <Route path="/split/settlement/:id" element={<Index />} />
-      <Route path="/admin" element={<Admin view="root" />} />
-      <Route path="/admin/login" element={<Admin view="login" />} />
-      <Route path="/admin/dashboard" element={<Admin view="dashboard" />} />
-      <Route path="/login" element={<Auth mode="login" />} />
-      <Route path="/register" element={<Auth mode="register" />} />
-      <Route path="/forgot-password" element={<Auth mode="forgot" />} />
-      <Route path="/reset-password" element={<Auth mode="reset" />} />
-      <Route path="/verify-otp" element={<VerifyOtp />} />
-      <Route path="/auth" element={<Auth mode="login" />} />
-      <Route path="/invite" element={<InviteAccept />} />
-      <Route path="/accept-invite" element={<InviteAccept />} />
-      {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+    <Suspense fallback={<div className="grid min-h-screen place-items-center bg-background text-foreground">Loading Spendova...</div>}>
+      <Routes>
+        <Route path="/" element={<ProtectedIndex />} />
+        <Route path="/dashboard" element={<ProtectedIndex />} />
+        <Route path="/profile" element={<ProtectedIndex />} />
+        <Route path="/split" element={<ProtectedIndex />} />
+        <Route path="/split/friend/:id" element={<ProtectedIndex />} />
+        <Route path="/split/group/:id" element={<ProtectedIndex />} />
+        <Route path="/split/expense/:id" element={<ProtectedIndex />} />
+        <Route path="/split/settlement/:id" element={<ProtectedIndex />} />
+        <Route path="/admin" element={<Admin view="root" />} />
+        <Route path="/admin/login" element={<Admin view="login" />} />
+        <Route path="/admin/dashboard" element={<Admin view="dashboard" />} />
+        <Route path="/login" element={<Auth mode="login" />} />
+        <Route path="/register" element={<Auth mode="register" />} />
+        <Route path="/forgot-password" element={<Auth mode="forgot" />} />
+        <Route path="/reset-password" element={<Auth mode="reset" />} />
+        <Route path="/verify-otp" element={<VerifyOtp />} />
+        <Route path="/auth" element={<Auth mode="login" />} />
+        <Route path="/invite" element={<InviteAccept />} />
+        <Route path="/accept-invite" element={<InviteAccept />} />
+        {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Suspense>
   );
 };
 
