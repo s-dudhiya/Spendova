@@ -117,6 +117,20 @@ All colors MUST be HSL.
     @apply border-border;
   }
 
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-height: 100%;
+    overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  html,
+  body {
+    touch-action: manipulation;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
@@ -124,8 +138,22 @@ All colors MUST be HSL.
 
   button,
   input,
+  textarea,
   select {
     font: inherit;
+    font-size: 16px;
+  }
+
+  input[class],
+  textarea[class],
+  select[class] {
+    font-size: 16px;
+  }
+
+  button,
+  a,
+  [role="button"] {
+    touch-action: manipulation;
   }
 
   ::selection {
