@@ -969,18 +969,28 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
 
   return (
     <main className="space-y-6 pb-28">
-      <section className="overflow-hidden rounded-[1.4rem] bg-card shadow-panel">
-        <div className="bg-primary/8 p-5">
+      <section className="rounded-[1.4rem] bg-card p-5 shadow-panel sm:p-6">
+        <div>
           <div className="flex items-start justify-between gap-3">
-            <p className="text-sm font-semibold text-muted-foreground">Net balance</p>
+            <p className="pt-0.5 text-sm font-semibold text-muted-foreground">Net balance</p>
             <span title="Compared with yesterday" className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${trendClass}`} aria-label={`${trendLabel} compared with yesterday`}><TrendIcon className="size-3.5" />{trendLabel}</span>
           </div>
-          <p className="mt-3 text-4xl font-black tracking-tight text-foreground sm:text-5xl">{money(Math.abs(summary.net))}</p>
-          <p className="mt-1 text-sm font-medium text-muted-foreground">Across personal expenses and shared balances</p>
+          <p className="mt-2 text-4xl font-black leading-tight tracking-tight text-foreground sm:text-5xl">{money(Math.abs(summary.net))}</p>
+          <p className="mt-1 max-w-[18rem] text-sm font-medium leading-5 text-muted-foreground sm:max-w-none">Across personal expenses and shared balances</p>
         </div>
-        <div className="grid grid-cols-2 gap-1 p-1">
-          <button onClick={() => openModal("chart-details")} className="grid min-h-24 content-between rounded-2xl bg-elevated p-4 text-left shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total lent</p><p className="mt-3 text-xl font-black leading-none text-success">{money(summary.totalLent)}</p></button>
-          <button onClick={() => openModal("chart-details")} className="grid min-h-24 content-between rounded-2xl bg-elevated p-4 text-left shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total owed</p><p className="mt-3 text-xl font-black leading-none text-warning">{money(summary.totalOwed)}</p></button>
+        <div className="mt-7 flex w-full items-start justify-between gap-4">
+          <button onClick={() => openModal("chart-details")} className="m-0 flex h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
+            <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
+              <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">Total lent</span>
+              <span className="mt-2 block h-6 max-w-full truncate p-0 text-lg font-bold leading-6 text-success">{money(summary.totalLent)}</span>
+            </span>
+          </button>
+          <button onClick={() => openModal("chart-details")} className="m-0 flex h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
+            <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
+              <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">Total owed</span>
+              <span className="mt-2 block h-6 max-w-full truncate p-0 text-lg font-bold leading-6 text-warning">{money(summary.totalOwed)}</span>
+            </span>
+          </button>
         </div>
       </section>
 
