@@ -205,7 +205,7 @@ const tabs: Array<{ key: TabKey; label: string; icon: typeof Home }> = [
   { key: "home", label: "Home", icon: Home },
   { key: "split", label: "Split", icon: Split },
   { key: "personal", label: "Personal", icon: WalletCards },
-  { key: "tiffin", label: "Tiffin", icon: UtensilsCrossed },
+  // { key: "tiffin", label: "Tiffin", icon: UtensilsCrossed },
 ];
 
 const emojiChoices = ["Home", "Trip", "Food", "Party", "Beach", "Movie", "Sports", "Books", "Work", "Cart"];
@@ -3270,7 +3270,7 @@ const Index = () => {
         <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p>
       </div>
       <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-3xl px-4 pb-4">
-        <div className="grid grid-cols-4 rounded-[1.4rem] border border-border/80 bg-card p-2 shadow-panel backdrop-blur">
+        <div className="grid grid-cols-3 rounded-[1.4rem] border border-border/80 bg-card p-2 shadow-panel backdrop-blur">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = activeContentTab === tab.key;
