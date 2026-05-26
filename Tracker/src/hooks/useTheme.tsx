@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { safeStorage } from '@/lib/startup-safety';
 
 type Theme = 'light' | 'dark';
 export const THEME_STORAGE_KEY = 'spendova-theme';
@@ -6,12 +7,12 @@ export const LEGACY_THEME_STORAGE_KEY = 'theme';
 
 export function useTheme() {
   const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
+    const saved = safeStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
     if (saved === 'light' || saved === 'dark') return saved;
-    const legacy = localStorage.getItem(LEGACY_THEME_STORAGE_KEY) as Theme | null;
+    const legacy = safeStorage.getItem(LEGACY_THEME_STORAGE_KEY) as Theme | null;
     if (legacy === 'light' || legacy === 'dark') {
-      localStorage.setItem(THEME_STORAGE_KEY, legacy);
-      localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+      safeStorage.setItem(THEME_STORAGE_KEY, legacy);
+      safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
       return legacy;
     }
 
@@ -27,8 +28,8 @@ export function useTheme() {
     } else {
       root.classList.remove('dark');
     }
-    localStorage.setItem(THEME_STORAGE_KEY, theme);
-    localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+    safeStorage.setItem(THEME_STORAGE_KEY, theme);
+    safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
   }, [theme]);
 
   const toggleTheme = () => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));

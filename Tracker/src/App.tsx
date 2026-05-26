@@ -3,12 +3,14 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Fingerprint, LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AppLoader } from "@/components/AppLoader";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { consumeFreshLoginUnlocked, isBiometricLockEnabled, unlockWithBiometric } from "@/lib/biometric-lock";
+import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 import Auth from "./pages/Auth.tsx";
 
 const Admin = lazy(() => import("./pages/Admin.tsx"));
@@ -19,10 +21,36 @@ const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const VerifyOtp = lazy(() => import("./pages/VerifyOtp.tsx"));
 
 const queryClient = new QueryClient();
+const STARTUP_FALLBACK_DELAY = 5000;
+const CACHE_VERSION_KEY = "spendova_cache_version";
+const CACHE_VERSION = "startup-resume-fix-20260526";
+
+const clearSessionAndRestart = async () => {
+  await supabase.auth.signOut().catch(() => undefined);
+  window.location.assign("/login");
+};
+
+const LoadingFallback = ({ label = "Preparing your workspace..." }: { label?: string }) => {
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setSlow(true), STARTUP_FALLBACK_DELAY);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  return (
+    <AppLoader
+      message={slow ? "Taking longer than expected..." : label}
+      showFallbackActions={slow}
+      onRetry={() => window.location.reload()}
+      onGoToLogin={clearSessionAndRestart}
+    />
+  );
+};
 
 const ProtectedIndex = () => {
   const { user, loading } = useAuth();
-  if (loading) return <div className="grid min-h-screen place-items-center bg-background text-foreground">Loading Spendova...</div>;
+  if (loading) return <LoadingFallback />;
   if (!user) return <Auth mode="login" />;
   return <Index />;
 };
@@ -89,9 +117,11 @@ const AppRoutes = () => {
     let active = true;
     const checkMaintenance = async () => {
       try {
-        const { data, error } = await supabase.from("site_settings").select("is_maintenance_mode").eq("id", 1).single();
+        bootLog("maintenance check start");
+        const { data, error } = await withTimeout(supabase.from("site_settings").select("is_maintenance_mode").eq("id", 1).single(), 5000, "maintenance check");
         if (error) throw error;
         if (active) setMaintenance(Boolean(data?.is_maintenance_mode));
+        bootLog("maintenance check end", Boolean(data?.is_maintenance_mode));
       } catch (error) {
         console.error("Failed to check maintenance mode", error);
         if (active) setMaintenance(false);
@@ -108,14 +138,14 @@ const AppRoutes = () => {
 
   if (maintenance && !isAdminRoute) {
     return (
-      <Suspense fallback={<div className="grid min-h-screen place-items-center bg-background text-foreground">Loading Spendova...</div>}>
+      <Suspense fallback={<LoadingFallback />}>
         <Maintenance />
       </Suspense>
     );
   }
 
   return (
-    <Suspense fallback={<div className="grid min-h-screen place-items-center bg-background text-foreground">Loading Spendova...</div>}>
+    <Suspense fallback={<LoadingFallback />}>
       <Routes>
         <Route path="/" element={<ProtectedIndex />} />
         <Route path="/dashboard" element={<ProtectedIndex />} />
@@ -143,20 +173,40 @@ const AppRoutes = () => {
   );
 };
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <BiometricLockGate>
-            <AppRoutes />
-          </BiometricLockGate>
-        </BrowserRouter>
-      </TooltipProvider>
-    </AuthProvider>
-  </QueryClientProvider>
-);
+const App = () => {
+  useEffect(() => {
+    bootLog("app boot start");
+    const currentVersion = safeStorage.getItem(CACHE_VERSION_KEY);
+    if (currentVersion === CACHE_VERSION) return;
+    safeStorage.setItem(CACHE_VERSION_KEY, CACHE_VERSION);
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations()
+        .then((registrations) => registrations.forEach((registration) => registration.unregister()))
+        .catch((error) => console.warn("Service worker cleanup failed", error));
+    }
+    if ("caches" in window) {
+      caches.keys()
+        .then((keys) => keys.forEach((key) => caches.delete(key)))
+        .catch((error) => console.warn("Cache cleanup failed", error));
+    }
+  }, []);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <BiometricLockGate>
+              <AppRoutes />
+            </BiometricLockGate>
+          </BrowserRouter>
+        </TooltipProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;

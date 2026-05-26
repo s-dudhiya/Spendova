@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 
 const DEVICE_ID_KEY = "spendova_device_id";
 
@@ -21,18 +22,24 @@ const randomId = () => {
 };
 
 export function getDeviceId() {
-  let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+  let deviceId = safeStorage.getItem(DEVICE_ID_KEY);
   if (!deviceId) {
     deviceId = randomId();
-    localStorage.setItem(DEVICE_ID_KEY, deviceId);
+    safeStorage.setItem(DEVICE_ID_KEY, deviceId);
+    bootLog("fallback device id created");
   }
   return deviceId;
 }
 
 async function sha256(value: string) {
-  if (!crypto?.subtle) return btoa(value).slice(0, 64);
-  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(bytes)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  try {
+    if (!crypto?.subtle) return btoa(value).slice(0, 64);
+    const bytes = await withTimeout(crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)), 1500, "device fingerprint");
+    return Array.from(new Uint8Array(bytes)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  } catch (error) {
+    bootLog("fingerprint fallback", error);
+    return btoa(`${getDeviceId()}|${value}`).slice(0, 64);
+  }
 }
 
 function getDeviceType() {
@@ -64,16 +71,21 @@ function getPlatformName() {
 export async function getDeviceInfo() {
   const platform = getPlatformName();
   const deviceType = getDeviceType();
-  const fingerprintSource = [
-    navigator.userAgent,
-    navigator.language,
-    navigator.platform,
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
-    screen.width,
-    screen.height,
-    screen.colorDepth,
-    navigator.maxTouchPoints,
-  ].join("|");
+  let fingerprintSource = getDeviceId();
+  try {
+    fingerprintSource = [
+      navigator.userAgent,
+      navigator.language,
+      navigator.platform,
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      screen.width,
+      screen.height,
+      screen.colorDepth,
+      navigator.maxTouchPoints,
+    ].join("|");
+  } catch (error) {
+    bootLog("device fingerprint source fallback", error);
+  }
 
   return {
     deviceId: getDeviceId(),
@@ -86,33 +98,37 @@ export async function getDeviceInfo() {
 }
 
 export async function registerDeviceSession() {
-  const device = await getDeviceInfo();
-  const { data, error } = await supabase.functions.invoke("manage-device-session", {
+  bootLog("manage-device-session register start");
+  const device = await withTimeout(getDeviceInfo(), 2500, "device identification");
+  const { data, error } = await withTimeout(supabase.functions.invoke("manage-device-session", {
     body: { action: "register", ...device },
-  });
+  }), 6000, "device session register");
   if (error) throw error;
+  bootLog("manage-device-session register end");
   return data;
 }
 
 export async function checkDeviceSession() {
-  const { data, error } = await supabase.functions.invoke("manage-device-session", {
+  bootLog("manage-device-session check start");
+  const { data, error } = await withTimeout(supabase.functions.invoke("manage-device-session", {
     body: { action: "check", deviceId: getDeviceId() },
-  });
+  }), 5000, "device session check");
   if (error) throw error;
+  bootLog("manage-device-session check end", data);
   return data as { valid: boolean; reason?: string };
 }
 
 export async function revokeCurrentDeviceSession() {
-  const { error } = await supabase.functions.invoke("manage-device-session", {
+  const { error } = await withTimeout(supabase.functions.invoke("manage-device-session", {
     body: { action: "revoke-current", deviceId: getDeviceId() },
-  });
+  }), 5000, "device session revoke");
   if (error) throw error;
 }
 
 export async function listDeviceSessions() {
-  const { data, error } = await supabase.functions.invoke("manage-device-session", {
+  const { data, error } = await withTimeout(supabase.functions.invoke("manage-device-session", {
     body: { action: "list" },
-  });
+  }), 6000, "device session list");
   if (error) throw error;
   return (data?.sessions || []) as DeviceSession[];
 }

@@ -37,6 +37,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AppLoader } from "@/components/AppLoader";
 import {
   Drawer,
   DrawerContent,
@@ -57,6 +58,7 @@ import { useToast } from "@/hooks/use-toast";
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
 import { canUsePlatformBiometrics, disableBiometricLock, enableBiometricLock, isBiometricLockEnabled } from "@/lib/biometric-lock";
 import { getDeviceId, listDeviceSessions, type DeviceSession } from "@/lib/device-session";
+import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 
 type TabKey = "home" | "split" | "personal" | "tiffin";
 type ContentKey = TabKey | "profile";
@@ -224,12 +226,12 @@ const emojiMap: Record<string, string> = {
 
 const getInitialTheme = (): Theme => {
   if (typeof window === "undefined") return "light";
-  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+  const saved = safeStorage.getItem(THEME_STORAGE_KEY);
   if (saved === "light" || saved === "dark") return saved;
-  const legacy = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+  const legacy = safeStorage.getItem(LEGACY_THEME_STORAGE_KEY);
   if (legacy === "light" || legacy === "dark") {
-    window.localStorage.setItem(THEME_STORAGE_KEY, legacy);
-    window.localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+    safeStorage.setItem(THEME_STORAGE_KEY, legacy);
+    safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
     return legacy;
   }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -449,11 +451,15 @@ function useSpendovaData(userId?: string) {
   });
 
   const refresh = async () => {
-    if (!userId) return;
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
+      bootLog("dashboard data fetch start");
       const [expensesRes, reqRes, recRes, groupsRes, settlementsRes] = await Promise.all([
-        supabase
+        withTimeout(supabase
           .from("expenses")
           .select(`
             id, user_id, paid_by, amount, category, note, status, split_type, group_id, created_at,
@@ -461,29 +467,29 @@ function useSpendovaData(userId?: string) {
             payer_profile:profiles!expenses_paid_by_fkey(user_id, full_name, username),
             expense_splits(id, user_id, amount_owed, amount_paid, has_paid, profiles!expense_splits_user_id_fkey(user_id, full_name, username))
           `)
-          .order("created_at", { ascending: false }),
-        supabase
+          .order("created_at", { ascending: false }), 8000, "expenses fetch"),
+        withTimeout(supabase
           .from("connections")
           .select("id, requester_id, receiver_id, status, created_at, profiles!connections_receiver_id_fkey(user_id, full_name, username)")
-          .eq("requester_id", userId),
-        supabase
+          .eq("requester_id", userId), 8000, "sent connections fetch"),
+        withTimeout(supabase
           .from("connections")
           .select("id, requester_id, receiver_id, status, created_at, profiles!connections_requester_id_fkey(user_id, full_name, username)")
-          .eq("receiver_id", userId),
-        supabase
+          .eq("receiver_id", userId), 8000, "received connections fetch"),
+        withTimeout(supabase
           .from("groups")
           .select("id, name, emoji, description, created_by, created_at, group_members(user_id, joined_at, profiles!group_members_user_id_fkey(user_id, full_name, username))")
-          .order("created_at", { ascending: false }),
-        supabase
+          .order("created_at", { ascending: false }), 8000, "groups fetch"),
+        withTimeout(supabase
           .from("split_settlements" as never)
           .select("id, group_id, expense_id, from_user_id, to_user_id, amount, note, created_at, from_profile:profiles!split_settlements_from_user_id_fkey(user_id, full_name, username), to_profile:profiles!split_settlements_to_user_id_fkey(user_id, full_name, username)")
-          .order("created_at", { ascending: false }),
+          .order("created_at", { ascending: false }), 8000, "settlements fetch"),
       ]);
 
-      if (expensesRes.error) throw expensesRes.error;
-      if (reqRes.error) throw reqRes.error;
-      if (recRes.error) throw recRes.error;
-      if (groupsRes.error) throw groupsRes.error;
+      if (expensesRes.error) console.error("Dashboard expenses fetch failed", expensesRes.error);
+      if (reqRes.error) console.error("Dashboard sent connections fetch failed", reqRes.error);
+      if (recRes.error) console.error("Dashboard received connections fetch failed", recRes.error);
+      if (groupsRes.error) console.error("Dashboard groups fetch failed", groupsRes.error);
       if (settlementsRes.error) console.warn("Could not load settlement history", settlementsRes.error);
 
       const requested = ((reqRes.data || []) as unknown as ConnectionQueryRow[]).map((row) => ({ ...row, profiles: row.profiles || { user_id: "", full_name: null, username: null } })) as ConnectionRow[];
@@ -492,12 +498,15 @@ function useSpendovaData(userId?: string) {
 
       const groupInvites: Record<string, InviteRow[]> = {};
       await Promise.all(((groupsRes.data || []) as unknown as GroupQueryRow[]).map(async (group) => {
-        const { data: invites } = await supabase
+        const { data: invites } = await withTimeout(supabase
           .from("group_invites" as never)
           .select("id, email, token, status, created_at")
           .eq("group_id", group.id)
           .eq("status", "pending")
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false }), 5000, "group invites fetch").catch((error) => {
+            console.error("Dashboard group invites fetch failed", error);
+            return { data: [] };
+          });
         groupInvites[group.id] = (invites || []) as InviteRow[];
       }));
 
@@ -515,8 +524,10 @@ function useSpendovaData(userId?: string) {
         groupInvites,
         settlements: settlementsRes.error ? [] : (settlementsRes.data || []) as unknown as SplitSettlementRow[],
       });
+      bootLog("dashboard data fetch end");
     } catch (error: unknown) {
-      toast({ title: "Could not load data", description: error instanceof Error ? error.message : "Unexpected error", variant: "destructive" });
+      console.error("Dashboard data fetch failed", error);
+      toast({ title: "Could not refresh data", description: "Showing what is available. Please retry if needed.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -1072,6 +1083,24 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
 
 const EmptyCard = ({ text }: { text: string }) => <div className="rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm font-medium text-muted-foreground">{text}</div>;
 
+const DashboardLoadingFallback = () => {
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setSlow(true), 5000);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  return (
+    <AppLoader
+      message={slow ? "Taking longer than expected..." : "Preparing your workspace..."}
+      showFallbackActions={slow}
+      onRetry={() => window.location.reload()}
+      onGoToLogin={() => window.location.assign("/login")}
+    />
+  );
+};
+
 const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, friends, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; summary: ReturnType<typeof getSummary>; currentUserId: string; groups: GroupRow[]; friends: FriendProfile[]; openModal: (type: ModalType, item?: string) => void }) => {
   const defaultFilters = { status: "all", date: "all", dateStart: "", dateEnd: "", sort: "newest", category: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -1144,7 +1173,7 @@ const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, f
 
 const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentUserId: string; openModal: (type: ModalType, item?: string) => void }) => {
   const navigate = useNavigate();
-  const [subTab, setSubTabState] = useState<"friends" | "groups">(() => (sessionStorage.getItem("spendova-split-tab") === "groups" ? "groups" : "friends"));
+  const [subTab, setSubTabState] = useState<"friends" | "groups">(() => (safeStorage.getItem("spendova-split-tab") === "groups" ? "groups" : "friends"));
   const [query, setQuery] = useState("");
   const defaultFilters = { balance: "all", sort: "highest" };
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -1187,19 +1216,19 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
     ({ group }) => group.name,
   );
   const setSubTab = (value: "friends" | "groups") => {
-    sessionStorage.setItem("spendova-split-tab", value);
+    safeStorage.setItem("spendova-split-tab", value);
     setSubTabState(value);
   };
   const openDetail = (kind: "friend" | "group", id: string) => {
-    sessionStorage.setItem("spendova-split-tab", kind === "friend" ? "friends" : "groups");
-    sessionStorage.setItem("spendova-split-scroll", String(window.scrollY));
+    safeStorage.setItem("spendova-split-tab", kind === "friend" ? "friends" : "groups");
+    safeStorage.setItem("spendova-split-scroll", String(window.scrollY));
     navigate(`/split/${kind}/${id}`);
   };
   useEffect(() => {
-    const saved = Number(sessionStorage.getItem("spendova-split-scroll") || 0);
+    const saved = Number(safeStorage.getItem("spendova-split-scroll") || 0);
     if (saved > 0) {
       window.requestAnimationFrame(() => window.scrollTo({ top: saved }));
-      sessionStorage.removeItem("spendova-split-scroll");
+      safeStorage.removeItem("spendova-split-scroll");
     }
   }, []);
 
@@ -3201,8 +3230,8 @@ const Index = () => {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-    window.localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+    safeStorage.setItem(THEME_STORAGE_KEY, theme);
+    safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
   }, [theme]);
 
   if (!authLoading && !user) return <Navigate to="/login" replace />;
@@ -3230,7 +3259,7 @@ const Index = () => {
   };
 
   if (authLoading || loading || !user) {
-    return <div className="grid min-h-screen place-items-center bg-background text-foreground">Loading Spendova...</div>;
+    return <DashboardLoadingFallback />;
   }
 
   const friendDetail = friendDetailId ? data.friends.find((friend) => friend.user_id === friendDetailId) : undefined;

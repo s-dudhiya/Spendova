@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { safeStorage } from "@/lib/startup-safety";
 
 const AUTH_BRAND_IMAGE = "/brand/login-branding-image.png";
 const AUTH_BRAND_IMAGE_MOBILE = "/brand/login-branding-image-mobile.webp";
@@ -114,9 +115,9 @@ export default function VerifyOtp() {
       }
 
       toast({ title: "Email verified", description: "Your Spendova account is ready." });
-      const signupPassword = sessionStorage.getItem(SIGNUP_PASSWORD_KEY);
+      const signupPassword = safeStorage.getItem(SIGNUP_PASSWORD_KEY);
       if (signupPassword) {
-        sessionStorage.removeItem(SIGNUP_PASSWORD_KEY);
+        safeStorage.removeItem(SIGNUP_PASSWORD_KEY);
         const result = await signIn(email, signupPassword);
         if (!result.error) {
           navigate(redirect, { replace: true });

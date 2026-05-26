@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { markFreshLoginUnlocked } from '@/lib/biometric-lock';
 import { checkDeviceSession, registerDeviceSession, revokeCurrentDeviceSession } from '@/lib/device-session';
+import { bootLog, withTimeout } from '@/lib/startup-safety';
 
 interface Profile {
   id: string;
@@ -26,7 +27,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const INACTIVITY_TIMEOUT = 7 * 24 * 60 * 60 * 1000; // 7 days
-const DEVICE_SESSION_CHECK_INTERVAL = 60 * 1000;
+const DEVICE_SESSION_CHECK_INTERVAL = 15 * 1000;
+const STARTUP_TIMEOUT = 5000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -85,15 +87,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (registeringRef.current || lastRegisteredUserRef.current === targetUser.id) return;
     registeringRef.current = true;
     try {
-      await registerDeviceSession();
+      const result = await checkDeviceSession();
+      if (!result.valid && result.reason !== "device_session_missing") {
+        await supabase.auth.signOut();
+        clearLocalAuthState();
+        toast({
+          title: "Signed Out",
+          description: result.reason === "new_device_login"
+            ? "Your account was opened on another device."
+            : "This device session is no longer active.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!result.valid && result.reason === "device_session_missing") {
+        await registerDeviceSession();
+      }
       lastRegisteredUserRef.current = targetUser.id;
     } catch (error) {
       console.error("Device session registration failed", error);
-      await supabase.auth.signOut();
-      clearLocalAuthState();
       toast({
-        title: "Device Check Failed",
-        description: "We could not verify this device. Please sign in again.",
+        title: "Device Check",
+        description: "Couldn’t verify this device. Please retry if the warning remains.",
         variant: "destructive",
       });
     } finally {
@@ -112,15 +127,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const result = await checkDeviceSession();
         if (!result.valid) {
-          await supabase.auth.signOut();
-          clearLocalAuthState();
-          toast({
-            title: "Signed Out",
-            description: result.reason === "new_device_login"
-              ? "Your account was opened on another device."
-              : "This device session is no longer active.",
-            variant: "destructive",
-          });
+          if (result.reason === "device_session_missing") {
+            await registerDeviceSession();
+          } else {
+            await supabase.auth.signOut();
+            clearLocalAuthState();
+            toast({
+              title: "Signed Out",
+              description: result.reason === "new_device_login"
+                ? "Your account was opened on another device."
+                : "This device session is no longer active.",
+              variant: "destructive",
+            });
+          }
         }
       } catch (error) {
         console.error("Device session check failed", error);
@@ -132,34 +151,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Listen for auth state changes
   useEffect(() => {
+    bootLog("auth provider start");
+    let mounted = true;
+    const finishLoading = () => {
+      if (mounted) {
+        bootLog("auth loading false");
+        setLoading(false);
+      }
+    };
+    const startupTimeout = window.setTimeout(() => {
+      console.warn("Auth startup timed out; continuing with safe fallback.");
+      finishLoading();
+    }, STARTUP_TIMEOUT);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      bootLog("auth state change", event, Boolean(session?.user));
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) fetchProfile(session.user.id);
       else setProfile(null);
-      setLoading(false);
+      window.clearTimeout(startupTimeout);
+      finishLoading();
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
-      setLoading(false);
-    });
+    const restoreSession = async () => {
+      try {
+        bootLog("supabase getSession start");
+        const { data: { session } } = await withTimeout(supabase.auth.getSession(), STARTUP_TIMEOUT, "supabase session restore");
+        bootLog("supabase getSession end", Boolean(session?.user));
+        if (!mounted) return;
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) fetchProfile(session.user.id);
+        else setProfile(null);
+      } catch (error) {
+        console.error("Supabase session restore failed", error);
+        if (!mounted) return;
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+      } finally {
+        window.clearTimeout(startupTimeout);
+        finishLoading();
+      }
+    };
+    restoreSession();
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      window.clearTimeout(startupTimeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchProfile = async (userId: string) => {
     try {
-      const { data, error } = await supabase
+      bootLog("profile fetch start");
+      const { data, error } = await withTimeout(supabase
         .from('profiles')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .single(), 5000, "profile fetch");
 
       if (error && error.code !== 'PGRST116') console.error('Error fetching profile:', error);
       else setProfile(data as Profile);
+      bootLog("profile fetch end");
     } catch (error) {
       console.error('Error fetching profile:', error);
     }
@@ -173,23 +229,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error };
     }
 
-    try {
-      await registerDeviceSession();
-      lastRegisteredUserRef.current = data.user.id;
-      markFreshLoginUnlocked(data.user.id);
-    } catch (deviceError) {
-      console.error("Device session registration failed", deviceError);
-      await supabase.auth.signOut();
-      const strictError = new Error("Could not verify this device. Please try again.");
-      toast({ title: "Sign In Failed", description: strictError.message, variant: "destructive" });
-      return { error: strictError };
-    }
+    registerDeviceSession()
+      .then(() => {
+        lastRegisteredUserRef.current = data.user.id;
+        bootLog("sign-in device session registered");
+      })
+      .catch((deviceError) => {
+        console.error("Device session registration failed", deviceError);
+        toast({ title: "Device Check", description: "Couldn’t verify this device. Please retry if this device does not appear active.", variant: "destructive" });
+      });
+    markFreshLoginUnlocked(data.user.id);
 
-    const { data: profileData, error: profileError } = await supabase
-      .from('profiles')
-      .select('email_verified')
-      .eq('user_id', data.user.id)
-      .maybeSingle();
+    let profileData: { email_verified?: boolean | null } | null = null;
+    let profileError: { message?: string } | null = null;
+    try {
+      const profileResult = await withTimeout(supabase
+        .from('profiles')
+        .select('email_verified')
+        .eq('user_id', data.user.id)
+        .maybeSingle(), 5000, "profile verification lookup");
+      profileData = profileResult.data;
+      profileError = profileResult.error;
+    } catch (error) {
+      console.error("Profile verification lookup failed", error);
+    }
     if (profileError) console.error("Profile verification lookup failed", profileError);
     const customSignupPending = data.user.user_metadata?.spendova_custom_pending === true;
     if (profileData && profileData.email_verified === false && customSignupPending) {
@@ -211,7 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     // Always fetch latest session before signing out
-    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    const { data: { session: currentSession } } = await withTimeout(supabase.auth.getSession(), 5000, "sign out session lookup");
     if (!currentSession) {
       toast({ title: "Sign Out Failed", description: "No active session found.", variant: "destructive" });
       return;

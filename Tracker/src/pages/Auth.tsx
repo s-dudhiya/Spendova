@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
+import { safeStorage } from "@/lib/startup-safety";
 
 type AuthMode = "login" | "register" | "forgot" | "reset";
 type Theme = "light" | "dark";
@@ -17,12 +18,12 @@ const SIGNUP_PASSWORD_KEY = "spendova_pending_signup_password";
 
 const getInitialTheme = (): Theme => {
   if (typeof window === "undefined") return "light";
-  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+  const saved = safeStorage.getItem(THEME_STORAGE_KEY);
   if (saved === "light" || saved === "dark") return saved;
-  const legacy = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+  const legacy = safeStorage.getItem(LEGACY_THEME_STORAGE_KEY);
   if (legacy === "light" || legacy === "dark") {
-    window.localStorage.setItem(THEME_STORAGE_KEY, legacy);
-    window.localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+    safeStorage.setItem(THEME_STORAGE_KEY, legacy);
+    safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
     return legacy;
   }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -145,7 +146,7 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
       });
       if (error) throw error;
 
-      if (isRegister) sessionStorage.setItem(SIGNUP_PASSWORD_KEY, password);
+      if (isRegister) safeStorage.setItem(SIGNUP_PASSWORD_KEY, password);
       toast({
         title: isRegister ? "Verification code sent" : "Check your email",
         description: isRegister ? "Enter the 6-digit code to verify your account." : "If this email is registered, we'll send a verification code.",

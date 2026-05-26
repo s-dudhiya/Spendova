@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { safeStorage, withTimeout } from "@/lib/startup-safety";
 
 type InviteStatus = "loading" | "ready" | "accepting" | "done" | "error";
 
@@ -23,7 +24,7 @@ type GroupInvite = {
 
 export default function InviteAccept() {
   const [searchParams] = useSearchParams();
-  const token = searchParams.get("token") || localStorage.getItem("pending_invite_token");
+  const token = searchParams.get("token") || safeStorage.getItem("pending_invite_token");
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -39,8 +40,8 @@ export default function InviteAccept() {
     }
 
     const loadInvite = async () => {
-      const { data, error: loadError } = await supabase
-        .rpc("lookup_group_invite" as never, { invite_token: token } as never);
+      const { data, error: loadError } = await withTimeout(supabase
+        .rpc("lookup_group_invite" as never, { invite_token: token } as never), 8000, "invite lookup");
 
       const loadedInvite = Array.isArray(data) ? data[0] as unknown as GroupInvite | undefined : data as unknown as GroupInvite | undefined;
       if (loadError || !loadedInvite) {
@@ -75,7 +76,7 @@ export default function InviteAccept() {
       try {
         const { error: acceptError } = await supabase.rpc("accept_group_invite" as never, { invite_token: token } as never);
         if (acceptError) throw acceptError;
-        localStorage.removeItem("pending_invite_token");
+        safeStorage.removeItem("pending_invite_token");
         setStatus("done");
         toast({ title: `Welcome to ${invite.groups?.name || "the group"}!`, description: "You've been added successfully." });
         window.setTimeout(() => navigate("/dashboard"), 1400);
@@ -107,11 +108,11 @@ export default function InviteAccept() {
       <p className="mt-2 text-sm text-muted-foreground">Sign in or create an account to accept this Spendova group invite.</p>
       <div className="mt-6 space-y-3">
         <Button className="w-full rounded-full" onClick={() => {
-          if (token) localStorage.setItem("pending_invite_token", token);
+          if (token) safeStorage.setItem("pending_invite_token", token);
           navigate(`/login?redirect=/accept-invite?token=${token}`);
         }}>Login to accept</Button>
         <Button variant="quiet" className="w-full rounded-full" onClick={() => {
-          if (token) localStorage.setItem("pending_invite_token", token);
+          if (token) safeStorage.setItem("pending_invite_token", token);
           navigate(`/register?redirect=/accept-invite?token=${token}`);
         }}>Create account</Button>
       </div>

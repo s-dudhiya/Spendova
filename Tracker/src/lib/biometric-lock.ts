@@ -1,3 +1,5 @@
+import { safeStorage, withTimeout } from "@/lib/startup-safety";
+
 const LOCK_PREFIX = "spendova_biometric_lock";
 const FRESH_LOGIN_UNLOCK_KEY = "spendova_fresh_login_unlocked";
 
@@ -34,23 +36,27 @@ export function isBiometricLockSupported() {
 
 export async function canUsePlatformBiometrics() {
   if (!isBiometricLockSupported()) return false;
-  const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.();
-  return Boolean(available);
+  try {
+    const available = await withTimeout(PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.() ?? Promise.resolve(false), 2500, "biometric availability");
+    return Boolean(available);
+  } catch {
+    return false;
+  }
 }
 
 export function isBiometricLockEnabled(userId?: string | null) {
   if (!userId) return false;
-  return Boolean(localStorage.getItem(keyForUser(userId)));
+  return Boolean(safeStorage.getItem(keyForUser(userId)));
 }
 
 export function markFreshLoginUnlocked(userId: string) {
-  sessionStorage.setItem(FRESH_LOGIN_UNLOCK_KEY, userId);
+  safeStorage.setItem(FRESH_LOGIN_UNLOCK_KEY, userId);
 }
 
 export function consumeFreshLoginUnlocked(userId: string) {
-  const unlockedUserId = sessionStorage.getItem(FRESH_LOGIN_UNLOCK_KEY);
+  const unlockedUserId = safeStorage.getItem(FRESH_LOGIN_UNLOCK_KEY);
   if (unlockedUserId !== userId) return false;
-  sessionStorage.removeItem(FRESH_LOGIN_UNLOCK_KEY);
+  safeStorage.removeItem(FRESH_LOGIN_UNLOCK_KEY);
   return true;
 }
 
@@ -88,16 +94,16 @@ export async function enableBiometricLock(userId: string, email?: string | null,
     credentialId: bytesToBase64Url(new Uint8Array(credential.rawId)),
     createdAt: new Date().toISOString(),
   };
-  localStorage.setItem(keyForUser(userId), JSON.stringify(record));
+  safeStorage.setItem(keyForUser(userId), JSON.stringify(record));
   return record;
 }
 
 export async function unlockWithBiometric(userId: string) {
-  const rawRecord = localStorage.getItem(keyForUser(userId));
+  const rawRecord = safeStorage.getItem(keyForUser(userId));
   if (!rawRecord) return true;
 
   const record = JSON.parse(rawRecord) as LockRecord;
-  const credential = await navigator.credentials.get({
+  const credential = await withTimeout(navigator.credentials.get({
     publicKey: {
       challenge: randomChallenge(),
       allowCredentials: [{
@@ -108,11 +114,11 @@ export async function unlockWithBiometric(userId: string) {
       userVerification: "required",
       timeout: 60000,
     },
-  });
+  }), 65000, "biometric unlock");
 
   return Boolean(credential);
 }
 
 export function disableBiometricLock(userId: string) {
-  localStorage.removeItem(keyForUser(userId));
+  safeStorage.removeItem(keyForUser(userId));
 }
