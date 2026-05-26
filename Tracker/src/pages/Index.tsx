@@ -263,15 +263,6 @@ const allocateEqualSplitDebts = (amount: number, participantIds: string[], payer
     })
     .filter((split) => split.user_id !== payerId && split.amount_owed > 0);
 };
-const filterExpensesByRange = (expenses: ExpenseRow[], range: "week" | "month" | "year") => {
-  const now = new Date();
-  const start = new Date(now);
-  if (range === "week") start.setDate(now.getDate() - 7);
-  if (range === "month") start.setMonth(now.getMonth() - 1);
-  if (range === "year") start.setFullYear(now.getFullYear() - 1);
-  return expenses.filter((expense) => !expense.created_at || new Date(expense.created_at) >= start);
-};
-
 const StatusPill = ({ status }: { status: string }) => {
   const cleared = ["cleared", "paid", "accepted", "settled"].includes(status.toLowerCase());
   return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${cleared ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>{status}</span>;
@@ -284,15 +275,22 @@ const SectionHeader = ({ title, action, onAction }: { title: string; action?: st
   </div>
 );
 
-type DateFilter = "all" | "today" | "week" | "month" | "year";
+type DateFilter = "all" | "today" | "week" | "month" | "year" | "custom";
 type AmountSort = "newest" | "oldest" | "amount-desc" | "amount-asc";
 
-const filterByDate = (value: string | null | undefined, filter: DateFilter) => {
+const filterByDate = (value: string | null | undefined, filter: DateFilter, customStart?: string, customEnd?: string) => {
   if (filter === "all") return true;
   if (!value) return false;
   const date = new Date(value);
   const now = new Date();
   if (Number.isNaN(date.getTime())) return false;
+  if (filter === "custom") {
+    const start = customStart ? new Date(`${customStart}T00:00:00`) : null;
+    const end = customEnd ? new Date(`${customEnd}T23:59:59`) : null;
+    if (start && date < start) return false;
+    if (end && date > end) return false;
+    return Boolean(start || end);
+  }
   if (filter === "today") return date.toDateString() === now.toDateString();
   const start = new Date(now);
   if (filter === "week") start.setDate(now.getDate() - 7);
@@ -319,7 +317,7 @@ const FilterTrigger = ({ count, onClick }: { count: number; onClick: () => void 
 
 const FilterSheet = ({ open, onOpenChange, title, onClear, children }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; onClear: () => void; children: ReactNode }) => (
   <Drawer open={open} onOpenChange={onOpenChange}>
-    <DrawerContent className="mx-auto max-w-3xl rounded-t-3xl border-border bg-card px-4 pb-5">
+    <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-y-auto rounded-t-3xl border-border bg-card px-4 pb-6">
       <DrawerHeader className="px-0 pb-2 text-left">
         <DrawerTitle>{title}</DrawerTitle>
         <DrawerDescription>Filters update the list immediately.</DrawerDescription>
@@ -342,6 +340,41 @@ const FilterField = ({ label, value, onChange, options }: { label: string; value
       {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
     </select>
   </label>
+);
+
+const dateFilterOptions = [
+  { value: "all", label: "All dates" },
+  { value: "today", label: "Today" },
+  { value: "week", label: "This week" },
+  { value: "month", label: "This month" },
+  { value: "year", label: "This year" },
+  { value: "custom", label: "Custom date" },
+];
+
+const DateFilterControls = ({
+  value,
+  start,
+  end,
+  onDateChange,
+  onStartChange,
+  onEndChange,
+}: {
+  value: string;
+  start?: string;
+  end?: string;
+  onDateChange: (value: string) => void;
+  onStartChange: (value: string) => void;
+  onEndChange: (value: string) => void;
+}) => (
+  <div className="space-y-3">
+    <FilterField label="Date" value={value} onChange={onDateChange} options={dateFilterOptions} />
+    {value === "custom" ? (
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <Field label="From" type="date" value={start || ""} onChange={onStartChange} />
+        <Field label="To" type="date" value={end || ""} onChange={onEndChange} />
+      </div>
+    ) : null}
+  </div>
 );
 
 const FilterEmptyState = ({ onClear }: { onClear: () => void }) => (
@@ -701,8 +734,25 @@ function getSummary(expenses: ExpenseRow[], userId: string, settlements: SplitSe
   return { totalLent, totalOwed, net: totalLent - totalOwed, personal, personalPending, personalCleared, tiffinPending, tiffinCleared };
 }
 
-type ChartMode = "day" | "week" | "month" | "year" | "custom";
-type ChartRange = "7d" | "30d" | "3m" | "6m" | "1y";
+type ChartRange = "7d" | "30d" | "3m" | "6m" | "this_year" | "all";
+
+const chartRangeLabels: Record<ChartRange, string> = {
+  "7d": "Last 7 Days",
+  "30d": "Last 30 Days",
+  "3m": "Last 3 Months",
+  "6m": "Last 6 Months",
+  this_year: "This Year",
+  all: "All Time",
+};
+
+const chartRangeHelpers: Record<ChartRange, string> = {
+  "7d": "Daily spending",
+  "30d": "Weekly trend",
+  "3m": "Monthly trend",
+  "6m": "Monthly trend",
+  this_year: "Month-by-month",
+  all: "Full history",
+};
 
 const expenseImpactForUser = (expense: ExpenseRow, userId: string) => Math.max(Number(getExpenseShare(expense, userId) || 0), 0);
 const expenseSpendType = (expense: ExpenseRow) => {
@@ -712,54 +762,118 @@ const expenseSpendType = (expense: ExpenseRow) => {
   return "personal";
 };
 
-const getRangeStart = (range: ChartRange) => {
+const getRangeStart = (range: ChartRange, expenses: ExpenseRow[] = []) => {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   if (range === "7d") start.setDate(start.getDate() - 6);
   if (range === "30d") start.setDate(start.getDate() - 29);
   if (range === "3m") start.setMonth(start.getMonth() - 3);
   if (range === "6m") start.setMonth(start.getMonth() - 6);
-  if (range === "1y") start.setFullYear(start.getFullYear() - 1);
+  if (range === "this_year") start.setMonth(0, 1);
+  if (range === "all") {
+    const first = expenses
+      .map((expense) => expense.created_at ? new Date(expense.created_at) : null)
+      .filter((date): date is Date => Boolean(date) && !Number.isNaN(date.getTime()))
+      .sort((a, b) => a.getTime() - b.getTime())[0];
+    if (first) return new Date(first.getFullYear(), first.getMonth(), 1);
+  }
   return start;
 };
 
-const bucketKey = (date: Date, mode: ChartMode) => {
-  if (mode === "day") return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${date.getHours()}`;
-  if (mode === "year") return `${date.getFullYear()}-${date.getMonth()}`;
+type ChartBucketUnit = "day" | "week" | "month" | "year";
+
+const chartBucketUnit = (range: ChartRange): ChartBucketUnit => {
+  if (range === "7d") return "day";
+  if (range === "30d") return "week";
+  return "month";
+};
+
+const monthSpan = (start: Date, end: Date) => ((end.getFullYear() - start.getFullYear()) * 12) + end.getMonth() - start.getMonth();
+
+const startOfWeek = (date: Date) => {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  copy.setDate(copy.getDate() - copy.getDay());
+  return copy;
+};
+
+const bucketKey = (date: Date, unit: ChartBucketUnit) => {
+  if (unit === "year") return `${date.getFullYear()}`;
+  if (unit === "month") return `${date.getFullYear()}-${date.getMonth()}`;
+  if (unit === "week") {
+    const weekStart = startOfWeek(date);
+    return `${weekStart.getFullYear()}-${weekStart.getMonth()}-${weekStart.getDate()}`;
+  }
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 };
 
-const bucketLabel = (date: Date, mode: ChartMode) => {
-  if (mode === "day") return date.toLocaleTimeString("en-IN", { hour: "numeric" });
-  if (mode === "week") return date.toLocaleDateString("en-IN", { weekday: "short" });
-  if (mode === "month" || mode === "custom") return String(date.getDate());
+const bucketLabel = (date: Date, unit: ChartBucketUnit, range: ChartRange) => {
+  if (unit === "day") return date.toLocaleDateString("en-IN", { weekday: "short" });
+  if (unit === "week") return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  if (unit === "year") return String(date.getFullYear());
+  if (range === "all") return date.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
   return date.toLocaleDateString("en-IN", { month: "short" });
 };
 
-function buildSpendingChart(expenses: ExpenseRow[], userId: string, mode: ChartMode, range: ChartRange, customStart: string, customEnd: string) {
-  const now = new Date();
-  const start = mode === "custom" && customStart ? new Date(`${customStart}T00:00:00`) : getRangeStart(range);
-  const end = mode === "custom" && customEnd ? new Date(`${customEnd}T23:59:59`) : now;
+const stepChartCursor = (date: Date, unit: ChartBucketUnit) => {
+  if (unit === "year") date.setFullYear(date.getFullYear() + 1);
+  else if (unit === "month") date.setMonth(date.getMonth() + 1);
+  else if (unit === "week") date.setDate(date.getDate() + 7);
+  else date.setDate(date.getDate() + 1);
+};
+
+function buildSpendingChart(expenses: ExpenseRow[], userId: string, range: ChartRange) {
+  const start = getRangeStart(range, expenses);
+  const end = new Date();
+  const unit: ChartBucketUnit = range === "all" && monthSpan(start, end) > 18 ? "year" : chartBucketUnit(range);
   const buckets = new Map<string, { label: string; value: number; date: Date }>();
-  const cursor = new Date(start);
-  cursor.setMinutes(0, 0, 0);
+  const cursor = unit === "week" ? startOfWeek(start) : new Date(start);
+  if (unit === "year") cursor.setMonth(0, 1);
+  if (unit === "month") cursor.setDate(1);
+  cursor.setHours(0, 0, 0, 0);
   while (cursor <= end) {
-    const key = bucketKey(cursor, mode);
-    buckets.set(key, { label: bucketLabel(cursor, mode), value: 0, date: new Date(cursor) });
-    if (mode === "day") cursor.setHours(cursor.getHours() + 1);
-    else if (mode === "year") cursor.setMonth(cursor.getMonth() + 1);
-    else cursor.setDate(cursor.getDate() + 1);
+    const key = bucketKey(cursor, unit);
+    buckets.set(key, { label: bucketLabel(cursor, unit, range), value: 0, date: new Date(cursor) });
+    stepChartCursor(cursor, unit);
   }
   expenses.forEach((expense) => {
     if (!expense.created_at) return;
     const date = new Date(expense.created_at);
     if (date < start || date > end) return;
-    const key = bucketKey(date, mode);
-    const existing = buckets.get(key) || { label: bucketLabel(date, mode), value: 0, date };
+    const key = bucketKey(date, unit);
+    const existing = buckets.get(key) || { label: bucketLabel(date, unit, range), value: 0, date };
     existing.value += expenseImpactForUser(expense, userId);
     buckets.set(key, existing);
   });
   return [...buckets.values()].sort((a, b) => a.date.getTime() - b.date.getTime());
+}
+
+function chartTimelineLabels(chartData: Array<{ label: string; date: Date }>) {
+  return chartData.map((item) => item.label);
+}
+
+function chartAverageLabel(range: ChartRange) {
+  if (range === "all") return "Avg. per period";
+  return chartBucketUnit(range) === "month" ? "Avg. per month" : chartBucketUnit(range) === "week" ? "Avg. per week" : "Avg. per day";
+}
+
+function chartAverageValue(chartData: Array<{ value: number }>) {
+  const divisor = Math.max(chartData.length, 1);
+  return chartData.reduce((sum, item) => sum + item.value, 0) / divisor;
+}
+
+function niceChartMax(value: number) {
+  if (value <= 0) return 1;
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const normalized = value / magnitude;
+  const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return nice * magnitude;
+}
+
+function compactRupee(value: number) {
+  if (value >= 100000) return `₹${Number((value / 100000).toFixed(value % 100000 === 0 ? 0 : 1))}L`;
+  if (value >= 1000) return `₹${Number((value / 1000).toFixed(value % 1000 === 0 ? 0 : 1))}k`;
+  return `₹${Math.round(value)}`;
 }
 
 function getSpendingAnalytics(expenses: ExpenseRow[], userId: string) {
@@ -802,19 +916,21 @@ function computeGroupBalances(expenses: ExpenseRow[], settlements: SplitSettleme
 }
 
 const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; userId: string; setTab: (tab: TabKey) => void; openModal: (type: ModalType, item?: string) => void }) => {
-  const [range, setRange] = useState<"week" | "month" | "year">("month");
+  const [range, setRange] = useState<DateFilter>("month");
+  const [rangeStart, setRangeStart] = useState("");
+  const [rangeEnd, setRangeEnd] = useState("");
   const [status, setStatus] = useState<"all" | "pending" | "cleared">("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [chartMode, setChartMode] = useState<ChartMode>("week");
+  const [chartFiltersOpen, setChartFiltersOpen] = useState(false);
   const [chartRange, setChartRange] = useState<ChartRange>("7d");
-  const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState("");
-  const clear = () => { setRange("month"); setStatus("all"); };
-  const activeFilterCount = (range !== "month" ? 1 : 0) + (status !== "all" ? 1 : 0);
-  const rangedExpenses = filterExpensesByRange(expenses, range);
+  const [draftChartRange, setDraftChartRange] = useState<ChartRange>("7d");
+  const [activeBar, setActiveBar] = useState<string | null>(null);
+  const clear = () => { setRange("month"); setRangeStart(""); setRangeEnd(""); setStatus("all"); };
+  const activeFilterCount = (range !== "month" ? 1 : 0) + (rangeStart ? 1 : 0) + (rangeEnd ? 1 : 0) + (status !== "all" ? 1 : 0);
+  const rangedExpenses = expenses.filter((expense) => filterByDate(expense.created_at, range, rangeStart, rangeEnd));
   const filteredExpenses = rangedExpenses.filter((expense) => status === "all" || expense.status === status);
   const summary = getSummary(filteredExpenses, userId, settlements);
-  const recent = filteredExpenses.slice(0, 3);
+  const recent = filteredExpenses.slice(0, 4);
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
@@ -833,104 +949,112 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
   const trendLabel = `${rawTrend > 0 ? "+" : ""}${Number(rawTrend.toFixed(1)).toString().replace(".0", "")}%`;
   const TrendIcon = trendDirection === "up" ? TrendingUp : trendDirection === "down" ? TrendingDown : ArrowRight;
   const trendClass = trendDirection === "up" ? "bg-warning/15 text-warning" : trendDirection === "down" ? "bg-success/15 text-success" : "bg-muted text-muted-foreground";
-  const chartData = useMemo(() => buildSpendingChart(expenses, userId, chartMode, chartRange, customStart, customEnd), [expenses, userId, chartMode, chartRange, customStart, customEnd]);
-  const chartMax = Math.max(...chartData.map((item) => item.value), 1);
+  const chartData = useMemo(() => buildSpendingChart(expenses, userId, chartRange), [expenses, userId, chartRange]);
+  const chartMax = niceChartMax(Math.max(...chartData.map((item) => item.value), 1));
+  const chartTicks = [chartMax, chartMax * 0.75, chartMax * 0.5, chartMax * 0.25, 0];
+  const chartTotal = chartData.reduce((sum, item) => sum + item.value, 0);
+  const chartAverage = chartAverageValue(chartData);
+  const hasChartData = chartTotal > 0;
+  const chartLabels = chartTimelineLabels(chartData);
+  const chartRanges = ["7d", "30d", "3m", "6m", "this_year", "all"] as const;
+  const openChartFilters = () => {
+    setDraftChartRange(chartRange);
+    setChartFiltersOpen(true);
+  };
+  const applyChartFilters = () => {
+    setChartRange(draftChartRange);
+    setActiveBar(null);
+    setChartFiltersOpen(false);
+  };
 
   return (
-    <main className="space-y-6">
-      <section className="rounded-[1.4rem] bg-card p-5 shadow-panel">
-        <p className="text-sm font-medium text-muted-foreground">Net balance</p>
-        <div className="mt-2 flex items-end justify-between gap-3">
-          <div><p className="text-4xl font-bold tracking-tight text-foreground">{money(Math.abs(summary.net))}</p><p className="mt-1 text-sm text-muted-foreground">Across personal, tiffin, and splits</p></div>
-          <span title="Compared with yesterday" className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${trendClass}`} aria-label={`${trendLabel} compared with yesterday`}><TrendIcon className="size-3.5" />{trendLabel}</span>
+    <main className="space-y-6 pb-28">
+      <section className="overflow-hidden rounded-[1.4rem] bg-card shadow-panel">
+        <div className="bg-primary/8 p-5">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-semibold text-muted-foreground">Net balance</p>
+            <span title="Compared with yesterday" className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${trendClass}`} aria-label={`${trendLabel} compared with yesterday`}><TrendIcon className="size-3.5" />{trendLabel}</span>
+          </div>
+          <p className="mt-3 text-4xl font-black tracking-tight text-foreground sm:text-5xl">{money(Math.abs(summary.net))}</p>
+          <p className="mt-1 text-sm font-medium text-muted-foreground">Across personal expenses and shared balances</p>
         </div>
-        <div className="mt-5 grid grid-cols-2 items-start gap-3">
-          <button onClick={() => openModal("chart-details")} className="grid content-start rounded-2xl bg-elevated p-4 text-left shadow-soft"><p className="text-xs font-semibold leading-none text-muted-foreground">Total lent</p><p className="mt-2 text-xl font-bold leading-none text-foreground">{money(summary.totalLent)}</p></button>
-          <button onClick={() => openModal("chart-details")} className="grid content-start rounded-2xl bg-elevated p-4 text-left shadow-soft"><p className="text-xs font-semibold leading-none text-muted-foreground">Total owed</p><p className="mt-2 text-xl font-bold leading-none text-foreground">{money(summary.totalOwed)}</p></button>
+        <div className="grid grid-cols-2 gap-1 p-1">
+          <button onClick={() => openModal("chart-details")} className="grid min-h-24 content-between rounded-2xl bg-elevated p-4 text-left shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total lent</p><p className="mt-3 text-xl font-black leading-none text-success">{money(summary.totalLent)}</p></button>
+          <button onClick={() => openModal("chart-details")} className="grid min-h-24 content-between rounded-2xl bg-elevated p-4 text-left shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total owed</p><p className="mt-3 text-xl font-black leading-none text-warning">{money(summary.totalOwed)}</p></button>
         </div>
       </section>
 
       <section>
-        <SectionHeader title="Quick actions" />
-        <div className="grid grid-cols-2 gap-3">
-          <Button onClick={() => openModal("add-expense")} className="h-12 shadow-primary-action"><Plus />Add Expense</Button>
-          <Button onClick={() => openModal("log-tiffin")} variant="quiet" className="h-12"><CircleDollarSign />Log Tiffin</Button>
-        </div>
+        <SectionHeader title="Quick action" />
+        <Button onClick={() => openModal("add-expense")} className="h-16 w-full justify-start gap-4 rounded-[1.25rem] px-5 text-left shadow-primary-action"><span className="grid size-10 place-items-center rounded-full bg-primary-foreground/15"><Plus className="size-5" /></span><span><span className="block text-base font-black">Add Expense</span><span className="block text-xs font-semibold opacity-85">Track a new expense</span></span></Button>
       </section>
 
-      <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
-        <SectionHeader title="Spending chart" action="Details" onAction={() => openModal("chart-details")} />
-        <div className="mb-3 flex gap-1 overflow-x-auto rounded-full bg-elevated p-1">
-          {(["day", "week", "month", "year", "custom"] as const).map((mode) => (
-            <button key={mode} type="button" onClick={() => setChartMode(mode)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold capitalize ${chartMode === mode ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{mode}</button>
-          ))}
+      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel sm:p-5">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0"><h2 className="text-base font-black tracking-tight text-foreground">Spending chart</h2><p className="mt-1 text-sm font-medium text-muted-foreground">{chartRangeLabels[chartRange]}</p></div>
+          <div className="flex shrink-0 items-center gap-2"><button type="button" onClick={openChartFilters} className="inline-flex items-center gap-1.5 rounded-full bg-elevated px-3 py-2 text-xs font-bold text-primary sm:hidden"><Filter className="size-3.5" />Filter</button><button type="button" onClick={() => openModal("chart-details")} className="hidden text-sm font-bold text-primary sm:inline">Details</button></div>
         </div>
-        <div className="mb-3 flex gap-1 overflow-x-auto">
-          {[
-            ["7d", "Last 7 Days"],
-            ["30d", "Last 30 Days"],
-            ["3m", "Last 3 Months"],
-            ["6m", "Last 6 Months"],
-            ["1y", "Last Year"],
-          ].map(([value, label]) => (
-            <button key={value} type="button" onClick={() => setChartRange(value as ChartRange)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${chartRange === value ? "bg-primary text-primary-foreground" : "bg-elevated text-muted-foreground"}`}>{label}</button>
-          ))}
-        </div>
-        {chartMode === "custom" ? (
-          <div className="mb-3 grid grid-cols-2 gap-2">
-            <input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} className="rounded-full border border-input bg-background px-3 py-2 text-xs font-semibold" />
-            <input type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} className="rounded-full border border-input bg-background px-3 py-2 text-xs font-semibold" />
-          </div>
-        ) : null}
-        {chartData.every((item) => item.value <= 0) ? (
-          <div className="grid h-32 place-items-center rounded-2xl bg-elevated p-4 text-center">
-            <div><CircleDollarSign className="mx-auto mb-2 size-6 text-muted-foreground" /><p className="text-sm font-bold text-muted-foreground">No spending data available</p></div>
-          </div>
+        <div className="mb-4 hidden gap-2 sm:flex sm:flex-wrap">{chartRanges.map((value) => <button key={value} type="button" onClick={() => { setChartRange(value); setActiveBar(null); }} className={`rounded-full px-3 py-2 text-xs font-bold ${chartRange === value ? "bg-primary text-primary-foreground shadow-primary-action" : "bg-elevated text-muted-foreground"}`}>{chartRangeLabels[value]}</button>)}</div>
+        {!hasChartData ? (
+          <div className="rounded-[1.25rem] bg-elevated p-6 text-center shadow-soft"><div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary"><CircleDollarSign className="size-7" /></div><p className="mt-4 text-base font-black text-foreground">No spending yet</p><p className="mt-1 text-sm font-medium text-muted-foreground">Add an expense to see your chart here.</p><Button onClick={() => openModal("add-expense")} variant="quiet" className="mt-4"><Plus />Add Expense</Button></div>
         ) : (
           <>
-            <button onClick={() => openModal("chart-details")} className="flex h-32 w-full items-end gap-2 overflow-x-auto rounded-2xl bg-elevated p-4" aria-label="Spending bar chart">
-              {chartData.map((item) => (
-                <span key={`${item.label}-${item.date.toISOString()}`} className="flex min-w-5 flex-1 flex-col items-center gap-2">
-                  <span title={`${item.label}: ${money(item.value)}`} className="w-full rounded-full bg-primary/80" style={{ height: `${Math.max(8, (item.value / chartMax) * 100)}%` }} />
-                </span>
-              ))}
-            </button>
-            <div className="mt-3 flex justify-between gap-2 overflow-hidden text-xs font-medium text-muted-foreground">
-              {chartData.slice(0, 6).map((item) => <span key={item.date.toISOString()} className="truncate">{item.label}</span>)}
+            <div className="relative w-full max-w-full rounded-[1.25rem] bg-elevated px-1 py-4 shadow-soft sm:p-4">
+              <div className="grid w-full max-w-full grid-cols-[1.55rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2.4rem_minmax(0,1fr)] sm:gap-2">
+                <div className="relative h-40 sm:h-36">
+                  {chartTicks.map((tick, index) => (
+                    <span key={`${tick}-${index}`} className="absolute right-0 -translate-y-1/2 text-[8.5px] font-bold leading-none text-muted-foreground/80 sm:text-[10px]" style={{ top: `${(index / (chartTicks.length - 1)) * 100}%` }}>{compactRupee(tick)}</span>
+                  ))}
+                </div>
+                <div className="relative h-40 min-w-0 sm:h-36">
+                  <div className="pointer-events-none absolute inset-0">
+                    {chartTicks.map((tick, index) => (
+                      <span key={`${tick}-${index}`} className="absolute left-0 h-px w-full bg-border/60" style={{ top: `${(index / (chartTicks.length - 1)) * 100}%` }} />
+                    ))}
+                  </div>
+                  <div className="relative m-0 grid h-full w-full max-w-full items-end gap-1 sm:gap-2" style={{ gridTemplateColumns: `repeat(${chartData.length}, minmax(0, 1fr))` }}>
+                    {chartData.map((item) => {
+                      const key = `${item.label}-${item.date.toISOString()}`;
+                      const selected = activeBar === key;
+                      return <button key={key} type="button" onClick={() => setActiveBar(selected ? null : key)} className="group flex h-full min-w-0 items-end justify-center" aria-label={`${item.label}: ${money(item.value)}`}><span className={`block w-full max-w-10 rounded-t-full transition-all sm:max-w-8 ${selected ? "bg-primary" : item.value > 0 ? "bg-primary/75 group-hover:bg-primary" : "bg-primary/15"}`} style={{ height: item.value > 0 ? `${Math.max(12, (Number(item.value) / chartMax) * 100)}%` : "4px" }} />{selected ? <span className="absolute top-3 rounded-full bg-foreground px-3 py-1 text-xs font-bold text-background shadow-panel">{money(item.value)}</span> : null}</button>;
+                    })}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 grid w-full max-w-full grid-cols-[1.55rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2.4rem_minmax(0,1fr)] sm:gap-2">
+                <span />
+                <div className="grid min-w-0 gap-1 text-center text-[10px] font-bold text-muted-foreground sm:text-[11px]" style={{ gridTemplateColumns: `repeat(${chartLabels.length}, minmax(0, 1fr))` }}>{chartLabels.map((label, index) => <span key={`${label}-${index}`} className="truncate">{label}</span>)}</div>
+              </div>
             </div>
+            <div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total Spending</p><p className="mt-2 text-lg font-black text-foreground">{money(chartTotal)}</p></div><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{chartAverageLabel(chartRange)}</p><p className="mt-2 text-lg font-black text-foreground">{money(chartAverage)}</p></div></div>
+            <p className="mt-3 text-sm font-medium text-muted-foreground">Keep tracking your expenses for better insights.</p>
           </>
         )}
       </section>
 
       <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-bold tracking-tight text-foreground">Recent activity</h2>
-          <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
-        </div>
-        <div className="space-y-3">
-          {recent.length === 0 ? (expenses.length === 0 ? <EmptyCard text="No activity yet." /> : <FilterEmptyState onClear={clear} />) : recent.map((expense) => (
-            <div key={expense.id} className="flex items-center justify-between rounded-2xl bg-card p-4 shadow-soft">
-              <div><h3 className="font-bold text-foreground">{expense.category || "Expense"}</h3><p className="text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p></div>
-              <div className="text-right"><p className="font-bold text-foreground">{money(expense.amount)}</p><StatusPill status={expense.status || "pending"} /></div>
-            </div>
-          ))}
-        </div>
+        <div className="mb-3 flex items-center justify-between gap-3"><div><h2 className="text-base font-black tracking-tight text-foreground">Recent activity</h2><p className="mt-0.5 text-xs font-medium text-muted-foreground">Latest spending and split updates</p></div><FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} /></div>
+        <div className="space-y-3">{recent.length === 0 ? (expenses.length === 0 ? <EmptyCard text="No activity yet." /> : <FilterEmptyState onClear={clear} />) : recent.map((expense) => { const share = getExpenseShare(expense, userId); return <div key={expense.id} className="flex items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-soft"><div className="min-w-0"><h3 className="truncate font-bold text-foreground">{expense.category || "Expense"}</h3><p className="mt-1 text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p></div><div className="shrink-0 text-right"><p className="font-black text-foreground">{money(share)}</p><StatusPill status={expense.status || "pending"} /></div></div>; })}</div>
       </section>
 
+      <Drawer open={chartFiltersOpen} onOpenChange={setChartFiltersOpen}>
+        <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-y-auto rounded-t-3xl border-border bg-card px-4 pb-8">
+          <DrawerHeader className="px-0 pb-2 text-left"><DrawerTitle>Chart range</DrawerTitle><DrawerDescription>Choose how much spending history to show.</DrawerDescription></DrawerHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">{chartRanges.map((value) => <button key={value} type="button" onClick={() => setDraftChartRange(value)} className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition-colors ${draftChartRange === value ? "border-primary bg-primary/10 text-foreground shadow-soft" : "border-border bg-elevated text-foreground"}`}><span><span className="block text-sm font-black">{chartRangeLabels[value]}</span><span className="mt-0.5 block text-xs font-semibold text-muted-foreground">{chartRangeHelpers[value]}</span></span>{draftChartRange === value ? <Check className="size-4 text-primary" /> : null}</button>)}</div>
+            <div className="flex gap-2 pt-1"><Button type="button" variant="quiet" className="flex-1" onClick={() => setChartFiltersOpen(false)}>Cancel</Button><Button type="button" className="flex-1 shadow-primary-action" onClick={applyChartFilters}>Apply</Button></div>
+          </div>
+        </DrawerContent>
+      </Drawer>
+
       <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Overview activity filters" onClear={clear}>
-        <FilterField label="Date" value={range} onChange={(value) => setRange(value as "week" | "month" | "year")} options={[{ value: "week", label: "This week" }, { value: "month", label: "This month" }, { value: "year", label: "This year" }]} />
+        <DateFilterControls value={range} start={rangeStart} end={rangeEnd} onDateChange={(value) => setRange(value as DateFilter)} onStartChange={setRangeStart} onEndChange={setRangeEnd} />
         <FilterField label="Status" value={status} onChange={(value) => setStatus(value as "all" | "pending" | "cleared")} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "cleared", label: "Cleared" }]} />
       </FilterSheet>
 
       <section>
         <SectionHeader title="Shortcuts" />
-        <div className="space-y-3">
-          {[
-            { title: "Split", value: money(summary.totalLent + summary.totalOwed), icon: Split, tab: "split" as TabKey },
-            { title: "Personal", value: money(summary.personal), icon: WalletCards, tab: "personal" as TabKey },
-            { title: "Tiffin", value: money(summary.tiffinPending + summary.tiffinCleared), icon: UtensilsCrossed, tab: "tiffin" as TabKey },
-          ].map((item) => <button key={item.title} onClick={() => setTab(item.tab)} className="flex w-full items-center justify-between rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel"><span className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-full bg-elevated text-primary"><item.icon className="size-4" /></span><span><span className="block font-bold text-foreground">{item.title}</span><span className="text-sm text-muted-foreground">Current data</span></span></span><span className="flex items-center gap-2 font-bold text-foreground">{item.value}<ChevronRight className="size-4 text-muted-foreground" /></span></button>)}
-        </div>
+        <div className="space-y-3">{[{ title: "Split", value: money(summary.totalLent + summary.totalOwed), icon: Split, tab: "split" as TabKey }, { title: "Personal", value: money(summary.personal), icon: WalletCards, tab: "personal" as TabKey }].map((item) => <button key={item.title} onClick={() => setTab(item.tab)} className="flex w-full items-center justify-between rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel"><span className="flex min-w-0 items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-full bg-elevated text-primary"><item.icon className="size-4" /></span><span className="min-w-0"><span className="block font-bold text-foreground">{item.title}</span><span className="text-sm text-muted-foreground">Current data</span></span></span><span className="flex shrink-0 items-center gap-2 font-bold text-foreground">{item.value}<ChevronRight className="size-4 text-muted-foreground" /></span></button>)}</div>
       </section>
     </main>
   );
@@ -939,7 +1063,7 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
 const EmptyCard = ({ text }: { text: string }) => <div className="rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm font-medium text-muted-foreground">{text}</div>;
 
 const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, friends, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; summary: ReturnType<typeof getSummary>; currentUserId: string; groups: GroupRow[]; friends: FriendProfile[]; openModal: (type: ModalType, item?: string) => void }) => {
-  const defaultFilters = { status: "all", date: "all", sort: "newest", category: "all" };
+  const defaultFilters = { status: "all", date: "all", dateStart: "", dateEnd: "", sort: "newest", category: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
   const personalExpenses = expenses.filter((expense) => expense.category !== "tiffin" && expense.category !== "delivery" && (expense.paid_by === currentUserId || expense.expense_splits?.some((split) => split.user_id === currentUserId)));
@@ -952,7 +1076,7 @@ const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, f
       const expenseStatus = display.status;
       if (filters.status !== "all" && expenseStatus !== filters.status) return false;
       if (filters.category !== "all" && (expense.category || "Other") !== filters.category) return false;
-      return filterByDate(expense.created_at, filters.date as DateFilter);
+      return filterByDate(expense.created_at, filters.date as DateFilter, filters.dateStart, filters.dateEnd);
     }),
     filters.sort as AmountSort,
     (expense) => expense.created_at,
@@ -964,7 +1088,7 @@ const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, f
         <p className="text-sm font-medium text-muted-foreground">Personal spend</p>
         <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">{money(summary.personal)}</p>
         <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-          {[["Total", money(summary.personal)], ["Pending", money(summary.personalPending)], ["Cleared", money(summary.personalCleared)]].map(([label, value]) => <div key={label} className="rounded-2xl bg-elevated p-3 shadow-soft"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-bold text-foreground">{value}</p></div>)}
+          {[["Total", money(summary.personal)], ["Pending", money(summary.personalPending)], ["Cleared", money(summary.personalCleared)]].map(([label, value]) => <div key={label} className="min-w-0 rounded-2xl bg-elevated p-3 shadow-soft"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 truncate font-bold text-foreground">{value}</p></div>)}
         </div>
       </section>
       <section className="pb-16">
@@ -997,7 +1121,7 @@ const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, f
       </section>
       <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Personal expense filters" onClear={clearFilters}>
         <FilterField label="Status" value={filters.status} onChange={(status) => setFilters((current) => ({ ...current, status }))} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "cleared", label: "Cleared" }]} />
-        <FilterField label="Date" value={filters.date} onChange={(date) => setFilters((current) => ({ ...current, date }))} options={[{ value: "all", label: "All dates" }, { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "month", label: "This month" }, { value: "year", label: "This year" }]} />
+        <DateFilterControls value={filters.date} start={filters.dateStart} end={filters.dateEnd} onDateChange={(date) => setFilters((current) => ({ ...current, date }))} onStartChange={(dateStart) => setFilters((current) => ({ ...current, dateStart }))} onEndChange={(dateEnd) => setFilters((current) => ({ ...current, dateEnd }))} />
         <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "amount-desc", label: "Amount high to low" }, { value: "amount-asc", label: "Amount low to high" }]} />
         <FilterField label="Category" value={filters.category} onChange={(category) => setFilters((current) => ({ ...current, category }))} options={[{ value: "all", label: "All categories" }, ...categories.map((category) => ({ value: category, label: category }))]} />
       </FilterSheet>
@@ -1080,8 +1204,8 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
       </section>
 
       <section className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You are owed</p><p className="mt-1 text-xl font-bold text-success">{money(summary.totalLent)}</p></div>
-        <div className="rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You owe</p><p className="mt-1 text-xl font-bold text-warning">{money(summary.totalOwed)}</p></div>
+        <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You are owed</p><p className="mt-1 truncate text-xl font-bold text-success">{money(summary.totalLent)}</p></div>
+        <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You owe</p><p className="mt-1 truncate text-xl font-bold text-warning">{money(summary.totalOwed)}</p></div>
       </section>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1112,11 +1236,11 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
             {filteredFriends.length === 0 ? (data.friends.length === 0 ? <EmptyCard text="Add friends to start splitting expenses" /> : <FilterEmptyState onClear={clearFilters} />) : filteredFriends.map(({ friend, net }) => {
               return (
               <button key={friend.user_id} onClick={() => openDetail("friend", friend.user_id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <span className="grid size-11 place-items-center rounded-full bg-elevated font-bold text-primary">{displayName(friend).charAt(0).toUpperCase()}</span>
-                  <div><h3 className="font-bold text-foreground">{displayName(friend)}</h3><p className="text-sm text-muted-foreground">@{friend.username || "user"}</p></div>
+                  <div className="min-w-0"><h3 className="truncate font-bold text-foreground">{displayName(friend)}</h3><p className="truncate text-sm text-muted-foreground">@{friend.username || "user"}</p></div>
                 </div>
-                <div className="shrink-0 text-right">
+                <div className="max-w-[48%] shrink-0 text-right">
                   <p className={`text-sm font-bold ${net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground"}`}>{net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled"}</p>
                   <ChevronRight className="ml-auto mt-1 size-4 text-muted-foreground" />
                 </div>
@@ -1137,11 +1261,11 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
                 return (
                   <button onClick={() => openDetail("group", group.id)} key={group.id} className="w-full rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
                         <span className="grid size-11 place-items-center rounded-full bg-elevated text-xl">{group.emoji || "🏠"}</span>
-                        <div><h3 className="font-bold text-foreground">{group.name}</h3><p className="text-sm text-muted-foreground">{group.group_members.length} members</p></div>
+                        <div className="min-w-0"><h3 className="truncate font-bold text-foreground">{group.name}</h3><p className="text-sm text-muted-foreground">{group.group_members.length} members</p></div>
                       </div>
-                      <p className={`shrink-0 text-right text-sm font-bold ${net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground"}`}>{net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled"}</p>
+                      <p className={`max-w-[48%] shrink-0 text-right text-sm font-bold ${net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground"}`}>{net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled"}</p>
                     </div>
                   </button>
                 );
@@ -1223,7 +1347,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
   const [actionItem, setActionItem] = useState<FriendActivityItem | null>(null);
   const [quickSettleItem, setQuickSettleItem] = useState<FriendActivityItem | null>(null);
   const [quickSettling, setQuickSettling] = useState(false);
-  const defaultFilters = { type: "all", status: "all", date: "all", sort: "newest", paidBy: "anyone" };
+  const defaultFilters = { type: "all", status: "all", date: "all", dateStart: "", dateEnd: "", sort: "newest", paidBy: "anyone" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
   const balances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null });
@@ -1285,7 +1409,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
       if (filters.status !== "all" && item.status !== filters.status) return false;
       if (filters.paidBy === "me" && item.paidById !== currentUserId) return false;
       if (filters.paidBy === "friend" && item.paidById !== friend.user_id) return false;
-      return filterByDate(item.created_at, filters.date as DateFilter);
+      return filterByDate(item.created_at, filters.date as DateFilter, filters.dateStart, filters.dateEnd);
     }),
     filters.sort as AmountSort,
     (item) => item.created_at,
@@ -1460,13 +1584,13 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
       <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Activity filters" onClear={clearFilters}>
         <FilterField label="Type" value={filters.type} onChange={(type) => setFilters((current) => ({ ...current, type }))} options={[{ value: "all", label: "All" }, { value: "expenses", label: "Expenses" }, { value: "settlements", label: "Settlements" }]} />
         <FilterField label="Status" value={filters.status} onChange={(status) => setFilters((current) => ({ ...current, status }))} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "partial", label: "Partial" }, { value: "paid", label: "Paid / Settled" }]} />
-        <FilterField label="Date" value={filters.date} onChange={(date) => setFilters((current) => ({ ...current, date }))} options={[{ value: "all", label: "All dates" }, { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "month", label: "This month" }, { value: "year", label: "This year" }]} />
+        <DateFilterControls value={filters.date} start={filters.dateStart} end={filters.dateEnd} onDateChange={(date) => setFilters((current) => ({ ...current, date }))} onStartChange={(dateStart) => setFilters((current) => ({ ...current, dateStart }))} onEndChange={(dateEnd) => setFilters((current) => ({ ...current, dateEnd }))} />
         <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "amount-desc", label: "Amount high to low" }, { value: "amount-asc", label: "Amount low to high" }]} />
         <FilterField label="Paid by" value={filters.paidBy} onChange={(paidBy) => setFilters((current) => ({ ...current, paidBy }))} options={[{ value: "anyone", label: "Anyone" }, { value: "me", label: "Me" }, { value: "friend", label: displayName(friend) }]} />
       </FilterSheet>
 
       <Drawer open={Boolean(actionItem)} onOpenChange={(open) => !open && closeActions()}>
-        <DrawerContent className="mx-auto max-w-3xl rounded-t-3xl border-border bg-card px-4 pb-5">
+        <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-y-auto rounded-t-3xl border-border bg-card px-4 pb-6">
           <DrawerHeader className="px-0 pb-2 text-left">
             <DrawerTitle>{actionItem?.kind === "settlement" ? "Settlement actions" : "Expense actions"}</DrawerTitle>
             <DrawerDescription>{actionItem?.title || "Activity"}</DrawerDescription>
@@ -1504,7 +1628,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
       </Drawer>
 
       <Dialog open={Boolean(quickSettleItem)} onOpenChange={(open) => !open && setQuickSettleItem(null)}>
-        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-[1.25rem] border-border bg-card shadow-panel">
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-sm rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:p-6">
           <DialogHeader>
             <DialogTitle className="text-foreground">Mark expense as settled?</DialogTitle>
             <DialogDescription>
@@ -1745,7 +1869,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const [actionExpense, setActionExpense] = useState<ExpenseRow | null>(null);
   const [participantsExpense, setParticipantsExpense] = useState<ExpenseRow | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
-  const defaultFilters = { status: "all", paidBy: "anyone", date: "all", sort: "newest", splitType: "all" };
+  const defaultFilters = { status: "all", paidBy: "anyone", date: "all", dateStart: "", dateEnd: "", sort: "newest", splitType: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
   const groupExpenses = data.expenses.filter((expense) => expense.group_id === group.id).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
@@ -1810,7 +1934,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
       if (filters.paidBy === "me" && expense.paid_by !== currentUserId) return false;
       if (filters.paidBy !== "anyone" && filters.paidBy !== "me" && expense.paid_by !== filters.paidBy) return false;
       if (filters.splitType !== "all" && (expense.split_type || "equal") !== filters.splitType) return false;
-      return filterByDate(expense.created_at, filters.date as DateFilter);
+      return filterByDate(expense.created_at, filters.date as DateFilter, filters.dateStart, filters.dateEnd);
     }),
     filters.sort as AmountSort,
     (expense) => expense.created_at,
@@ -1972,13 +2096,13 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
       <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Group expense filters" onClear={clearFilters}>
         <FilterField label="Status" value={filters.status} onChange={(status) => setFilters((current) => ({ ...current, status }))} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "partial", label: "Partial" }, { value: "settled", label: "Settled" }]} />
         <FilterField label="Paid by" value={filters.paidBy} onChange={(paidBy) => setFilters((current) => ({ ...current, paidBy }))} options={[{ value: "anyone", label: "Anyone" }, { value: "me", label: "Me" }, ...group.group_members.filter((member) => member.user_id !== currentUserId).map((member) => ({ value: member.user_id, label: displayName(member.profiles) }))]} />
-        <FilterField label="Date" value={filters.date} onChange={(date) => setFilters((current) => ({ ...current, date }))} options={[{ value: "all", label: "All dates" }, { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "month", label: "This month" }, { value: "year", label: "This year" }]} />
+        <DateFilterControls value={filters.date} start={filters.dateStart} end={filters.dateEnd} onDateChange={(date) => setFilters((current) => ({ ...current, date }))} onStartChange={(dateStart) => setFilters((current) => ({ ...current, dateStart }))} onEndChange={(dateEnd) => setFilters((current) => ({ ...current, dateEnd }))} />
         <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "amount-desc", label: "Amount high to low" }, { value: "amount-asc", label: "Amount low to high" }]} />
         <FilterField label="Split type" value={filters.splitType} onChange={(splitType) => setFilters((current) => ({ ...current, splitType }))} options={[{ value: "all", label: "All" }, { value: "equal", label: "Equal split" }, { value: "exact", label: "Exact split" }, { value: "percentage", label: "Percentage" }]} />
       </FilterSheet>
 
       <Drawer open={Boolean(actionExpense)} onOpenChange={(open) => !open && setActionExpense(null)}>
-        <DrawerContent className="mx-auto max-w-3xl rounded-t-3xl border-border bg-card px-4 pb-5">
+        <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-y-auto rounded-t-3xl border-border bg-card px-4 pb-6">
           <DrawerHeader className="px-0 pb-2 text-left">
             <DrawerTitle>Expense actions</DrawerTitle>
             <DrawerDescription>{actionExpense?.category || "Expense"}</DrawerDescription>
@@ -1993,7 +2117,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
       </Drawer>
 
       <Drawer open={Boolean(participantsExpense)} onOpenChange={(open) => !open && setParticipantsExpense(null)}>
-        <DrawerContent className="mx-auto max-w-3xl rounded-t-3xl border-border bg-card px-4 pb-5">
+        <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-y-auto rounded-t-3xl border-border bg-card px-4 pb-6">
           <DrawerHeader className="px-0 pb-2 text-left">
             <DrawerTitle>Participants</DrawerTitle>
             <DrawerDescription>{participantsExpense?.category || "Expense"}</DrawerDescription>
@@ -2853,7 +2977,7 @@ const ActionModal = ({
 
   return (
     <Dialog open={type !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[85vh] w-[calc(100%-2rem)] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-[1.25rem] border-border bg-card shadow-panel sm:w-full sm:max-w-md">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:w-full sm:max-w-md sm:p-6">
         <DialogHeader>
           <DialogTitle className="text-foreground">{title}</DialogTitle>
           <DialogDescription>{type === "notifications" ? "Pending settlements, invites, and recent activity." : type === "saved" ? `${modal.item ?? "Action"} saved.` : "Complete the fields below."}</DialogDescription>

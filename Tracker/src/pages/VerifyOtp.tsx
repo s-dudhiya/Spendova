@@ -7,6 +7,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 
 const AUTH_BRAND_IMAGE = "/brand/login-branding-image.png";
+const AUTH_BRAND_IMAGE_MOBILE = "/brand/login-branding-image-mobile.webp";
+const AUTH_BRAND_IMAGE_TABLET = "/brand/login-branding-image-tablet.webp";
+const AUTH_BRAND_IMAGE_DESKTOP = "/brand/login-branding-image-desktop.webp";
 const SIGNUP_PASSWORD_KEY = "spendova_pending_signup_password";
 const OTP_LENGTH = 6;
 const OTP_TTL_SECONDS = 10 * 60;
@@ -175,11 +178,25 @@ export default function VerifyOtp() {
       <div className="relative z-10 mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-[392px] flex-col items-center justify-center sm:min-h-[calc(100vh-3.5rem)]">
         <header className="text-center">
           <Link to="/" className="block h-[116px] overflow-hidden sm:h-[132px]" aria-label="Spendova home">
-            <img src={AUTH_BRAND_IMAGE} alt="Spendova" className="h-auto w-[21rem] max-w-none -translate-y-[52px] sm:w-[24rem] sm:-translate-y-[58px]" />
+            <picture>
+              <source media="(max-width: 640px)" srcSet={AUTH_BRAND_IMAGE_MOBILE} type="image/webp" />
+              <source media="(max-width: 1024px)" srcSet={AUTH_BRAND_IMAGE_TABLET} type="image/webp" />
+              <source srcSet={AUTH_BRAND_IMAGE_DESKTOP} type="image/webp" />
+              <img
+                src={AUTH_BRAND_IMAGE}
+                alt="Spendova"
+                width="400"
+                height="267"
+                loading="eager"
+                decoding="async"
+                fetchPriority="high"
+                className="h-auto w-[19rem] max-w-none -translate-y-[48px] min-[380px]:w-[21rem] min-[380px]:-translate-y-[52px] sm:w-[24rem] sm:-translate-y-[58px]"
+              />
+            </picture>
           </Link>
         </header>
 
-        <section className="mt-3 w-full rounded-[1.35rem] border border-white/80 bg-white/78 p-7 shadow-[0_22px_36px_rgba(76,61,130,0.18)] backdrop-blur-xl sm:mt-4 sm:p-8">
+        <section className="mt-3 w-full rounded-[1.35rem] border border-white/80 bg-white/78 p-5 shadow-[0_22px_36px_rgba(76,61,130,0.18)] backdrop-blur-xl min-[380px]:p-7 sm:mt-4 sm:p-8">
           <div className="mb-4 border-b border-[#ddd3f6] pb-4 text-left">
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.22em] text-[#6e6295]">Spendova account</p>
             <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#0d0b35]">{resetToken ? "Set new password" : "Verify your email"}</h1>
