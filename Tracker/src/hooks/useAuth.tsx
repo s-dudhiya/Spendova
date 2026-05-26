@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode, useRef, useC
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { checkDeviceSession, registerDeviceSession, revokeCurrentDeviceSession } from '@/lib/device-session';
 
 interface Profile {
   id: string;
@@ -24,6 +25,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const INACTIVITY_TIMEOUT = 7 * 24 * 60 * 60 * 1000; // 7 days
+const DEVICE_SESSION_CHECK_INTERVAL = 60 * 1000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -33,22 +35,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const registeringRef = useRef(false);
+  const lastRegisteredUserRef = useRef<string | null>(null);
 
   // Auto-logout due to inactivity
+  const clearLocalAuthState = useCallback(() => {
+    setUser(null);
+    setSession(null);
+    setProfile(null);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
+
   const handleAutoLogout = useCallback(async () => {
+    await revokeCurrentDeviceSession().catch(() => undefined);
     const { error } = await supabase.auth.signOut();
     if (!error) {
-      setUser(null);
-      setSession(null);
-      setProfile(null);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      clearLocalAuthState();
       toast({
         title: "Session Expired",
         description: "You've been automatically signed out due to inactivity.",
         variant: "destructive",
       });
     }
-  }, [toast]);
+  }, [clearLocalAuthState, toast]);
 
   const resetInactivityTimer = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -70,6 +79,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [user, resetInactivityTimer]);
+
+  const enforceDeviceSession = useCallback(async (targetUser: User) => {
+    if (registeringRef.current || lastRegisteredUserRef.current === targetUser.id) return;
+    registeringRef.current = true;
+    try {
+      await registerDeviceSession();
+      lastRegisteredUserRef.current = targetUser.id;
+    } catch (error) {
+      console.error("Device session registration failed", error);
+      await supabase.auth.signOut();
+      clearLocalAuthState();
+      toast({
+        title: "Device Check Failed",
+        description: "We could not verify this device. Please sign in again.",
+        variant: "destructive",
+      });
+    } finally {
+      registeringRef.current = false;
+    }
+  }, [clearLocalAuthState, toast]);
+
+  useEffect(() => {
+    if (!user) {
+      lastRegisteredUserRef.current = null;
+      return;
+    }
+
+    enforceDeviceSession(user);
+    const interval = window.setInterval(async () => {
+      try {
+        const result = await checkDeviceSession();
+        if (!result.valid) {
+          await supabase.auth.signOut();
+          clearLocalAuthState();
+          toast({
+            title: "Signed Out",
+            description: result.reason === "new_device_login"
+              ? "Your account was opened on another device."
+              : "This device session is no longer active.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error("Device session check failed", error);
+      }
+    }, DEVICE_SESSION_CHECK_INTERVAL);
+
+    return () => window.clearInterval(interval);
+  }, [clearLocalAuthState, enforceDeviceSession, toast, user]);
 
   // Listen for auth state changes
   useEffect(() => {
@@ -114,6 +172,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error };
     }
 
+    try {
+      await registerDeviceSession();
+      lastRegisteredUserRef.current = data.user.id;
+    } catch (deviceError) {
+      console.error("Device session registration failed", deviceError);
+      await supabase.auth.signOut();
+      const strictError = new Error("Could not verify this device. Please try again.");
+      toast({ title: "Sign In Failed", description: strictError.message, variant: "destructive" });
+      return { error: strictError };
+    }
+
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
       .select('email_verified')
@@ -122,6 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (profileError) console.error("Profile verification lookup failed", profileError);
     const customSignupPending = data.user.user_metadata?.spendova_custom_pending === true;
     if (profileData && profileData.email_verified === false && customSignupPending) {
+      await revokeCurrentDeviceSession().catch(() => undefined);
       await supabase.auth.signOut();
       const verifyError = new Error("Please verify your email with the 6-digit code before logging in.");
       toast({ title: "Verification Required", description: verifyError.message, variant: "destructive" });
@@ -145,12 +215,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    await revokeCurrentDeviceSession().catch((error) => console.error("Device session revoke failed", error));
     const { error } = await supabase.auth.signOut();
     if (!error) {
-      setUser(null);
-      setSession(null);
-      setProfile(null);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      clearLocalAuthState();
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
     } else {
       toast({ title: "Sign Out Failed", description: error.message, variant: "destructive" });

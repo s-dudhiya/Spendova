@@ -21,7 +21,9 @@ import {
   Pencil,
   Plus,
   Search,
+  ShieldCheck,
   Split,
+  Smartphone,
   Sun,
   Trash2,
   TrendingDown,
@@ -52,6 +54,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
+import { getDeviceId, listDeviceSessions, type DeviceSession } from "@/lib/device-session";
 
 type TabKey = "home" | "split" | "personal" | "tiffin";
 type ContentKey = TabKey | "profile";
@@ -2065,14 +2068,44 @@ const TiffinView = ({ expenses, openModal }: { expenses: ExpenseRow[]; openModal
   );
 };
 
+const sessionReasonLabel = (reason?: string | null) => {
+  if (reason === "new_device_login") return "Replaced by another device";
+  if (reason === "password_reset") return "Revoked after password reset";
+  if (reason === "user_logout") return "Signed out";
+  if (reason === "user_requested") return "Revoked by user";
+  return "Inactive";
+};
+
 const ProfileView = ({ profile, email, createdAt, theme, onThemeToggle, onSave, openModal }: { profile: Profile | null; email?: string; createdAt?: string; theme: Theme; onThemeToggle: () => void; onSave: (fullName: string, username: string) => Promise<void>; openModal: (type: ModalType, item?: string) => void }) => {
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [username, setUsername] = useState(profile?.username || "");
+  const [deviceSessions, setDeviceSessions] = useState<DeviceSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const currentDeviceId = useMemo(() => getDeviceId(), []);
 
   useEffect(() => {
     setFullName(profile?.full_name || "");
     setUsername(profile?.username || "");
   }, [profile?.full_name, profile?.username]);
+
+  useEffect(() => {
+    let active = true;
+    const loadSessions = async () => {
+      setSessionsLoading(true);
+      try {
+        const sessions = await listDeviceSessions();
+        if (active) setDeviceSessions(sessions);
+      } catch (error) {
+        console.error("Failed to load device sessions", error);
+      } finally {
+        if (active) setSessionsLoading(false);
+      }
+    };
+    loadSessions();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <main className="space-y-6">
@@ -2094,6 +2127,44 @@ const ProfileView = ({ profile, email, createdAt, theme, onThemeToggle, onSave, 
           <div className="pt-1">
             <button onClick={() => openModal("logout")} className="w-full rounded-full bg-destructive/15 px-4 py-3 font-bold text-destructive">Logout</button>
           </div>
+        </div>
+      </section>
+      <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-foreground">Device security</p>
+            <p className="mt-1 text-sm text-muted-foreground">Only one device can stay active at a time.</p>
+          </div>
+          <div className="grid size-10 place-items-center rounded-full bg-success/15 text-success">
+            <ShieldCheck className="size-5" />
+          </div>
+        </div>
+        <div className="space-y-3">
+          {sessionsLoading ? (
+            <div className="rounded-2xl bg-elevated p-4 text-sm font-medium text-muted-foreground">Checking devices...</div>
+          ) : deviceSessions.length === 0 ? (
+            <div className="rounded-2xl bg-elevated p-4 text-sm font-medium text-muted-foreground">No device session found.</div>
+          ) : deviceSessions.map((item) => {
+            const isCurrent = item.device_id === currentDeviceId;
+            const isActive = item.active && !item.revoked_at;
+            return (
+              <div key={item.id} className="flex items-start gap-3 rounded-2xl bg-elevated p-4 shadow-soft">
+                <div className={`mt-0.5 grid size-9 shrink-0 place-items-center rounded-full ${isActive ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}>
+                  <Smartphone className="size-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="truncate text-sm font-bold text-foreground">{item.device_name}{isCurrent ? " (this device)" : ""}</p>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${isActive ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}>
+                      {isActive ? "Active" : "Revoked"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs font-medium text-muted-foreground">{item.platform || item.device_type} - Last seen {dateLabel(item.last_seen_at)}</p>
+                  {!isActive && <p className="mt-1 text-xs font-semibold text-muted-foreground">{sessionReasonLabel(item.revoked_reason)}</p>}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
       <section className="rounded-[1.25rem] border border-destructive/30 bg-card p-5 shadow-panel">

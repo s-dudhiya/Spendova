@@ -58,6 +58,16 @@ serve(async (req) => {
     const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(user.id, { password })
     if (updateError) throw updateError
 
+    await supabaseAdmin
+      .from('auth_device_sessions')
+      .update({
+        active: false,
+        revoked_at: new Date().toISOString(),
+        revoked_reason: 'password_reset',
+      })
+      .eq('user_id', user.id)
+      .eq('active', true)
+
     await supabaseAdmin.from('auth_otps').update({ reset_token: null, reset_token_expires_at: null }).eq('id', otpRow.id)
     return json({ success: true })
   } catch (error) {
