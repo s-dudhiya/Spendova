@@ -14,6 +14,7 @@ import {
   Copy,
   Crown,
   Filter,
+  Fingerprint,
   Home,
   Link as LinkIcon,
   MoreVertical,
@@ -54,6 +55,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
+import { canUsePlatformBiometrics, disableBiometricLock, enableBiometricLock, isBiometricLockEnabled } from "@/lib/biometric-lock";
 import { getDeviceId, listDeviceSessions, type DeviceSession } from "@/lib/device-session";
 
 type TabKey = "home" | "split" | "personal" | "tiffin";
@@ -2076,11 +2078,15 @@ const sessionReasonLabel = (reason?: string | null) => {
   return "Inactive";
 };
 
-const ProfileView = ({ profile, email, createdAt, theme, onThemeToggle, onSave, openModal }: { profile: Profile | null; email?: string; createdAt?: string; theme: Theme; onThemeToggle: () => void; onSave: (fullName: string, username: string) => Promise<void>; openModal: (type: ModalType, item?: string) => void }) => {
+const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, onSave, openModal }: { userId: string; profile: Profile | null; email?: string; createdAt?: string; theme: Theme; onThemeToggle: () => void; onSave: (fullName: string, username: string) => Promise<void>; openModal: (type: ModalType, item?: string) => void }) => {
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [username, setUsername] = useState(profile?.username || "");
   const [deviceSessions, setDeviceSessions] = useState<DeviceSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [biometricEnabled, setBiometricEnabled] = useState(() => isBiometricLockEnabled(userId));
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricBusy, setBiometricBusy] = useState(false);
+  const [biometricError, setBiometricError] = useState("");
   const currentDeviceId = useMemo(() => getDeviceId(), []);
 
   useEffect(() => {
@@ -2107,6 +2113,39 @@ const ProfileView = ({ profile, email, createdAt, theme, onThemeToggle, onSave, 
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    canUsePlatformBiometrics()
+      .then((available) => {
+        if (active) setBiometricAvailable(available);
+      })
+      .catch(() => {
+        if (active) setBiometricAvailable(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const toggleBiometricLock = async () => {
+    setBiometricBusy(true);
+    setBiometricError("");
+    try {
+      if (biometricEnabled) {
+        disableBiometricLock(userId);
+        setBiometricEnabled(false);
+      } else {
+        await enableBiometricLock(userId, email, fullName || username);
+        setBiometricEnabled(true);
+      }
+    } catch (error) {
+      console.error("Biometric lock update failed", error);
+      setBiometricError(error instanceof Error ? error.message : "Could not update fingerprint lock.");
+    } finally {
+      setBiometricBusy(false);
+    }
+  };
+
   return (
     <main className="space-y-6">
       <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
@@ -2124,6 +2163,25 @@ const ProfileView = ({ profile, email, createdAt, theme, onThemeToggle, onSave, 
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Member since</span><span className="font-semibold text-foreground">{dateLabel(createdAt)}</span></div>
           </div>
           <button onClick={onThemeToggle} className="flex w-full items-center justify-between rounded-2xl bg-elevated p-4 font-bold text-foreground shadow-soft"><span>Theme</span><span className="flex items-center gap-2 text-primary">{theme === "dark" ? "Dark" : "Light"}{theme === "dark" ? <Moon className="size-4" /> : <Sun className="size-4" />}</span></button>
+          <button
+            onClick={toggleBiometricLock}
+            disabled={biometricBusy || (!biometricAvailable && !biometricEnabled)}
+            className="flex w-full items-center justify-between gap-3 rounded-2xl bg-elevated p-4 text-left font-bold text-foreground shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span className="flex items-center gap-3">
+              <span className="grid size-10 place-items-center rounded-full bg-primary/10 text-primary"><Fingerprint className="size-5" /></span>
+              <span>
+                <span className="block">Fingerprint lock</span>
+                <span className="mt-0.5 block text-xs font-medium text-muted-foreground">
+                  {biometricAvailable || biometricEnabled ? "Require device unlock when opening the app." : "Not available on this browser/device."}
+                </span>
+              </span>
+            </span>
+            <span className={`relative h-6 w-12 shrink-0 rounded-full transition-colors ${biometricEnabled ? "bg-primary" : "bg-muted-foreground/30"}`}>
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transition-transform ${biometricEnabled ? "translate-x-6" : "translate-x-0.5"}`} />
+            </span>
+          </button>
+          {biometricError && <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">{biometricError}</p>}
           <div className="pt-1">
             <button onClick={() => openModal("logout")} className="w-full rounded-full bg-destructive/15 px-4 py-3 font-bold text-destructive">Logout</button>
           </div>
@@ -3074,7 +3132,7 @@ const Index = () => {
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} settlements={data.settlements} summary={summary} currentUserId={user.id} groups={data.groups} friends={data.friends} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "tiffin" && <TiffinView expenses={data.expenses} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "profile" && <ProfileView profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "profile" && <ProfileView userId={user.id} profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
         <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p>
       </div>
       <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-3xl px-4 pb-4">

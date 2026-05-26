@@ -1,11 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { Fingerprint, LockKeyhole } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { isBiometricLockEnabled, unlockWithBiometric } from "@/lib/biometric-lock";
 import Admin from "./pages/Admin.tsx";
 import Auth from "./pages/Auth.tsx";
 import Index from "./pages/Index.tsx";
@@ -15,6 +18,55 @@ import NotFound from "./pages/NotFound.tsx";
 import VerifyOtp from "./pages/VerifyOtp.tsx";
 
 const queryClient = new QueryClient();
+
+const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading, signOut } = useAuth();
+  const [unlocked, setUnlocked] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
+  const [error, setError] = useState("");
+  const needsUnlock = Boolean(user && isBiometricLockEnabled(user.id) && !unlocked);
+
+  useEffect(() => {
+    setUnlocked(false);
+    setError("");
+  }, [user?.id]);
+
+  const unlock = async () => {
+    if (!user) return;
+    setUnlocking(true);
+    setError("");
+    try {
+      const success = await unlockWithBiometric(user.id);
+      if (!success) throw new Error("Unlock was cancelled.");
+      setUnlocked(true);
+    } catch (unlockError) {
+      console.error("Biometric unlock failed", unlockError);
+      setError(unlockError instanceof Error ? unlockError.message : "Could not unlock Spendova.");
+    } finally {
+      setUnlocking(false);
+    }
+  };
+
+  if (loading || !needsUnlock) return <>{children}</>;
+
+  return (
+    <main className="grid min-h-screen place-items-center bg-background px-5 text-foreground">
+      <section className="w-full max-w-sm rounded-[1.25rem] bg-card p-6 text-center shadow-panel">
+        <div className="mx-auto grid size-16 place-items-center rounded-full bg-primary/15 text-primary">
+          <LockKeyhole className="size-7" />
+        </div>
+        <h1 className="mt-5 text-2xl font-bold tracking-tight">Unlock Spendova</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">Use your device fingerprint, Face ID, Touch ID, or screen lock to continue.</p>
+        {error && <p className="mt-4 rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">{error}</p>}
+        <Button onClick={unlock} disabled={unlocking} className="mt-5 h-12 w-full rounded-full shadow-primary-action">
+          <Fingerprint className="size-4" />
+          {unlocking ? "Unlocking..." : "Unlock"}
+        </Button>
+        <button onClick={signOut} className="mt-4 text-sm font-bold text-muted-foreground">Sign out</button>
+      </section>
+    </main>
+  );
+};
 
 const AppRoutes = () => {
   const location = useLocation();
@@ -85,7 +137,9 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <AppRoutes />
+          <BiometricLockGate>
+            <AppRoutes />
+          </BiometricLockGate>
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
