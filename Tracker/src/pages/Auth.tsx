@@ -26,7 +26,7 @@ const getInitialTheme = (): Theme => {
     safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
     return legacy;
   }
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return "light";
 };
 
 const PasswordField = ({ label, placeholder, value, onChange }: { label: string; placeholder: string; value: string; onChange: (value: string) => void }) => {

@@ -234,7 +234,7 @@ const getInitialTheme = (): Theme => {
     safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
     return legacy;
   }
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return "light";
 };
 
 const money = (amount: number) => {
