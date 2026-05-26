@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode, useRef, useC
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { markFreshLoginUnlocked } from '@/lib/biometric-lock';
 import { checkDeviceSession, registerDeviceSession, revokeCurrentDeviceSession } from '@/lib/device-session';
 
 interface Profile {
@@ -175,6 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await registerDeviceSession();
       lastRegisteredUserRef.current = data.user.id;
+      markFreshLoginUnlocked(data.user.id);
     } catch (deviceError) {
       console.error("Device session registration failed", deviceError);
       await supabase.auth.signOut();

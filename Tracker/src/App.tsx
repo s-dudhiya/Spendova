@@ -8,7 +8,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { isBiometricLockEnabled, unlockWithBiometric } from "@/lib/biometric-lock";
+import { consumeFreshLoginUnlocked, isBiometricLockEnabled, unlockWithBiometric } from "@/lib/biometric-lock";
 import Admin from "./pages/Admin.tsx";
 import Auth from "./pages/Auth.tsx";
 import Index from "./pages/Index.tsx";
@@ -30,6 +30,10 @@ const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {
     setUnlocked(false);
     setError("");
   }, [user?.id]);
+
+  useEffect(() => {
+    if (user && consumeFreshLoginUnlocked(user.id)) setUnlocked(true);
+  }, [user]);
 
   const unlock = async () => {
     if (!user) return;

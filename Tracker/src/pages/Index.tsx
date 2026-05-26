@@ -2187,7 +2187,7 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
           </div>
         </div>
       </section>
-      <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
+      {/* <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-bold text-foreground">Device security</p>
@@ -2224,7 +2224,7 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
             );
           })}
         </div>
-      </section>
+      </section> */}
       <section className="rounded-[1.25rem] border border-destructive/30 bg-card p-5 shadow-panel">
         <p className="text-sm font-bold text-foreground">Danger zone</p>
         <p className="mt-1 text-sm text-muted-foreground">Delete your account and related data permanently.</p>

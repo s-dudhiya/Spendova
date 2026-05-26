@@ -1,4 +1,5 @@
 const LOCK_PREFIX = "spendova_biometric_lock";
+const FRESH_LOGIN_UNLOCK_KEY = "spendova_fresh_login_unlocked";
 
 type LockRecord = {
   credentialId: string;
@@ -40,6 +41,17 @@ export async function canUsePlatformBiometrics() {
 export function isBiometricLockEnabled(userId?: string | null) {
   if (!userId) return false;
   return Boolean(localStorage.getItem(keyForUser(userId)));
+}
+
+export function markFreshLoginUnlocked(userId: string) {
+  sessionStorage.setItem(FRESH_LOGIN_UNLOCK_KEY, userId);
+}
+
+export function consumeFreshLoginUnlocked(userId: string) {
+  const unlockedUserId = sessionStorage.getItem(FRESH_LOGIN_UNLOCK_KEY);
+  if (unlockedUserId !== userId) return false;
+  sessionStorage.removeItem(FRESH_LOGIN_UNLOCK_KEY);
+  return true;
 }
 
 export async function enableBiometricLock(userId: string, email?: string | null, displayName?: string | null) {
