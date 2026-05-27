@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { markFreshLoginUnlocked } from '@/lib/biometric-lock';
 import { checkDeviceSession, registerDeviceSession, revokeCurrentDeviceSession } from '@/lib/device-session';
+import { getFriendlyErrorMessage } from '@/lib/friendly-error';
 import { bootLog, withTimeout } from '@/lib/startup-safety';
 
 interface Profile {
@@ -225,7 +226,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       console.error("Supabase sign-in error", error);
-      toast({ title: "Sign In Failed", description: error.message, variant: "destructive" });
+      toast({ title: "Sign In Failed", description: getFriendlyErrorMessage(error, "auth"), variant: "destructive" });
       return { error };
     }
 
@@ -259,7 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await revokeCurrentDeviceSession().catch(() => undefined);
       await supabase.auth.signOut();
       const verifyError = new Error("Please verify your email with the 6-digit code before logging in.");
-      toast({ title: "Verification Required", description: verifyError.message, variant: "destructive" });
+      toast({ title: "Verification Required", description: getFriendlyErrorMessage(verifyError, "auth"), variant: "destructive" });
       return { error: verifyError };
     }
     if (profileData && profileData.email_verified === false && !customSignupPending) {
@@ -286,7 +287,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearLocalAuthState();
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
     } else {
-      toast({ title: "Sign Out Failed", description: error.message, variant: "destructive" });
+      toast({ title: "Sign Out Failed", description: getFriendlyErrorMessage(error, "auth"), variant: "destructive" });
     }
   };
 

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import { safeStorage } from "@/lib/startup-safety";
 
 const AUTH_BRAND_IMAGE = "/brand/login-branding-image.png";
@@ -127,7 +128,9 @@ export default function VerifyOtp() {
       navigate("/login", { replace: true });
     } catch (error) {
       console.error("OTP verification failed", error);
-      setFormError(error instanceof Error ? error.message : "Invalid or expired code.");
+      const message = getFriendlyErrorMessage(error, "otp");
+      setFormError(message);
+      toast({ title: "Verification failed", description: message, variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -147,7 +150,9 @@ export default function VerifyOtp() {
       toast({ title: "Code sent", description: isReset ? "If this email is registered, we'll send a verification code." : "Check your email for a new code." });
     } catch (error) {
       console.error("OTP resend failed", error);
-      setFormError("Could not resend code. Please try again later.");
+      const message = getFriendlyErrorMessage(error, "otp_resend");
+      setFormError(message);
+      toast({ title: "Could not resend code", description: message, variant: "destructive" });
     } finally {
       setResending(false);
     }
@@ -168,7 +173,9 @@ export default function VerifyOtp() {
       navigate("/login", { replace: true });
     } catch (error) {
       console.error("OTP password reset failed", error);
-      setFormError(error instanceof Error ? error.message : "Could not update password.");
+      const message = getFriendlyErrorMessage(error, "password_reset");
+      setFormError(message);
+      toast({ title: "Password update failed", description: message, variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -224,6 +231,9 @@ export default function VerifyOtp() {
                   />
                 ))}
               </div>
+              <p className="rounded-2xl border border-warning/25 bg-warning/10 px-4 py-3 text-xs font-semibold leading-5 text-warning">
+                Check your email for the 6-digit code. If you don’t see it, please check your spam folder too.
+              </p>
               <p className="text-center text-xs font-semibold text-[#6d638e]">Code expires in {formatTimer(secondsLeft)}</p>
               {formError && <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">{formError}</p>}
               <Button onClick={verifyOtp} disabled={submitting || otp.length !== OTP_LENGTH || secondsLeft === 0} className="h-12 w-full rounded-xl bg-[#7c3aed] text-white shadow-[0_14px_24px_rgba(109,40,217,0.22)] hover:bg-[#6d28d9]">

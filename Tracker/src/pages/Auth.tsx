@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
 import { safeStorage } from "@/lib/startup-safety";
 
@@ -156,7 +157,9 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
       navigate(`/verify-otp?${params.toString()}`, { replace: true });
     } catch (error) {
       console.error("OTP auth form error", error);
-      setFormError(error instanceof Error ? error.message : "Could not send verification code. Please try again.");
+      const message = getFriendlyErrorMessage(error, isLogin ? "auth" : isRegister ? "otp_resend" : "password_reset");
+      setFormError(message);
+      toast({ title: isLogin ? "Sign in failed" : "Request failed", description: message, variant: "destructive" });
     } finally {
       setSubmitting(false);
     }

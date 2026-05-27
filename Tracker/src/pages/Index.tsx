@@ -58,6 +58,7 @@ import { useToast } from "@/hooks/use-toast";
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
 import { canUsePlatformBiometrics, disableBiometricLock, enableBiometricLock, isBiometricLockEnabled } from "@/lib/biometric-lock";
 import { getDeviceId, listDeviceSessions, type DeviceSession } from "@/lib/device-session";
+import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 
 type TabKey = "home" | "split" | "personal" | "tiffin";
@@ -1549,7 +1550,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, o
     } as never);
     setQuickSettling(false);
     if (error) {
-      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
+      toast({ title: "Settlement failed", description: getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
       return;
     }
     toast({ title: "Expense marked settled", description: `${money(amount)} was settled for ${quickSettleItem.title}.` });
@@ -1778,7 +1779,7 @@ const ExpenseDetailView = ({ expense, settlements, currentUserId, openModal, onB
     } as never);
     setSettling(false);
     if (error) {
-      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
+      toast({ title: "Settlement failed", description: getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
       return;
     }
     toast({ title: "Expense settled", description: "Your share and balances were updated." });
@@ -1994,7 +1995,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
     } as never)));
     const error = results.find((result) => result.error)?.error;
     if (error) {
-      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
+      toast({ title: "Settlement failed", description: getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
       return;
     }
     toast({ title: "Expense settled", description: "Group balances were updated." });
@@ -2353,7 +2354,9 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
       }
     } catch (error) {
       console.error("Biometric lock update failed", error);
-      setBiometricError(error instanceof Error ? error.message : "Could not update fingerprint lock.");
+      const message = getFriendlyErrorMessage(error, "device");
+      setBiometricError(message);
+      toast({ title: "Fingerprint lock failed", description: message, variant: "destructive" });
     } finally {
       setBiometricBusy(false);
     }
@@ -2887,7 +2890,7 @@ const ActionModal = ({
       toast({ title: "Expense saved", description: "Balances and history were updated." });
       await closeAndRefresh();
     } catch (error) {
-      toast({ title: "Save failed", description: error instanceof Error ? error.message : "Could not save expense.", variant: "destructive" });
+      toast({ title: "Save failed", description: getFriendlyErrorMessage(error, "expense"), variant: "destructive" });
       throw error;
     }
   };
@@ -2896,17 +2899,17 @@ const ActionModal = ({
     if (!expense) return;
     const { error: settlementError } = await supabase.from("split_settlements" as never).delete().eq("expense_id", expense.id);
     if (settlementError) {
-      toast({ title: "Delete failed", description: settlementError.message, variant: "destructive" });
+      toast({ title: "Delete failed", description: getFriendlyErrorMessage(settlementError, "delete"), variant: "destructive" });
       return;
     }
     const { error: splitError } = await supabase.from("expense_splits").delete().eq("expense_id", expense.id);
     if (splitError) {
-      toast({ title: "Delete failed", description: splitError.message, variant: "destructive" });
+      toast({ title: "Delete failed", description: getFriendlyErrorMessage(splitError, "delete"), variant: "destructive" });
       return;
     }
     const { error } = await supabase.from("expenses").delete().eq("id", expense.id);
     if (error) {
-      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
+      toast({ title: "Delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" });
     } else {
       toast({ title: "Expense deleted", description: "Balances were updated for everyone involved." });
       if (location.pathname.startsWith("/split/")) await closeRefreshAndReturnToSplit();
@@ -2924,7 +2927,7 @@ const ActionModal = ({
       p_note: payload.note || null,
     } as never);
     if (error) {
-      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
+      toast({ title: "Settlement failed", description: getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
       return;
     }
     toast({ title: "Settlement saved", description: "Balances were updated." });
@@ -2938,11 +2941,11 @@ const ActionModal = ({
       return;
     }
     const { error } = await supabase.from("expenses").update({ status: "cleared" }).eq("id", expense.id);
-    if (error) toast({ title: "Update failed", description: error.message, variant: "destructive" });
+    if (error) toast({ title: "Update failed", description: getFriendlyErrorMessage(error, "expense"), variant: "destructive" });
     else {
       const splitUpdates = await Promise.all((expense.expense_splits || []).map((split) => supabase.from("expense_splits").update({ has_paid: true, amount_paid: split.amount_owed }).eq("id", split.id)));
       const splitError = splitUpdates.find((result) => result.error)?.error;
-      if (splitError) toast({ title: "Split update failed", description: splitError.message, variant: "destructive" });
+      if (splitError) toast({ title: "Split update failed", description: getFriendlyErrorMessage(splitError, "expense"), variant: "destructive" });
       else await closeAndRefresh();
     }
   };
@@ -2971,7 +2974,7 @@ const ActionModal = ({
   const sendInvite = async (email: string) => {
     if (!group || !email.trim()) return;
     const { data: inviteResult, error } = await supabase.functions.invoke("send-invite", { body: { email: email.trim().toLowerCase(), group_id: group.id, group_name: group.name, inviter_name: "A friend" } });
-    if (error) toast({ title: "Invite failed", description: error.message, variant: "destructive" });
+    if (error) toast({ title: "Invite failed", description: getFriendlyErrorMessage(error, "invite"), variant: "destructive" });
     else {
       if (inviteResult && inviteResult.emailSent === false) toast({ title: "Invite link created", description: "Email could not be sent. Copy the invite link manually." });
       else toast({ title: "Invite sent" });
@@ -2993,7 +2996,7 @@ const ActionModal = ({
       .eq("username", cleanUsername)
       .maybeSingle();
     if (lookupError) {
-      toast({ title: "Add member failed", description: lookupError.message, variant: "destructive" });
+      toast({ title: "Add member failed", description: getFriendlyErrorMessage(lookupError, "group"), variant: "destructive" });
       return false;
     }
     if (!foundUser) {
@@ -3010,7 +3013,7 @@ const ActionModal = ({
     }
     const { error } = await supabase.from("group_members").insert({ group_id: group.id, user_id: foundUser.user_id });
     if (error) {
-      toast({ title: "Add member failed", description: error.message, variant: "destructive" });
+      toast({ title: "Add member failed", description: getFriendlyErrorMessage(error, "group"), variant: "destructive" });
       return false;
     }
     toast({ title: "Member added successfully", description: `${displayName(foundUser)} was added to ${group.name}.` });
@@ -3030,7 +3033,7 @@ const ActionModal = ({
     }
     const { error } = await supabase.from("group_members").delete().eq("group_id", memberGroup.id).eq("user_id", memberToRemove.user_id);
     if (error) {
-      toast({ title: "Remove failed", description: error.message, variant: "destructive" });
+      toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "group"), variant: "destructive" });
       return;
     }
     toast({ title: "Member removed", description: `${displayName(memberToRemove.profiles)} was removed from the group.` });
@@ -3045,7 +3048,7 @@ const ActionModal = ({
     }
     const { error } = await supabase.from("group_members").delete().eq("group_id", group.id).eq("user_id", currentUserId);
     if (error) {
-      toast({ title: "Leave failed", description: error.message, variant: "destructive" });
+      toast({ title: "Leave failed", description: getFriendlyErrorMessage(error, "group"), variant: "destructive" });
       return;
     }
     toast({ title: "Left group", description: `You left ${group.name}.` });
@@ -3055,7 +3058,7 @@ const ActionModal = ({
   const deleteAccount = async () => {
     const { error } = await supabase.functions.invoke("delete-account");
     if (error) {
-      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
+      toast({ title: "Delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" });
       return;
     }
     toast({ title: "Account deleted", description: "Your account and related data were deleted." });
@@ -3111,12 +3114,12 @@ const ActionModal = ({
           )}
 
           {type === "invite-members" && group && <InviteMembers group={group} invites={data.groupInvites[group.id] || []} currentUserId={currentUserId} onInvite={sendInvite} onAddByUsername={addMemberByUsername} />}
-          {type === "add-friend" && <AddFriendForm currentUserId={currentUserId} friends={data.friends} requests={[...data.incomingRequests, ...data.outgoingRequests]} onRequest={async (receiverId) => { if (receiverId === currentUserId) { toast({ title: "Request failed", description: "You cannot send a friend request to yourself.", variant: "destructive" }); return; } const { error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: receiverId, status: "pending" }); if (error) toast({ title: "Request failed", description: error.message, variant: "destructive" }); else await closeAndRefresh(); }} onCancel={onClose} />}
+          {type === "add-friend" && <AddFriendForm currentUserId={currentUserId} friends={data.friends} requests={[...data.incomingRequests, ...data.outgoingRequests]} onRequest={async (receiverId) => { if (receiverId === currentUserId) { toast({ title: "Request failed", description: "You cannot send a friend request to yourself.", variant: "destructive" }); return; } const { error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: receiverId, status: "pending" }); if (error) toast({ title: "Request failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); else await closeAndRefresh(); }} onCancel={onClose} />}
 
           {type === "friend-requests" && (
           <div className="space-y-4">
-            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Incoming</p><div className="space-y-2">{data.incomingRequests.length === 0 ? <EmptyCard text="No incoming requests." /> : data.incomingRequests.map((request) => <RequestCard key={request.id} request={request} onAccept={async () => { const { error } = await supabase.from("connections").update({ status: "accepted" }).eq("id", request.id); if (error) { toast({ title: "Accept failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} onReject={async () => { const { error } = await supabase.from("connections").update({ status: "rejected" }).eq("id", request.id); if (error) { toast({ title: "Reject failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} />)}</div></div>
-            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Outgoing</p><div className="space-y-2">{data.outgoingRequests.length === 0 ? <EmptyCard text="No outgoing requests." /> : data.outgoingRequests.map((request) => <div key={request.id} className="flex items-center justify-between rounded-2xl bg-elevated p-3"><div><p className="font-bold text-foreground">{displayName(request.profiles)}</p><p className="text-xs text-muted-foreground">@{request.profiles.username}</p></div><Button size="sm" variant="quiet" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", request.id); if (error) { toast({ title: "Cancel failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }}>Cancel</Button></div>)}</div></div>
+            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Incoming</p><div className="space-y-2">{data.incomingRequests.length === 0 ? <EmptyCard text="No incoming requests." /> : data.incomingRequests.map((request) => <RequestCard key={request.id} request={request} onAccept={async () => { const { error } = await supabase.from("connections").update({ status: "accepted" }).eq("id", request.id); if (error) { toast({ title: "Accept failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeAndRefresh(); }} onReject={async () => { const { error } = await supabase.from("connections").update({ status: "rejected" }).eq("id", request.id); if (error) { toast({ title: "Reject failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeAndRefresh(); }} />)}</div></div>
+            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Outgoing</p><div className="space-y-2">{data.outgoingRequests.length === 0 ? <EmptyCard text="No outgoing requests." /> : data.outgoingRequests.map((request) => <div key={request.id} className="flex items-center justify-between rounded-2xl bg-elevated p-3"><div><p className="font-bold text-foreground">{displayName(request.profiles)}</p><p className="text-xs text-muted-foreground">@{request.profiles.username}</p></div><Button size="sm" variant="quiet" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", request.id); if (error) { toast({ title: "Cancel failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeAndRefresh(); }}>Cancel</Button></div>)}</div></div>
           </div>
           )}
 
@@ -3125,7 +3128,7 @@ const ActionModal = ({
             <div className="space-y-2 rounded-2xl bg-elevated p-4 text-sm">
               {data.expenses.filter((expense) => expense.paid_by === friend.user_id || expense.expense_splits?.some((split) => split.user_id === friend.user_id)).slice(0, 4).map((item) => <div key={item.id} className="flex justify-between"><span className="text-muted-foreground">{item.category}</span><span className="font-semibold text-foreground">{money(item.amount)}</span></div>)}
             </div>
-            <Button variant="destructive" className="w-full" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }}><UserMinus />Remove friend</Button>
+            <Button variant="destructive" className="w-full" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeAndRefresh(); }}><UserMinus />Remove friend</Button>
           </div>
           )}
 
@@ -3135,10 +3138,10 @@ const ActionModal = ({
 
           {type === "delete-expense" && <ConfirmBox title="Delete expense?" text="This will update balances for everyone involved." action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
           {type === "clear-expense" && <ConfirmBox text={`Mark "${expense?.category || "expense"}" as cleared?`} action="Mark cleared" onCancel={onClose} onConfirm={clearExpense} />}
-          {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { if (group.created_by !== currentUserId) { toast({ title: "Delete failed", description: "Only the group owner can delete this group.", variant: "destructive" }); return; } const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; } toast({ title: "Group deleted" }); await closeRefreshAndReturnToSplit(); }} />}
+          {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { if (group.created_by !== currentUserId) { toast({ title: "Delete failed", description: "Only the group owner can delete this group.", variant: "destructive" }); return; } const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" }); return; } toast({ title: "Group deleted" }); await closeRefreshAndReturnToSplit(); }} />}
           {type === "leave-group" && group && <ConfirmBox title="Leave group?" text="Are you sure you want to leave this group?" action="Leave Group" destructive onCancel={onClose} onConfirm={leaveGroup} />}
           {type === "remove-group-member" && memberGroup && memberToRemove && <ConfirmBox title="Remove member?" text={`Remove ${displayName(memberToRemove.profiles)} from ${memberGroup.name}?`} action="Remove" destructive onCancel={onClose} onConfirm={removeGroupMember} />}
-          {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeRefreshAndReturnToSplit(); }} />}
+          {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeRefreshAndReturnToSplit(); }} />}
           {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
           {type === "delete-account" && <ConfirmBox title="Delete account?" text="This will permanently delete your account and related data. This action cannot be undone." action="Delete Account" destructive onCancel={onClose} onConfirm={deleteAccount} />}
           {type === "notifications" && <NotificationsList data={data} currentUserId={currentUserId} />}
@@ -3303,7 +3306,7 @@ const Index = () => {
   const saveProfile = async (fullName: string, username: string) => {
     if (!user) return;
     const { error } = await supabase.from("profiles").update({ full_name: fullName, username }).eq("user_id", user.id);
-    if (error) toast({ title: "Profile update failed", description: error.message, variant: "destructive" });
+    if (error) toast({ title: "Profile update failed", description: getFriendlyErrorMessage(error, "profile"), variant: "destructive" });
     else {
       toast({ title: "Profile updated" });
       await refresh();
@@ -3322,7 +3325,7 @@ const Index = () => {
   const deleteSettlement = async (settlementId: string) => {
     const { error } = await supabase.rpc("delete_split_settlement" as never, { p_settlement_id: settlementId } as never);
     if (error) {
-      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
+      toast({ title: "Delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" });
       return;
     }
     toast({ title: "Settlement deleted", description: "Balances were restored." });

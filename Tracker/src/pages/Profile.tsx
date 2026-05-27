@@ -13,6 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { getFriendlyErrorMessage } from '@/lib/friendly-error';
 
 export default function Profile() {
   const { user, profile, signOut, loading: authLoading } = useAuth();
@@ -83,7 +84,7 @@ export default function Profile() {
     setIsSaving(false);
 
     if (error) {
-      toast({ title: 'Error', description: 'Failed to update profile', variant: 'destructive' });
+      toast({ title: 'Profile update failed', description: getFriendlyErrorMessage(error, 'profile'), variant: 'destructive' });
     } else {
       toast({ title: 'Success', description: 'Profile updated successfully' });
       setIsEditing(false);

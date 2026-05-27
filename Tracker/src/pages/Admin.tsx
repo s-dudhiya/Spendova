@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 
 type AdminCheck = "loading" | "allowed" | "denied";
 const AUTH_BRAND_IMAGE = "/brand/login-branding-image.png";
@@ -56,7 +57,7 @@ const AdminLogin = () => {
       toast({ title: "Access granted", description: "Welcome to the Spendova admin portal." });
       navigate("/admin/dashboard", { replace: true });
     } catch (error: any) {
-      toast({ title: "Admin login failed", description: error.message || "Could not sign in.", variant: "destructive" });
+      toast({ title: "Admin login failed", description: getFriendlyErrorMessage(error, "admin"), variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
@@ -186,7 +187,7 @@ const AdminDashboard = () => {
     } catch (error: any) {
       console.error("Failed to update maintenance state", error);
       setIsMaintenance(!checked);
-      toast({ title: "Update failed", description: error.message || "Could not update maintenance state.", variant: "destructive" });
+      toast({ title: "Update failed", description: getFriendlyErrorMessage(error, "admin"), variant: "destructive" });
     }
   };
 
@@ -247,7 +248,7 @@ const AdminDashboard = () => {
 
     setIsSending(true);
     try {
-      const { data, error } = await supabase.functions.invoke("send-admin-mail", {
+      const { error } = await supabase.functions.invoke("send-admin-mail", {
         body: {
           subject,
           htmlBody: message,
@@ -258,13 +259,13 @@ const AdminDashboard = () => {
         },
       });
       if (error) throw error;
-      toast({ title: recipientMode === "single" ? "Email sent" : "Broadcast sent", description: data?.message || "The email was successfully dispatched." });
+      toast({ title: recipientMode === "single" ? "Email sent" : "Broadcast sent", description: "The email was successfully dispatched." });
       setSubject("");
       setMessage("");
       setAttachments([]);
     } catch (error: any) {
       console.error("Broadcast error", error);
-      toast({ title: "Broadcast failed", description: error.message || "There was an error communicating with the edge function.", variant: "destructive" });
+      toast({ title: "Broadcast failed", description: getFriendlyErrorMessage(error, "admin"), variant: "destructive" });
     } finally {
       setIsSending(false);
     }

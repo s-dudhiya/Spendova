@@ -10,6 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { consumeFreshLoginUnlocked, isBiometricLockEnabled, unlockWithBiometric } from "@/lib/biometric-lock";
+import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 import Auth from "./pages/Auth.tsx";
 
@@ -81,7 +82,7 @@ const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {
       setUnlocked(true);
     } catch (unlockError) {
       console.error("Biometric unlock failed", unlockError);
-      setError(unlockError instanceof Error ? unlockError.message : "Could not unlock Spendova.");
+      setError(getFriendlyErrorMessage(unlockError, "device"));
     } finally {
       setUnlocking(false);
     }

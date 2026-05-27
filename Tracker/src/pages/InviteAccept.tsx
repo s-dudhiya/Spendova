@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import { safeStorage, withTimeout } from "@/lib/startup-safety";
 
 type InviteStatus = "loading" | "ready" | "accepting" | "done" | "error";
@@ -82,7 +83,9 @@ export default function InviteAccept() {
         window.setTimeout(() => navigate("/dashboard"), 1400);
       } catch (acceptError) {
         setStatus("error");
-        setError(acceptError instanceof Error ? acceptError.message : "Could not accept invite.");
+        const message = getFriendlyErrorMessage(acceptError, "invite");
+        setError(message);
+        toast({ title: "Could not accept invite", description: message, variant: "destructive" });
       }
     };
 
