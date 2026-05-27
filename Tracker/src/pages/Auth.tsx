@@ -248,7 +248,7 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
             <ShieldCheck className="size-4 text-[#7c3aed]" strokeWidth={1.8} />
             Secure login. Encrypted data.
           </p>
-          <p className="text-xs font-medium text-[#766b96]">Copyright 2026 Spendova. All rights reserved.</p>
+          <p className="text-xs font-medium text-[#766b96]">© 2026 Spendova. All rights reserved.</p>
         </footer>
       </div>
     </main>
