@@ -5,7 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import { markFreshLoginUnlocked } from '@/lib/biometric-lock';
 import { checkDeviceSession, registerDeviceSession, revokeCurrentDeviceSession } from '@/lib/device-session';
 import { getFriendlyErrorMessage } from '@/lib/friendly-error';
-import { bootLog, withTimeout } from '@/lib/startup-safety';
+import { bootLog, safeStorage, withTimeout } from '@/lib/startup-safety';
 
 interface Profile {
   id: string;
@@ -30,6 +30,14 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const INACTIVITY_TIMEOUT = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DEVICE_SESSION_CHECK_INTERVAL = 60 * 1000;
 const STARTUP_TIMEOUT = 5000;
+const LAST_ACTIVITY_PREFIX = "spendova_last_activity_at";
+
+const getLastActivityKey = (userId: string) => `${LAST_ACTIVITY_PREFIX}_${userId}`;
+
+const getStoredLastActivity = (userId: string) => {
+  const value = Number(safeStorage.getItem(getLastActivityKey(userId)) || "0");
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -41,9 +49,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const registeringRef = useRef(false);
   const lastRegisteredUserRef = useRef<string | null>(null);
+  const currentUserIdRef = useRef<string | null>(null);
 
   // Auto-logout due to inactivity
   const clearLocalAuthState = useCallback(() => {
+    if (currentUserIdRef.current) {
+      safeStorage.removeItem(getLastActivityKey(currentUserIdRef.current));
+      currentUserIdRef.current = null;
+    }
     setUser(null);
     setSession(null);
     setProfile(null);
@@ -63,26 +76,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [clearLocalAuthState, toast]);
 
-  const resetInactivityTimer = useCallback(() => {
+  const armInactivityTimer = useCallback((targetUser: User, lastActivity: number) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    if (user) {
-      timeoutRef.current = setTimeout(handleAutoLogout, INACTIVITY_TIMEOUT);
+    const remainingTime = INACTIVITY_TIMEOUT - (Date.now() - lastActivity);
+    if (remainingTime <= 0) {
+      void handleAutoLogout();
+      return;
     }
-  }, [user, handleAutoLogout]);
+    timeoutRef.current = setTimeout(handleAutoLogout, remainingTime);
+    currentUserIdRef.current = targetUser.id;
+  }, [handleAutoLogout]);
+
+  const resetInactivityTimer = useCallback(() => {
+    if (!user) return;
+    const now = Date.now();
+    safeStorage.setItem(getLastActivityKey(user.id), String(now));
+    armInactivityTimer(user, now);
+  }, [armInactivityTimer, user]);
 
   useEffect(() => {
     if (!user) return;
     const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
     const handleActivity = () => resetInactivityTimer();
+    const handleResume = () => {
+      if (document.visibilityState === "hidden") return;
+      const lastActivity = getStoredLastActivity(user.id) ?? Date.now();
+      if (Date.now() - lastActivity >= INACTIVITY_TIMEOUT) {
+        void handleAutoLogout();
+        return;
+      }
+      armInactivityTimer(user, lastActivity);
+    };
+
+    currentUserIdRef.current = user.id;
+    const lastActivity = getStoredLastActivity(user.id) ?? Date.now();
+    if (!getStoredLastActivity(user.id)) {
+      safeStorage.setItem(getLastActivityKey(user.id), String(lastActivity));
+    }
+    if (Date.now() - lastActivity >= INACTIVITY_TIMEOUT) {
+      void handleAutoLogout();
+      return;
+    }
 
     activityEvents.forEach(event => document.addEventListener(event, handleActivity, true));
-    resetInactivityTimer();
+    window.addEventListener("focus", handleResume);
+    document.addEventListener("visibilitychange", handleResume);
+    armInactivityTimer(user, lastActivity);
 
     return () => {
       activityEvents.forEach(event => document.removeEventListener(event, handleActivity, true));
+      window.removeEventListener("focus", handleResume);
+      document.removeEventListener("visibilitychange", handleResume);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [user, resetInactivityTimer]);
+  }, [armInactivityTimer, handleAutoLogout, resetInactivityTimer, user]);
 
   const enforceDeviceSession = useCallback(async (targetUser: User) => {
     if (registeringRef.current || lastRegisteredUserRef.current === targetUser.id) return;
@@ -227,6 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     registerDeviceSession()
       .then(() => {
         lastRegisteredUserRef.current = data.user.id;
+        safeStorage.setItem(getLastActivityKey(data.user.id), String(Date.now()));
         bootLog("sign-in device session registered");
       })
       .catch((deviceError) => {
