@@ -27,7 +27,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const INACTIVITY_TIMEOUT = 7 * 24 * 60 * 60 * 1000; // 7 days
-const DEVICE_SESSION_CHECK_INTERVAL = 15 * 1000;
+const DEVICE_SESSION_CHECK_INTERVAL = 60 * 1000;
 const STARTUP_TIMEOUT = 5000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -101,16 +101,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (!result.valid && result.reason === "device_session_missing") {
-        await registerDeviceSession();
+        await registerDeviceSession().catch((error) => {
+          console.warn("Device session registration unavailable; continuing without blocking app load.", error);
+        });
       }
       lastRegisteredUserRef.current = targetUser.id;
     } catch (error) {
-      console.error("Device session registration failed", error);
-      toast({
-        title: "Device Check",
-        description: "Couldn’t verify this device. Please retry if the warning remains.",
-        variant: "destructive",
-      });
+      console.warn("Device session check unavailable; continuing without blocking app load.", error);
+      lastRegisteredUserRef.current = targetUser.id;
     } finally {
       registeringRef.current = false;
     }
@@ -128,7 +126,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const result = await checkDeviceSession();
         if (!result.valid) {
           if (result.reason === "device_session_missing") {
-            await registerDeviceSession();
+            await registerDeviceSession().catch((error) => {
+              console.warn("Device session registration unavailable; continuing without blocking app load.", error);
+            });
           } else {
             await supabase.auth.signOut();
             clearLocalAuthState();
@@ -142,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
       } catch (error) {
-        console.error("Device session check failed", error);
+        console.warn("Device session check unavailable; continuing without blocking app load.", error);
       }
     }, DEVICE_SESSION_CHECK_INTERVAL);
 
@@ -235,8 +235,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         bootLog("sign-in device session registered");
       })
       .catch((deviceError) => {
-        console.error("Device session registration failed", deviceError);
-        toast({ title: "Device Check", description: "Couldn’t verify this device. Please retry if this device does not appear active.", variant: "destructive" });
+        console.warn("Device session registration unavailable; continuing without blocking sign-in.", deviceError);
+        lastRegisteredUserRef.current = data.user.id;
       });
     markFreshLoginUnlocked(data.user.id);
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
@@ -440,6 +440,7 @@ const AppHeader = ({ title, theme, onThemeToggle, onProfile, openModal }: { titl
 function useSpendovaData(userId?: string) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
+  const refreshTimerRef = useRef<number | null>(null);
   const [data, setData] = useState<AppData>({
     expenses: [],
     friends: [],
@@ -450,12 +451,12 @@ function useSpendovaData(userId?: string) {
     settlements: [],
   });
 
-  const refresh = async () => {
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
     if (!userId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!options?.silent) setLoading(true);
     try {
       bootLog("dashboard data fetch start");
       const [expensesRes, reqRes, recRes, groupsRes, settlementsRes] = await Promise.all([
@@ -531,13 +532,62 @@ function useSpendovaData(userId?: string) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast, userId]);
 
   useEffect(() => {
     refresh();
-    // refresh is intentionally not a dependency; it is recreated with the latest user/toast state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [refresh]);
+
+  const scheduleRealtimeRefresh = useCallback(() => {
+    if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = window.setTimeout(() => {
+      refreshTimerRef.current = null;
+      void refresh({ silent: true });
+    }, 350);
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel(`spendova-live-${userId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "expenses" }, scheduleRealtimeRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "expense_splits" }, scheduleRealtimeRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "split_settlements" }, scheduleRealtimeRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "groups" }, scheduleRealtimeRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "group_members" }, scheduleRealtimeRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "connections" }, scheduleRealtimeRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "group_invites" }, scheduleRealtimeRefresh)
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("Realtime sync unavailable; focus refresh fallback remains active.", status);
+        }
+      });
+
+    return () => {
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+      void supabase.removeChannel(channel);
+    };
+  }, [scheduleRealtimeRefresh, userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    const refreshOnResume = () => {
+      if (document.visibilityState === "visible") void refresh({ silent: true });
+    };
+    const refreshOnFocus = () => {
+      if (document.visibilityState !== "hidden") void refresh({ silent: true });
+    };
+    document.addEventListener("visibilitychange", refreshOnResume);
+    window.addEventListener("focus", refreshOnFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshOnResume);
+      window.removeEventListener("focus", refreshOnFocus);
+    };
+  }, [refresh, userId]);
 
   return { data, loading, refresh };
 }
@@ -3016,23 +3066,24 @@ const ActionModal = ({
 
   return (
     <Dialog open={type !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:w-full sm:max-w-md sm:p-6">
-        <DialogHeader>
+      <DialogContent className="grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] w-[calc(100vw_-_1.5rem)] max-w-[calc(100vw_-_1.5rem)] grid-rows-[auto,minmax(0,1fr)] gap-4 overflow-hidden rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:w-full sm:max-w-md sm:p-6">
+        <DialogHeader className="min-w-0 pr-6">
           <DialogTitle className="text-foreground">{title}</DialogTitle>
           <DialogDescription>{type === "notifications" ? "Pending settlements, invites, and recent activity." : type === "saved" ? `${modal.item ?? "Action"} saved.` : "Complete the fields below."}</DialogDescription>
         </DialogHeader>
 
-        {(type === "add-expense" || type === "group-expense" || type === "edit-expense") && (
-          <ExpenseForm userId={currentUserId} friends={data.friends} friend={type === "add-expense" ? friend : undefined} group={type === "group-expense" ? group : undefined} expense={type === "edit-expense" ? expense : undefined} onSubmit={saveExpense} onCancel={onClose} />
-        )}
+        <div className="spendova-modal-body min-h-0 overflow-y-auto overscroll-contain pr-1">
+          {(type === "add-expense" || type === "group-expense" || type === "edit-expense") && (
+            <ExpenseForm userId={currentUserId} friends={data.friends} friend={type === "add-expense" ? friend : undefined} group={type === "group-expense" ? group : undefined} expense={type === "edit-expense" ? expense : undefined} onSubmit={saveExpense} onCancel={onClose} />
+          )}
 
-        {type === "choose-friend-expense" && <PickerList items={data.friends.map((item) => ({ id: item.user_id, title: displayName(item), subtitle: `@${item.username || "user"}` }))} emptyText="Add friends to start splitting expenses" onPick={(id) => openModal("add-expense", id)} />}
-        {type === "choose-group-expense" && <PickerList items={data.groups.map((item) => ({ id: item.id, title: item.name, subtitle: `${item.group_members.length} members` }))} emptyText="Create a group to split shared expenses" onPick={(id) => openModal("group-expense", id)} />}
+          {type === "choose-friend-expense" && <PickerList items={data.friends.map((item) => ({ id: item.user_id, title: displayName(item), subtitle: `@${item.username || "user"}` }))} emptyText="Add friends to start splitting expenses" onPick={(id) => openModal("add-expense", id)} />}
+          {type === "choose-group-expense" && <PickerList items={data.groups.map((item) => ({ id: item.id, title: item.name, subtitle: `${item.group_members.length} members` }))} emptyText="Create a group to split shared expenses" onPick={(id) => openModal("group-expense", id)} />}
 
-        {type === "log-tiffin" && <TiffinForm userId={currentUserId} defaultCategory={modal.item} onSubmit={async (payload) => { const { error } = await supabase.from("expenses").insert(payload); if (error) throw error; await closeAndRefresh(); }} onCancel={onClose} />}
-        {(type === "create-group" || type === "edit-group") && <CreateGroupForm friends={data.friends} group={type === "edit-group" ? group : undefined} onSubmit={saveGroup} onCancel={onClose} />}
+          {type === "log-tiffin" && <TiffinForm userId={currentUserId} defaultCategory={modal.item} onSubmit={async (payload) => { const { error } = await supabase.from("expenses").insert(payload); if (error) throw error; await closeAndRefresh(); }} onCancel={onClose} />}
+          {(type === "create-group" || type === "edit-group") && <CreateGroupForm friends={data.friends} group={type === "edit-group" ? group : undefined} onSubmit={saveGroup} onCancel={onClose} />}
 
-        {type === "group-details" && group && (
+          {type === "group-details" && group && (
           <div className="space-y-3">
             <div className="rounded-2xl bg-elevated p-4 text-sm"><p className="font-semibold text-foreground">Balance: {money(groupExpenses.reduce((sum, item) => sum + item.amount, 0))}</p><p className="mt-1 text-muted-foreground">{group.group_members.length} active members - Latest: {groupExpenses[0]?.category || "None"}</p></div>
             <div className="space-y-2">
@@ -3057,42 +3108,43 @@ const ActionModal = ({
               {group.created_by === currentUserId ? <Button variant="destructive" onClick={() => openModal("delete-group", group.id)}><Trash2 />Delete</Button> : null}
             </div>
           </div>
-        )}
+          )}
 
-        {type === "invite-members" && group && <InviteMembers group={group} invites={data.groupInvites[group.id] || []} currentUserId={currentUserId} onInvite={sendInvite} onAddByUsername={addMemberByUsername} />}
-        {type === "add-friend" && <AddFriendForm currentUserId={currentUserId} friends={data.friends} requests={[...data.incomingRequests, ...data.outgoingRequests]} onRequest={async (receiverId) => { if (receiverId === currentUserId) { toast({ title: "Request failed", description: "You cannot send a friend request to yourself.", variant: "destructive" }); return; } const { error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: receiverId, status: "pending" }); if (error) toast({ title: "Request failed", description: error.message, variant: "destructive" }); else await closeAndRefresh(); }} onCancel={onClose} />}
+          {type === "invite-members" && group && <InviteMembers group={group} invites={data.groupInvites[group.id] || []} currentUserId={currentUserId} onInvite={sendInvite} onAddByUsername={addMemberByUsername} />}
+          {type === "add-friend" && <AddFriendForm currentUserId={currentUserId} friends={data.friends} requests={[...data.incomingRequests, ...data.outgoingRequests]} onRequest={async (receiverId) => { if (receiverId === currentUserId) { toast({ title: "Request failed", description: "You cannot send a friend request to yourself.", variant: "destructive" }); return; } const { error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: receiverId, status: "pending" }); if (error) toast({ title: "Request failed", description: error.message, variant: "destructive" }); else await closeAndRefresh(); }} onCancel={onClose} />}
 
-        {type === "friend-requests" && (
+          {type === "friend-requests" && (
           <div className="space-y-4">
             <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Incoming</p><div className="space-y-2">{data.incomingRequests.length === 0 ? <EmptyCard text="No incoming requests." /> : data.incomingRequests.map((request) => <RequestCard key={request.id} request={request} onAccept={async () => { const { error } = await supabase.from("connections").update({ status: "accepted" }).eq("id", request.id); if (error) { toast({ title: "Accept failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} onReject={async () => { const { error } = await supabase.from("connections").update({ status: "rejected" }).eq("id", request.id); if (error) { toast({ title: "Reject failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} />)}</div></div>
             <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Outgoing</p><div className="space-y-2">{data.outgoingRequests.length === 0 ? <EmptyCard text="No outgoing requests." /> : data.outgoingRequests.map((request) => <div key={request.id} className="flex items-center justify-between rounded-2xl bg-elevated p-3"><div><p className="font-bold text-foreground">{displayName(request.profiles)}</p><p className="text-xs text-muted-foreground">@{request.profiles.username}</p></div><Button size="sm" variant="quiet" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", request.id); if (error) { toast({ title: "Cancel failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }}>Cancel</Button></div>)}</div></div>
           </div>
-        )}
+          )}
 
-        {type === "friend-details" && friend && (
+          {type === "friend-details" && friend && (
           <div className="space-y-3">
             <div className="space-y-2 rounded-2xl bg-elevated p-4 text-sm">
               {data.expenses.filter((expense) => expense.paid_by === friend.user_id || expense.expense_splits?.some((split) => split.user_id === friend.user_id)).slice(0, 4).map((item) => <div key={item.id} className="flex justify-between"><span className="text-muted-foreground">{item.category}</span><span className="font-semibold text-foreground">{money(item.amount)}</span></div>)}
             </div>
             <Button variant="destructive" className="w-full" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }}><UserMinus />Remove friend</Button>
           </div>
-        )}
+          )}
 
-        {type === "settle-up" && (group || friend) && (
-          <SettleForm currentUserId={currentUserId} friend={friend} group={group} balances={group ? balances : friendBalances} defaultAmount={(group ? balances : friendBalances).find((balance) => balance.fromUserId === currentUserId || balance.toUserId === currentUserId)?.amount || 0} onSubmit={saveSettlement} onCancel={onClose} />
-        )}
+          {type === "settle-up" && (group || friend) && (
+            <SettleForm currentUserId={currentUserId} friend={friend} group={group} balances={group ? balances : friendBalances} defaultAmount={(group ? balances : friendBalances).find((balance) => balance.fromUserId === currentUserId || balance.toUserId === currentUserId)?.amount || 0} onSubmit={saveSettlement} onCancel={onClose} />
+          )}
 
-        {type === "delete-expense" && <ConfirmBox title="Delete expense?" text="This will update balances for everyone involved." action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
-        {type === "clear-expense" && <ConfirmBox text={`Mark "${expense?.category || "expense"}" as cleared?`} action="Mark cleared" onCancel={onClose} onConfirm={clearExpense} />}
-        {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { if (group.created_by !== currentUserId) { toast({ title: "Delete failed", description: "Only the group owner can delete this group.", variant: "destructive" }); return; } const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; } toast({ title: "Group deleted" }); await closeRefreshAndReturnToSplit(); }} />}
-        {type === "leave-group" && group && <ConfirmBox title="Leave group?" text="Are you sure you want to leave this group?" action="Leave Group" destructive onCancel={onClose} onConfirm={leaveGroup} />}
-        {type === "remove-group-member" && memberGroup && memberToRemove && <ConfirmBox title="Remove member?" text={`Remove ${displayName(memberToRemove.profiles)} from ${memberGroup.name}?`} action="Remove" destructive onCancel={onClose} onConfirm={removeGroupMember} />}
-        {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeRefreshAndReturnToSplit(); }} />}
-        {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
-        {type === "delete-account" && <ConfirmBox title="Delete account?" text="This will permanently delete your account and related data. This action cannot be undone." action="Delete Account" destructive onCancel={onClose} onConfirm={deleteAccount} />}
-        {type === "notifications" && <NotificationsList data={data} currentUserId={currentUserId} />}
-        {type === "chart-details" && <SpendingDetails expenses={data.expenses} currentUserId={currentUserId} />}
-        {type === "saved" && <EmptyCard text="Saved." />}
+          {type === "delete-expense" && <ConfirmBox title="Delete expense?" text="This will update balances for everyone involved." action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
+          {type === "clear-expense" && <ConfirmBox text={`Mark "${expense?.category || "expense"}" as cleared?`} action="Mark cleared" onCancel={onClose} onConfirm={clearExpense} />}
+          {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { if (group.created_by !== currentUserId) { toast({ title: "Delete failed", description: "Only the group owner can delete this group.", variant: "destructive" }); return; } const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; } toast({ title: "Group deleted" }); await closeRefreshAndReturnToSplit(); }} />}
+          {type === "leave-group" && group && <ConfirmBox title="Leave group?" text="Are you sure you want to leave this group?" action="Leave Group" destructive onCancel={onClose} onConfirm={leaveGroup} />}
+          {type === "remove-group-member" && memberGroup && memberToRemove && <ConfirmBox title="Remove member?" text={`Remove ${displayName(memberToRemove.profiles)} from ${memberGroup.name}?`} action="Remove" destructive onCancel={onClose} onConfirm={removeGroupMember} />}
+          {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeRefreshAndReturnToSplit(); }} />}
+          {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
+          {type === "delete-account" && <ConfirmBox title="Delete account?" text="This will permanently delete your account and related data. This action cannot be undone." action="Delete Account" destructive onCancel={onClose} onConfirm={deleteAccount} />}
+          {type === "notifications" && <NotificationsList data={data} currentUserId={currentUserId} />}
+          {type === "chart-details" && <SpendingDetails expenses={data.expenses} currentUserId={currentUserId} />}
+          {type === "saved" && <EmptyCard text="Saved." />}
+        </div>
       </DialogContent>
     </Dialog>
   );

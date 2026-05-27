@@ -160,4 +160,19 @@ All colors MUST be HSL.
     @apply bg-primary text-primary-foreground;
   }
 
+  .spendova-modal-body {
+    padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .spendova-modal-body > form > :last-child,
+  .spendova-modal-body > div > .flex:last-child {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-bottom: 0;
+    padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+    background: hsl(var(--card));
+  }
+
 }
