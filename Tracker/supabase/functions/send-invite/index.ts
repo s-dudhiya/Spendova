@@ -163,6 +163,21 @@ serve(async (req) => {
       console.warn('SMTP credentials missing. Invite generated in DB but email not sent.')
     }
 
+    if (existingUser?.id && existingUser.id !== userData.user.id) {
+      await supabaseAdmin.from('notifications').insert({
+        user_id: existingUser.id,
+        actor_id: userData.user.id,
+        type: 'group_user_added',
+        title: 'Group invitation pending',
+        message: `${inviter_name} added you to ${group_name}.`,
+        entity_type: 'group',
+        entity_id: group_id,
+        is_read: false,
+      }).catch((notificationError) => {
+        console.warn('Could not create group invite notification', notificationError)
+      })
+    }
+
     return new Response(JSON.stringify({ success: true, inviteCreated: true, emailSent, reason: emailReason, inviteUrl, isExistingUser: !!existingUser }), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
