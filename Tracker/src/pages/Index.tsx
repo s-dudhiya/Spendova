@@ -559,7 +559,11 @@ function useSpendovaData(userId?: string) {
       .on("postgres_changes", { event: "*", schema: "public", table: "group_members" }, scheduleRealtimeRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "connections" }, scheduleRealtimeRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "group_invites" }, scheduleRealtimeRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, scheduleRealtimeRefresh)
       .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          void refresh({ silent: true });
+        }
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           console.warn("Realtime sync unavailable; focus refresh fallback remains active.", status);
         }
@@ -582,11 +586,17 @@ function useSpendovaData(userId?: string) {
     const refreshOnFocus = () => {
       if (document.visibilityState !== "hidden") void refresh({ silent: true });
     };
+    const fallbackInterval = window.setInterval(() => {
+      if (document.visibilityState !== "hidden") void refresh({ silent: true });
+    }, 15000);
     document.addEventListener("visibilitychange", refreshOnResume);
     window.addEventListener("focus", refreshOnFocus);
+    window.addEventListener("online", refreshOnFocus);
     return () => {
+      window.clearInterval(fallbackInterval);
       document.removeEventListener("visibilitychange", refreshOnResume);
       window.removeEventListener("focus", refreshOnFocus);
+      window.removeEventListener("online", refreshOnFocus);
     };
   }, [refresh, userId]);
 
