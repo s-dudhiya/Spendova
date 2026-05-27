@@ -404,7 +404,7 @@ const Field = ({
 }) => (
   <label className="block text-sm font-semibold text-foreground">
     {label}
-    <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-ring" placeholder={placeholder} />
+    <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-ring" placeholder={placeholder} />
     {hint ? <span className="mt-1 block text-xs font-medium text-muted-foreground">{hint}</span> : null}
   </label>
 );

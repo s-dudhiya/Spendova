@@ -55,6 +55,7 @@ serve(async (req) => {
         .from('auth_device_sessions')
         .select('id, device_id, device_name, device_type, platform, active, revoked_at, revoked_reason, created_at, last_seen_at')
         .eq('user_id', userId)
+        .eq('active', true)
         .order('last_seen_at', { ascending: false })
         .limit(10)
       if (error) throw error
@@ -70,17 +71,12 @@ serve(async (req) => {
       const userAgent = normalizeText(req.headers.get('user-agent') || body.userAgent, '', 512)
       const platform = normalizeText(body.platform, 'unknown', 128)
 
-      const { error: revokeError } = await supabaseAdmin
+      const { error: deleteOtherDevicesError } = await supabaseAdmin
         .from('auth_device_sessions')
-        .update({
-          active: false,
-          revoked_at: new Date().toISOString(),
-          revoked_reason: 'new_device_login',
-        })
+        .delete()
         .eq('user_id', userId)
         .neq('device_id', deviceId)
-        .eq('active', true)
-      if (revokeError) throw revokeError
+      if (deleteOtherDevicesError) throw deleteOtherDevicesError
 
       const { data, error } = await supabaseAdmin
         .from('auth_device_sessions')
@@ -125,11 +121,7 @@ serve(async (req) => {
     if (action === 'revoke-current') {
       const { error } = await supabaseAdmin
         .from('auth_device_sessions')
-        .update({
-          active: false,
-          revoked_at: new Date().toISOString(),
-          revoked_reason: 'user_logout',
-        })
+        .delete()
         .eq('user_id', userId)
         .eq('device_id', deviceId)
       if (error) throw error
@@ -139,13 +131,8 @@ serve(async (req) => {
     if (action === 'revoke-all') {
       const { error } = await supabaseAdmin
         .from('auth_device_sessions')
-        .update({
-          active: false,
-          revoked_at: new Date().toISOString(),
-          revoked_reason: 'user_requested',
-        })
+        .delete()
         .eq('user_id', userId)
-        .eq('active', true)
       if (error) throw error
       return json({ success: true })
     }

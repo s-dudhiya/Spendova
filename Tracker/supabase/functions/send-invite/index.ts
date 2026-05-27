@@ -49,6 +49,10 @@ function notificationEmailHtml(inviterName: string, groupName: string, appUrl: s
   })
 }
 
+async function cleanupEphemeralData(supabaseAdmin: any) {
+  await supabaseAdmin.rpc('cleanup_ephemeral_auth_data').catch(() => undefined)
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -69,6 +73,8 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
+
+    await cleanupEphemeralData(supabaseAdmin)
 
     const authHeader = req.headers.get('Authorization') ?? ''
     const token = authHeader.replace('Bearer ', '')

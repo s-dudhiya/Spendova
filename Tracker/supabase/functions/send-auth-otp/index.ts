@@ -77,6 +77,18 @@ async function findUserByEmail(supabaseAdmin: any, email: string) {
   return data?.users?.find((user: any) => user.email?.toLowerCase() === email) || null
 }
 
+async function cleanupAuthOtps(supabaseAdmin: any, email?: string, purpose?: string) {
+  await supabaseAdmin.rpc('cleanup_expired_auth_otps').catch(() => undefined)
+
+  if (email && purpose) {
+    await supabaseAdmin
+      .from('auth_otps')
+      .delete()
+      .eq('email', email)
+      .eq('purpose', purpose)
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -90,6 +102,8 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
+
+    await cleanupAuthOtps(supabaseAdmin)
 
     if (purpose === 'signup_verify') {
       const password = String(body.password || '')
@@ -154,7 +168,7 @@ serve(async (req) => {
 
     const otp = generateOtp()
     const otpHash = await hashOtp(email, purpose, otp)
-    await supabaseAdmin.from('auth_otps').update({ used: true }).eq('email', email).eq('purpose', purpose).eq('used', false)
+    await cleanupAuthOtps(supabaseAdmin, email, purpose)
     const { error: insertError } = await supabaseAdmin.from('auth_otps').insert({
       email,
       purpose,

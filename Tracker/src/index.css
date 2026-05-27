@@ -150,6 +150,27 @@ All colors MUST be HSL.
     font-size: 16px;
   }
 
+  input[type="date"][class] {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  input[type="date"][class]::-webkit-date-and-time-value {
+    min-height: 1.25rem;
+    margin: 0;
+    text-align: left;
+  }
+
+  input[type="date"][class]::-webkit-calendar-picker-indicator {
+    margin-inline-start: 0;
+  }
+
   button,
   a,
   [role="button"] {

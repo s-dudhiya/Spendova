@@ -25,6 +25,10 @@ async function hashOtp(email: string, purpose: string, otp: string) {
   return Array.from(new Uint8Array(bytes)).map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+async function cleanupAuthOtps(supabaseAdmin: any) {
+  await supabaseAdmin.rpc('cleanup_expired_auth_otps').catch(() => undefined)
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -41,6 +45,8 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
+    await cleanupAuthOtps(supabaseAdmin)
+
     const { data: otpRow, error: lookupError } = await supabaseAdmin
       .from('auth_otps')
       .select('*')
@@ -54,17 +60,22 @@ serve(async (req) => {
     if (lookupError) throw lookupError
     if (!otpRow) return json({ error: 'Invalid or expired code.' }, 400)
     if (new Date(otpRow.expires_at).getTime() <= Date.now()) {
-      await supabaseAdmin.from('auth_otps').update({ used: true }).eq('id', otpRow.id)
+      await supabaseAdmin.from('auth_otps').delete().eq('id', otpRow.id)
       return json({ error: 'This code has expired. Please request a new one.' }, 400)
     }
     if (otpRow.attempts >= 5) {
-      await supabaseAdmin.from('auth_otps').update({ used: true }).eq('id', otpRow.id)
+      await supabaseAdmin.from('auth_otps').delete().eq('id', otpRow.id)
       return json({ error: 'Too many attempts. Please request a new code.' }, 429)
     }
 
     const otpHash = await hashOtp(email, purpose, token)
     if (otpHash !== otpRow.otp_hash) {
-      await supabaseAdmin.from('auth_otps').update({ attempts: otpRow.attempts + 1 }).eq('id', otpRow.id)
+      const nextAttempts = otpRow.attempts + 1
+      if (nextAttempts >= 5) {
+        await supabaseAdmin.from('auth_otps').delete().eq('id', otpRow.id)
+      } else {
+        await supabaseAdmin.from('auth_otps').update({ attempts: nextAttempts }).eq('id', otpRow.id)
+      }
       return json({ error: 'Invalid verification code.' }, 400)
     }
 
@@ -86,7 +97,7 @@ serve(async (req) => {
         .eq('user_id', user.id)
       if (profileError) throw profileError
 
-      await supabaseAdmin.from('auth_otps').update({ used: true }).eq('id', otpRow.id)
+      await supabaseAdmin.from('auth_otps').delete().eq('id', otpRow.id)
       return json({ success: true })
     }
 

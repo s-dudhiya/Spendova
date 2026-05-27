@@ -24,6 +24,10 @@ async function findUserByEmail(supabaseAdmin: any, email: string) {
   return data?.users?.find((user: any) => user.email?.toLowerCase() === email) || null
 }
 
+async function cleanupAuthOtps(supabaseAdmin: any) {
+  await supabaseAdmin.rpc('cleanup_expired_auth_otps').catch(() => undefined)
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -39,6 +43,8 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
+    await cleanupAuthOtps(supabaseAdmin)
+
     const { data: otpRow, error: lookupError } = await supabaseAdmin
       .from('auth_otps')
       .select('*')
@@ -49,6 +55,7 @@ serve(async (req) => {
 
     if (lookupError) throw lookupError
     if (!otpRow || !otpRow.reset_token_expires_at || new Date(otpRow.reset_token_expires_at).getTime() <= Date.now()) {
+      if (otpRow?.id) await supabaseAdmin.from('auth_otps').delete().eq('id', otpRow.id)
       return json({ error: 'Reset session expired. Please request a new code.' }, 400)
     }
 
@@ -60,15 +67,10 @@ serve(async (req) => {
 
     await supabaseAdmin
       .from('auth_device_sessions')
-      .update({
-        active: false,
-        revoked_at: new Date().toISOString(),
-        revoked_reason: 'password_reset',
-      })
+      .delete()
       .eq('user_id', user.id)
-      .eq('active', true)
 
-    await supabaseAdmin.from('auth_otps').update({ reset_token: null, reset_token_expires_at: null }).eq('id', otpRow.id)
+    await supabaseAdmin.from('auth_otps').delete().eq('id', otpRow.id)
     return json({ success: true })
   } catch (error) {
     console.error('reset-password-with-otp error:', error)

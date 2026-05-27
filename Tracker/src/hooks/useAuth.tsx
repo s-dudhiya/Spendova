@@ -89,22 +89,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     registeringRef.current = true;
     try {
       const result = await checkDeviceSession();
-      if (!result.valid && result.reason !== "device_session_missing") {
+      if (!result.valid) {
         await supabase.auth.signOut();
         clearLocalAuthState();
         toast({
           title: "Signed Out",
           description: result.reason === "new_device_login"
             ? "Your account was opened on another device."
+            : result.reason === "device_session_missing"
+              ? "This session is no longer active. Please sign in again."
             : "This device session is no longer active.",
           variant: "destructive",
         });
         return;
-      }
-      if (!result.valid && result.reason === "device_session_missing") {
-        await registerDeviceSession().catch((error) => {
-          console.warn("Device session registration unavailable; continuing without blocking app load.", error);
-        });
       }
       lastRegisteredUserRef.current = targetUser.id;
     } catch (error) {
@@ -126,21 +123,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const result = await checkDeviceSession();
         if (!result.valid) {
-          if (result.reason === "device_session_missing") {
-            await registerDeviceSession().catch((error) => {
-              console.warn("Device session registration unavailable; continuing without blocking app load.", error);
-            });
-          } else {
-            await supabase.auth.signOut();
-            clearLocalAuthState();
-            toast({
-              title: "Signed Out",
-              description: result.reason === "new_device_login"
-                ? "Your account was opened on another device."
+          await supabase.auth.signOut();
+          clearLocalAuthState();
+          toast({
+            title: "Signed Out",
+            description: result.reason === "new_device_login"
+              ? "Your account was opened on another device."
+              : result.reason === "device_session_missing"
+                ? "This session is no longer active. Please sign in again."
                 : "This device session is no longer active.",
-              variant: "destructive",
-            });
-          }
+            variant: "destructive",
+          });
         }
       } catch (error) {
         console.warn("Device session check unavailable; continuing without blocking app load.", error);
@@ -230,6 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error };
     }
 
+    registeringRef.current = true;
     registerDeviceSession()
       .then(() => {
         lastRegisteredUserRef.current = data.user.id;
@@ -238,6 +232,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch((deviceError) => {
         console.warn("Device session registration unavailable; continuing without blocking sign-in.", deviceError);
         lastRegisteredUserRef.current = data.user.id;
+      })
+      .finally(() => {
+        registeringRef.current = false;
       });
     markFreshLoginUnlocked(data.user.id);
 
