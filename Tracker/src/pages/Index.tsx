@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
@@ -37,7 +37,6 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AppLoader } from "@/components/AppLoader";
 import {
   Drawer,
   DrawerContent,
@@ -58,10 +57,8 @@ import { useToast } from "@/hooks/use-toast";
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
 import { canUsePlatformBiometrics, disableBiometricLock, enableBiometricLock, isBiometricLockEnabled } from "@/lib/biometric-lock";
 import { getDeviceId, listDeviceSessions, type DeviceSession } from "@/lib/device-session";
-import { getFriendlyErrorMessage } from "@/lib/friendly-error";
-import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 
-type TabKey = "home" | "split" | "personal" | "tiffin";
+type TabKey = "home" | "split" | "personal" ;   //| "tiffin"
 type ContentKey = TabKey | "profile";
 type Theme = "light" | "dark";
 type SplitStrategy = "equal" | "exact" | "percentage";
@@ -173,19 +170,6 @@ type SplitSettlementRow = {
   to_profile?: Profile | null;
 };
 
-type NotificationRow = {
-  id: string;
-  user_id: string;
-  actor_id: string | null;
-  type: string;
-  title: string;
-  message: string;
-  entity_type: string;
-  entity_id: string | null;
-  is_read: boolean;
-  created_at: string;
-};
-
 type ExpensePayload = {
   user_id: string;
   paid_by: string;
@@ -215,7 +199,6 @@ type AppData = {
   groups: GroupRow[];
   groupInvites: Record<string, InviteRow[]>;
   settlements: SplitSettlementRow[];
-  notifications: NotificationRow[];
 };
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof Home }> = [
@@ -241,15 +224,15 @@ const emojiMap: Record<string, string> = {
 
 const getInitialTheme = (): Theme => {
   if (typeof window === "undefined") return "light";
-  const saved = safeStorage.getItem(THEME_STORAGE_KEY);
+  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
   if (saved === "light" || saved === "dark") return saved;
-  const legacy = safeStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+  const legacy = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
   if (legacy === "light" || legacy === "dark") {
-    safeStorage.setItem(THEME_STORAGE_KEY, legacy);
-    safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+    window.localStorage.setItem(THEME_STORAGE_KEY, legacy);
+    window.localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
     return legacy;
   }
-  return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 };
 
 const money = (amount: number) => {
@@ -263,42 +246,9 @@ const money = (amount: number) => {
   }).format(value);
 };
 const dateLabel = (value?: string | null) => value ? new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today";
-const timeAgo = (value?: string | null) => {
-  if (!value) return "";
-  const diff = Date.now() - new Date(value).getTime();
-  if (!Number.isFinite(diff) || diff < 0) return dateLabel(value);
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  if (diff < minute) return "Just now";
-  if (diff < hour) return `${Math.floor(diff / minute)}m ago`;
-  if (diff < day) return `${Math.floor(diff / hour)}h ago`;
-  if (diff < 7 * day) return `${Math.floor(diff / day)}d ago`;
-  return dateLabel(value);
-};
 const displayName = (profile?: Profile | null) => profile?.full_name || profile?.username || profile?.email || "User";
 const toPaise = (amount: number) => Math.round((Number.isFinite(amount) ? amount : 0) * 100);
 const fromPaise = (paise: number) => Number((paise / 100).toFixed(2));
-const notifySharedAction = (payload: {
-  type: string;
-  recipients: string[];
-  title: string;
-  message: string;
-  entity_type: string;
-  entity_id?: string | null;
-  amount?: number | null;
-  expense_name?: string | null;
-  group_name?: string | null;
-}) => {
-  const recipients = [...new Set(payload.recipients)].filter(Boolean);
-  if (!recipients.length) return;
-  supabase.functions
-    .invoke("send-shared-notification", { body: { ...payload, recipients } })
-    .then(({ error }) => {
-      if (error) console.warn("Shared notification failed", error);
-    })
-    .catch((error) => console.warn("Shared notification failed", error));
-};
 const allocateEqualSplitDebts = (amount: number, participantIds: string[], payerId: string) => {
   const totalPaise = toPaise(amount);
   const count = participantIds.length;
@@ -362,22 +312,6 @@ const sortByDateOrAmount = <T,>(items: T[], sort: AmountSort, getDate: (item: T)
 const FilterTrigger = ({ count, onClick }: { count: number; onClick: () => void }) => (
   <button type="button" onClick={onClick} className="inline-flex items-center gap-1 text-xs font-bold text-primary">
     <Filter className="size-3.5" />Filter{count > 0 ? ` (${count})` : ""}
-  </button>
-);
-
-const CountBadge = ({ count, className = "" }: { count: number; className?: string }) => {
-  if (count <= 0) return null;
-  return (
-    <span className={`absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-black leading-none text-primary-foreground shadow-primary-action ring-2 ring-card ${className}`}>
-      {count > 9 ? "9+" : count}
-    </span>
-  );
-};
-
-const BellButton = ({ count, onClick, size = "md" }: { count: number; onClick: () => void; size?: "sm" | "md" }) => (
-  <button onClick={onClick} className={`relative grid ${size === "sm" ? "size-9" : "size-10"} place-items-center rounded-full bg-card text-muted-foreground shadow-soft`} aria-label="Notifications">
-    <Bell className="size-4" />
-    <CountBadge count={count} />
   </button>
 );
 
@@ -467,7 +401,7 @@ const Field = ({
 }) => (
   <label className="block text-sm font-semibold text-foreground">
     {label}
-    <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-ring" placeholder={placeholder} />
+    <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-ring" placeholder={placeholder} />
     {hint ? <span className="mt-1 block text-xs font-medium text-muted-foreground">{hint}</span> : null}
   </label>
 );
@@ -479,7 +413,7 @@ const Textarea = ({ label, placeholder, value, onChange }: { label: string; plac
   </label>
 );
 
-const AppHeader = ({ title, theme, unreadCount, onThemeToggle, onProfile, openModal }: { title: string; theme: Theme; unreadCount: number; onThemeToggle: () => void; onProfile: () => void; openModal: (type: ModalType, item?: string) => void }) => (
+const AppHeader = ({ title, theme, onThemeToggle, onProfile, openModal }: { title: string; theme: Theme; onThemeToggle: () => void; onProfile: () => void; openModal: (type: ModalType, item?: string) => void }) => (
   <header className="sticky top-0 z-20 -mx-4 mb-5 border-b border-border/70 bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
     <div className="mx-auto flex max-w-3xl items-center justify-between">
       <div>
@@ -487,7 +421,9 @@ const AppHeader = ({ title, theme, unreadCount, onThemeToggle, onProfile, openMo
         <h1 className="text-2xl font-bold tracking-tight text-foreground">{title}</h1>
       </div>
       <div className="flex items-center gap-2">
-        <BellButton count={unreadCount} onClick={() => openModal("notifications")} />
+        <button onClick={() => openModal("notifications")} className="grid size-10 place-items-center rounded-full bg-card text-muted-foreground shadow-soft" aria-label="Notifications">
+          <Bell className="size-4" />
+        </button>
         <button onClick={onThemeToggle} className="grid size-10 place-items-center rounded-full bg-card text-foreground shadow-soft" aria-label="Toggle theme">
           {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </button>
@@ -502,7 +438,6 @@ const AppHeader = ({ title, theme, unreadCount, onThemeToggle, onProfile, openMo
 function useSpendovaData(userId?: string) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const refreshTimerRef = useRef<number | null>(null);
   const [data, setData] = useState<AppData>({
     expenses: [],
     friends: [],
@@ -511,19 +446,14 @@ function useSpendovaData(userId?: string) {
     groups: [],
     groupInvites: {},
     settlements: [],
-    notifications: [],
   });
 
-  const refresh = useCallback(async (options?: { silent?: boolean }) => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
-    if (!options?.silent) setLoading(true);
+  const refresh = async () => {
+    if (!userId) return;
+    setLoading(true);
     try {
-      bootLog("dashboard data fetch start");
-      const [expensesRes, reqRes, recRes, groupsRes, settlementsRes, notificationsRes] = await Promise.all([
-        withTimeout(supabase
+      const [expensesRes, reqRes, recRes, groupsRes, settlementsRes] = await Promise.all([
+        supabase
           .from("expenses")
           .select(`
             id, user_id, paid_by, amount, category, note, status, split_type, group_id, created_at,
@@ -531,37 +461,30 @@ function useSpendovaData(userId?: string) {
             payer_profile:profiles!expenses_paid_by_fkey(user_id, full_name, username),
             expense_splits(id, user_id, amount_owed, amount_paid, has_paid, profiles!expense_splits_user_id_fkey(user_id, full_name, username))
           `)
-          .order("created_at", { ascending: false }), 8000, "expenses fetch"),
-        withTimeout(supabase
+          .order("created_at", { ascending: false }),
+        supabase
           .from("connections")
           .select("id, requester_id, receiver_id, status, created_at, profiles!connections_receiver_id_fkey(user_id, full_name, username)")
-          .eq("requester_id", userId), 8000, "sent connections fetch"),
-        withTimeout(supabase
+          .eq("requester_id", userId),
+        supabase
           .from("connections")
           .select("id, requester_id, receiver_id, status, created_at, profiles!connections_requester_id_fkey(user_id, full_name, username)")
-          .eq("receiver_id", userId), 8000, "received connections fetch"),
-        withTimeout(supabase
+          .eq("receiver_id", userId),
+        supabase
           .from("groups")
           .select("id, name, emoji, description, created_by, created_at, group_members(user_id, joined_at, profiles!group_members_user_id_fkey(user_id, full_name, username))")
-          .order("created_at", { ascending: false }), 8000, "groups fetch"),
-        withTimeout(supabase
+          .order("created_at", { ascending: false }),
+        supabase
           .from("split_settlements" as never)
           .select("id, group_id, expense_id, from_user_id, to_user_id, amount, note, created_at, from_profile:profiles!split_settlements_from_user_id_fkey(user_id, full_name, username), to_profile:profiles!split_settlements_to_user_id_fkey(user_id, full_name, username)")
-          .order("created_at", { ascending: false }), 8000, "settlements fetch"),
-        withTimeout(supabase
-          .from("notifications" as never)
-          .select("id, user_id, actor_id, type, title, message, entity_type, entity_id, is_read, created_at")
-          .eq("user_id", userId)
-          .order("created_at", { ascending: false })
-          .limit(10), 8000, "notifications fetch"),
+          .order("created_at", { ascending: false }),
       ]);
 
-      if (expensesRes.error) console.error("Dashboard expenses fetch failed", expensesRes.error);
-      if (reqRes.error) console.error("Dashboard sent connections fetch failed", reqRes.error);
-      if (recRes.error) console.error("Dashboard received connections fetch failed", recRes.error);
-      if (groupsRes.error) console.error("Dashboard groups fetch failed", groupsRes.error);
+      if (expensesRes.error) throw expensesRes.error;
+      if (reqRes.error) throw reqRes.error;
+      if (recRes.error) throw recRes.error;
+      if (groupsRes.error) throw groupsRes.error;
       if (settlementsRes.error) console.warn("Could not load settlement history", settlementsRes.error);
-      if (notificationsRes.error) console.warn("Could not load notifications", notificationsRes.error);
 
       const requested = ((reqRes.data || []) as unknown as ConnectionQueryRow[]).map((row) => ({ ...row, profiles: row.profiles || { user_id: "", full_name: null, username: null } })) as ConnectionRow[];
       const received = ((recRes.data || []) as unknown as ConnectionQueryRow[]).map((row) => ({ ...row, profiles: row.profiles || { user_id: "", full_name: null, username: null } })) as ConnectionRow[];
@@ -569,15 +492,12 @@ function useSpendovaData(userId?: string) {
 
       const groupInvites: Record<string, InviteRow[]> = {};
       await Promise.all(((groupsRes.data || []) as unknown as GroupQueryRow[]).map(async (group) => {
-        const { data: invites } = await withTimeout(supabase
+        const { data: invites } = await supabase
           .from("group_invites" as never)
           .select("id, email, token, status, created_at")
           .eq("group_id", group.id)
           .eq("status", "pending")
-          .order("created_at", { ascending: false }), 5000, "group invites fetch").catch((error) => {
-            console.error("Dashboard group invites fetch failed", error);
-            return { data: [] };
-          });
+          .order("created_at", { ascending: false });
         groupInvites[group.id] = (invites || []) as InviteRow[];
       }));
 
@@ -594,82 +514,19 @@ function useSpendovaData(userId?: string) {
         groups: (groupsRes.data || []) as unknown as GroupRow[],
         groupInvites,
         settlements: settlementsRes.error ? [] : (settlementsRes.data || []) as unknown as SplitSettlementRow[],
-        notifications: notificationsRes.error ? [] : (notificationsRes.data || []) as unknown as NotificationRow[],
       });
-      bootLog("dashboard data fetch end");
     } catch (error: unknown) {
-      console.error("Dashboard data fetch failed", error);
-      toast({ title: "Could not refresh data", description: "Showing what is available. Please retry if needed.", variant: "destructive" });
+      toast({ title: "Could not load data", description: error instanceof Error ? error.message : "Unexpected error", variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  }, [toast, userId]);
+  };
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
-
-  const scheduleRealtimeRefresh = useCallback(() => {
-    if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
-    refreshTimerRef.current = window.setTimeout(() => {
-      refreshTimerRef.current = null;
-      void refresh({ silent: true });
-    }, 350);
-  }, [refresh]);
-
-  useEffect(() => {
-    if (!userId) return;
-
-    const channel = supabase
-      .channel(`spendova-live-${userId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "expenses" }, scheduleRealtimeRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "expense_splits" }, scheduleRealtimeRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "split_settlements" }, scheduleRealtimeRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "groups" }, scheduleRealtimeRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "group_members" }, scheduleRealtimeRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "connections" }, scheduleRealtimeRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "group_invites" }, scheduleRealtimeRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, scheduleRealtimeRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` }, scheduleRealtimeRefresh)
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          void refresh({ silent: true });
-        }
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          console.warn("Realtime sync unavailable; focus refresh fallback remains active.", status);
-        }
-      });
-
-    return () => {
-      if (refreshTimerRef.current) {
-        window.clearTimeout(refreshTimerRef.current);
-        refreshTimerRef.current = null;
-      }
-      void supabase.removeChannel(channel);
-    };
-  }, [scheduleRealtimeRefresh, userId]);
-
-  useEffect(() => {
-    if (!userId) return;
-    const refreshOnResume = () => {
-      if (document.visibilityState === "visible") void refresh({ silent: true });
-    };
-    const refreshOnFocus = () => {
-      if (document.visibilityState !== "hidden") void refresh({ silent: true });
-    };
-    const fallbackInterval = window.setInterval(() => {
-      if (document.visibilityState !== "hidden") void refresh({ silent: true });
-    }, 15000);
-    document.addEventListener("visibilitychange", refreshOnResume);
-    window.addEventListener("focus", refreshOnFocus);
-    window.addEventListener("online", refreshOnFocus);
-    return () => {
-      window.clearInterval(fallbackInterval);
-      document.removeEventListener("visibilitychange", refreshOnResume);
-      window.removeEventListener("focus", refreshOnFocus);
-      window.removeEventListener("online", refreshOnFocus);
-    };
-  }, [refresh, userId]);
+    // refresh is intentionally not a dependency; it is recreated with the latest user/toast state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   return { data, loading, refresh };
 }
@@ -1112,28 +969,18 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
 
   return (
     <main className="space-y-6 pb-28">
-      <section className="rounded-[1.4rem] bg-card p-5 shadow-panel sm:p-6">
-        <div>
+      <section className="overflow-hidden rounded-[1.4rem] bg-card shadow-panel">
+        <div className="bg-primary/8 p-5">
           <div className="flex items-start justify-between gap-3">
-            <p className="pt-0.5 text-sm font-semibold text-muted-foreground">Net balance</p>
+            <p className="text-sm font-semibold text-muted-foreground">Net balance</p>
             <span title="Compared with yesterday" className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${trendClass}`} aria-label={`${trendLabel} compared with yesterday`}><TrendIcon className="size-3.5" />{trendLabel}</span>
           </div>
-          <p className="mt-2 text-4xl font-black leading-tight tracking-tight text-foreground sm:text-5xl">{money(Math.abs(summary.net))}</p>
-          <p className="mt-1 max-w-[18rem] text-sm font-medium leading-5 text-muted-foreground sm:max-w-none">Across personal expenses and shared balances</p>
+          <p className="mt-3 text-4xl font-black tracking-tight text-foreground sm:text-5xl">{money(Math.abs(summary.net))}</p>
+          <p className="mt-1 text-sm font-medium text-muted-foreground">Across personal expenses and shared balances</p>
         </div>
-        <div className="mt-7 flex w-full items-start justify-between gap-4">
-          <button onClick={() => openModal("chart-details")} className="m-0 flex h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
-            <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
-              <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">Total lent</span>
-              <span className="mt-2 block h-6 max-w-full truncate p-0 text-lg font-bold leading-6 text-success">{money(summary.totalLent)}</span>
-            </span>
-          </button>
-          <button onClick={() => openModal("chart-details")} className="m-0 flex h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
-            <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
-              <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">Total owed</span>
-              <span className="mt-2 block h-6 max-w-full truncate p-0 text-lg font-bold leading-6 text-warning">{money(summary.totalOwed)}</span>
-            </span>
-          </button>
+        <div className="grid grid-cols-2 gap-3 p-4">
+          <button onClick={() => openModal("chart-details")} className="grid min-h-24 content-between rounded-2xl bg-elevated p-4 text-left shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total lent</p><p className="mt-3 text-xl font-black leading-none text-success">{money(summary.totalLent)}</p></button>
+          <button onClick={() => openModal("chart-details")} className="grid min-h-24 content-between rounded-2xl bg-elevated p-4 text-left shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total owed</p><p className="mt-3 text-xl font-black leading-none text-warning">{money(summary.totalOwed)}</p></button>
         </div>
       </section>
 
@@ -1142,7 +989,7 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
         <Button onClick={() => openModal("add-expense")} className="h-16 w-full justify-start gap-4 rounded-[1.25rem] px-5 text-left shadow-primary-action"><span className="grid size-10 place-items-center rounded-full bg-primary-foreground/15"><Plus className="size-5" /></span><span><span className="block text-base font-black">Add Expense</span><span className="block text-xs font-semibold opacity-85">Track a new expense</span></span></Button>
       </section>
 
-      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel sm:p-5">
+      <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0"><h2 className="text-base font-black tracking-tight text-foreground">Spending chart</h2><p className="mt-1 text-sm font-medium text-muted-foreground">{chartRangeLabels[chartRange]}</p></div>
           <div className="flex shrink-0 items-center gap-2"><button type="button" onClick={openChartFilters} className="inline-flex items-center gap-1.5 rounded-full bg-elevated px-3 py-2 text-xs font-bold text-primary sm:hidden"><Filter className="size-3.5" />Filter</button><button type="button" onClick={() => openModal("chart-details")} className="hidden text-sm font-bold text-primary sm:inline">Details</button></div>
@@ -1152,31 +999,31 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
           <div className="rounded-[1.25rem] bg-elevated p-6 text-center shadow-soft"><div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary"><CircleDollarSign className="size-7" /></div><p className="mt-4 text-base font-black text-foreground">No spending yet</p><p className="mt-1 text-sm font-medium text-muted-foreground">Add an expense to see your chart here.</p><Button onClick={() => openModal("add-expense")} variant="quiet" className="mt-4"><Plus />Add Expense</Button></div>
         ) : (
           <>
-            <div className="relative w-full max-w-full rounded-[1.25rem] bg-elevated px-1 py-4 shadow-soft sm:p-4">
-              <div className="grid w-full max-w-full grid-cols-[1.55rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2.4rem_minmax(0,1fr)] sm:gap-2">
-                <div className="relative h-40 sm:h-36">
+            <div className="relative rounded-[1.25rem] bg-elevated px-2.5 py-4 shadow-soft sm:p-4">
+              <div className="grid grid-cols-[2.05rem_minmax(0,1fr)] gap-1.5 sm:grid-cols-[2.4rem_minmax(0,1fr)] sm:gap-2">
+                <div className="relative h-36">
                   {chartTicks.map((tick, index) => (
-                    <span key={`${tick}-${index}`} className="absolute right-0 -translate-y-1/2 text-[8.5px] font-bold leading-none text-muted-foreground/80 sm:text-[10px]" style={{ top: `${(index / (chartTicks.length - 1)) * 100}%` }}>{compactRupee(tick)}</span>
+                    <span key={`${tick}-${index}`} className="absolute right-0 -translate-y-1/2 text-[9px] font-bold text-muted-foreground/80 sm:text-[10px]" style={{ top: `${(index / (chartTicks.length - 1)) * 100}%` }}>{compactRupee(tick)}</span>
                   ))}
                 </div>
-                <div className="relative h-40 min-w-0 sm:h-36">
+                <div className="relative h-36">
                   <div className="pointer-events-none absolute inset-0">
                     {chartTicks.map((tick, index) => (
                       <span key={`${tick}-${index}`} className="absolute left-0 h-px w-full bg-border/60" style={{ top: `${(index / (chartTicks.length - 1)) * 100}%` }} />
                     ))}
                   </div>
-                  <div className="relative m-0 grid h-full w-full max-w-full items-end gap-1 sm:gap-2" style={{ gridTemplateColumns: `repeat(${chartData.length}, minmax(0, 1fr))` }}>
+                  <div className="relative grid h-full items-end gap-1.5 sm:gap-2" style={{ gridTemplateColumns: `repeat(${chartData.length}, minmax(0, 1fr))` }}>
                     {chartData.map((item) => {
                       const key = `${item.label}-${item.date.toISOString()}`;
                       const selected = activeBar === key;
-                      return <button key={key} type="button" onClick={() => setActiveBar(selected ? null : key)} className="group flex h-full min-w-0 items-end justify-center" aria-label={`${item.label}: ${money(item.value)}`}><span className={`block w-full max-w-10 rounded-t-full transition-all sm:max-w-8 ${selected ? "bg-primary" : item.value > 0 ? "bg-primary/75 group-hover:bg-primary" : "bg-primary/15"}`} style={{ height: item.value > 0 ? `${Math.max(12, (Number(item.value) / chartMax) * 100)}%` : "4px" }} />{selected ? <span className="absolute top-3 rounded-full bg-foreground px-3 py-1 text-xs font-bold text-background shadow-panel">{money(item.value)}</span> : null}</button>;
+                      return <button key={key} type="button" onClick={() => setActiveBar(selected ? null : key)} className="group flex h-full min-w-0 items-end justify-center" aria-label={`${item.label}: ${money(item.value)}`}><span className={`block w-full max-w-8 rounded-t-full transition-all ${selected ? "bg-primary" : item.value > 0 ? "bg-primary/75 group-hover:bg-primary" : "bg-primary/15"}`} style={{ height: item.value > 0 ? `${Math.max(12, (Number(item.value) / chartMax) * 100)}%` : "4px" }} />{selected ? <span className="absolute top-3 rounded-full bg-foreground px-3 py-1 text-xs font-bold text-background shadow-panel">{money(item.value)}</span> : null}</button>;
                     })}
                   </div>
                 </div>
               </div>
-              <div className="mt-3 grid w-full max-w-full grid-cols-[1.55rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2.4rem_minmax(0,1fr)] sm:gap-2">
+              <div className="mt-3 grid grid-cols-[2.05rem_minmax(0,1fr)] gap-1.5 sm:grid-cols-[2.4rem_minmax(0,1fr)] sm:gap-2">
                 <span />
-                <div className="grid min-w-0 gap-1 text-center text-[10px] font-bold text-muted-foreground sm:text-[11px]" style={{ gridTemplateColumns: `repeat(${chartLabels.length}, minmax(0, 1fr))` }}>{chartLabels.map((label, index) => <span key={`${label}-${index}`} className="truncate">{label}</span>)}</div>
+                <div className="grid gap-1 text-center text-[10px] font-bold text-muted-foreground sm:text-[11px]" style={{ gridTemplateColumns: `repeat(${chartLabels.length}, minmax(0, 1fr))` }}>{chartLabels.map((label, index) => <span key={`${label}-${index}`} className="truncate">{label}</span>)}</div>
               </div>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total Spending</p><p className="mt-2 text-lg font-black text-foreground">{money(chartTotal)}</p></div><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{chartAverageLabel(chartRange)}</p><p className="mt-2 text-lg font-black text-foreground">{money(chartAverage)}</p></div></div>
@@ -1214,24 +1061,6 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
 };
 
 const EmptyCard = ({ text }: { text: string }) => <div className="rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm font-medium text-muted-foreground">{text}</div>;
-
-const DashboardLoadingFallback = () => {
-  const [slow, setSlow] = useState(false);
-
-  useEffect(() => {
-    const id = window.setTimeout(() => setSlow(true), 5000);
-    return () => window.clearTimeout(id);
-  }, []);
-
-  return (
-    <AppLoader
-      message={slow ? "Taking longer than expected..." : "Preparing your workspace..."}
-      showFallbackActions={slow}
-      onRetry={() => window.location.reload()}
-      onGoToLogin={() => window.location.assign("/login")}
-    />
-  );
-};
 
 const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, friends, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; summary: ReturnType<typeof getSummary>; currentUserId: string; groups: GroupRow[]; friends: FriendProfile[]; openModal: (type: ModalType, item?: string) => void }) => {
   const defaultFilters = { status: "all", date: "all", dateStart: "", dateEnd: "", sort: "newest", category: "all" };
@@ -1305,13 +1134,12 @@ const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, f
 
 const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentUserId: string; openModal: (type: ModalType, item?: string) => void }) => {
   const navigate = useNavigate();
-  const [subTab, setSubTabState] = useState<"friends" | "groups">(() => (safeStorage.getItem("spendova-split-tab") === "groups" ? "groups" : "friends"));
+  const [subTab, setSubTabState] = useState<"friends" | "groups">(() => (sessionStorage.getItem("spendova-split-tab") === "groups" ? "groups" : "friends"));
   const [query, setQuery] = useState("");
   const defaultFilters = { balance: "all", sort: "highest" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
   const summary = getSummary(data.expenses, currentUserId, data.settlements);
-  const requestCount = data.incomingRequests.length + Object.values(data.groupInvites).flat().length;
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
   const clearFilters = () => setFilters(defaultFilters);
   const matchesBalanceFilter = (net: number) => {
@@ -1349,19 +1177,19 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
     ({ group }) => group.name,
   );
   const setSubTab = (value: "friends" | "groups") => {
-    safeStorage.setItem("spendova-split-tab", value);
+    sessionStorage.setItem("spendova-split-tab", value);
     setSubTabState(value);
   };
   const openDetail = (kind: "friend" | "group", id: string) => {
-    safeStorage.setItem("spendova-split-tab", kind === "friend" ? "friends" : "groups");
-    safeStorage.setItem("spendova-split-scroll", String(window.scrollY));
+    sessionStorage.setItem("spendova-split-tab", kind === "friend" ? "friends" : "groups");
+    sessionStorage.setItem("spendova-split-scroll", String(window.scrollY));
     navigate(`/split/${kind}/${id}`);
   };
   useEffect(() => {
-    const saved = Number(safeStorage.getItem("spendova-split-scroll") || 0);
+    const saved = Number(sessionStorage.getItem("spendova-split-scroll") || 0);
     if (saved > 0) {
       window.requestAnimationFrame(() => window.scrollTo({ top: saved }));
-      safeStorage.removeItem("spendova-split-scroll");
+      sessionStorage.removeItem("spendova-split-scroll");
     }
   }, []);
 
@@ -1387,7 +1215,7 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
         {subTab === "friends" ? (
           <div className="grid grid-cols-2 gap-2">
             <Button onClick={() => openModal("add-friend")} variant="quiet" className="h-12"><UserPlus />Add Friend</Button>
-            <Button onClick={() => openModal("friend-requests")} variant="quiet" className="relative h-12">Requests<CountBadge count={requestCount} className="ring-background" /></Button>
+            <Button onClick={() => openModal("friend-requests")} variant="quiet" className="h-12">Requests</Button>
           </div>
         ) : (
           <Button onClick={() => openModal("create-group")} variant="quiet" className="h-12"><Plus />Create Group</Button>
@@ -1513,7 +1341,7 @@ const getFriendActivityIcon = (item: { kind: "expense" | "settlement"; title: st
   return CircleDollarSign;
 };
 
-const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onThemeToggle, openModal, onBack, refresh }: { friend: FriendProfile; data: AppData; currentUserId: string; theme: Theme; unreadCount: number; onThemeToggle: () => void; openModal: (type: ModalType, item?: string) => void; onBack: () => void; refresh: () => Promise<void> }) => {
+const FriendDetailView = ({ friend, data, currentUserId, theme, onThemeToggle, openModal, onBack, refresh }: { friend: FriendProfile; data: AppData; currentUserId: string; theme: Theme; onThemeToggle: () => void; openModal: (type: ModalType, item?: string) => void; onBack: () => void; refresh: () => Promise<void> }) => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [actionItem, setActionItem] = useState<FriendActivityItem | null>(null);
@@ -1632,19 +1460,9 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
     } as never);
     setQuickSettling(false);
     if (error) {
-      toast({ title: "Settlement failed", description: getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
+      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
       return;
     }
-    notifySharedAction({
-      type: "split_expense_paid",
-      recipients: [friend.user_id, currentUserId],
-      title: "Split payment recorded",
-      message: `{actor} recorded ${money(amount)} paid for ${quickSettleItem.title}.`,
-      entity_type: "expense",
-      entity_id: expense.id,
-      amount,
-      expense_name: quickSettleItem.title,
-    });
     toast({ title: "Expense marked settled", description: `${money(amount)} was settled for ${quickSettleItem.title}.` });
     setQuickSettleItem(null);
     await refresh();
@@ -1656,7 +1474,9 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
         <header className="flex items-center justify-between">
           <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-bold text-primary"><ArrowLeft className="size-4" />Back to Split</button>
           <div className="flex items-center gap-2">
-            <BellButton count={unreadCount} onClick={() => openModal("notifications")} size="sm" />
+            <button onClick={() => openModal("notifications")} className="grid size-9 place-items-center rounded-full bg-card text-muted-foreground shadow-soft" aria-label="Notifications">
+              <Bell className="size-4" />
+            </button>
             <button onClick={onThemeToggle} className="grid size-9 place-items-center rounded-full bg-card text-foreground shadow-soft" aria-label="Toggle theme">
               {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </button>
@@ -1869,19 +1689,9 @@ const ExpenseDetailView = ({ expense, settlements, currentUserId, openModal, onB
     } as never);
     setSettling(false);
     if (error) {
-      toast({ title: "Settlement failed", description: getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
+      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
       return;
     }
-    notifySharedAction({
-      type: expense.group_id ? "group_expense_paid" : "split_expense_paid",
-      recipients: [expense.paid_by],
-      title: expense.group_id ? "Group payment recorded" : "Split payment recorded",
-      message: `{actor} recorded ${money(myRemaining)} paid for ${expense.category || "expense"}.`,
-      entity_type: "expense",
-      entity_id: expense.id,
-      amount: myRemaining,
-      expense_name: expense.category || "Expense",
-    });
     toast({ title: "Expense settled", description: "Your share and balances were updated." });
     await refresh();
   };
@@ -1977,20 +1787,38 @@ const SettlementDetailView = ({ settlement, currentUserId, onBack, onDelete }: {
 };
 
 const NotificationsList = ({ data, currentUserId }: { data: AppData; currentUserId: string }) => {
-  const items = data.notifications.slice(0, 10);
+  const items = [
+    ...data.incomingRequests.map((request) => ({
+      id: `incoming-${request.id}`,
+      title: `${displayName(request.profiles)} sent a friend request`,
+      subtitle: dateLabel(request.created_at),
+    })),
+    ...data.outgoingRequests.map((request) => ({
+      id: `outgoing-${request.id}`,
+      title: `Friend request pending for ${displayName(request.profiles)}`,
+      subtitle: dateLabel(request.created_at),
+    })),
+    ...Object.values(data.groupInvites).flat().map((invite) => ({
+      id: `invite-${invite.id}`,
+      title: `Group invite pending for ${invite.email}`,
+      subtitle: dateLabel(invite.created_at),
+    })),
+    ...data.settlements.slice(0, 6).map((settlement) => ({
+      id: `settlement-${settlement.id}`,
+      title: settlement.to_user_id === currentUserId
+        ? `${displayName(settlement.from_profile)} paid you ${money(settlement.amount)}`
+        : `You paid ${displayName(settlement.to_profile)} ${money(settlement.amount)}`,
+      subtitle: dateLabel(settlement.created_at),
+    })),
+  ];
+
   if (!items.length) return <EmptyCard text="No notifications yet." />;
   return (
     <div className="overflow-hidden rounded-2xl bg-elevated/70">
       {items.map((item, index) => (
-        <div key={item.id} className={`flex gap-3 px-4 py-3 text-sm ${index < items.length - 1 ? "border-b border-border/60" : ""}`}>
-          <span className={`mt-1 size-2 shrink-0 rounded-full ${item.is_read ? "bg-muted-foreground/30" : "bg-primary shadow-primary-action"}`} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-3">
-              <p className="min-w-0 font-bold text-foreground">{item.title}</p>
-              <p className="shrink-0 text-[11px] font-bold text-muted-foreground">{timeAgo(item.created_at)}</p>
-            </div>
-            <p className="mt-1 text-xs font-medium leading-5 text-muted-foreground">{item.message}</p>
-          </div>
+        <div key={item.id} className={`px-4 py-3 text-sm ${index < items.length - 1 ? "border-b border-border/60" : ""}`}>
+          <p className="font-bold text-foreground">{item.title}</p>
+          <p className="mt-0.5 text-xs font-medium text-muted-foreground">{item.subtitle}</p>
         </div>
       ))}
     </div>
@@ -2077,7 +1905,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
     } as never)));
     const error = results.find((result) => result.error)?.error;
     if (error) {
-      toast({ title: "Settlement failed", description: getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
+      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
       return;
     }
     toast({ title: "Expense settled", description: "Group balances were updated." });
@@ -2151,25 +1979,18 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
           <div className="mt-4 flex flex-wrap gap-x-4 gap-y-4 overflow-visible pb-1">
             {group.group_members.map((member) => {
               const name = member.user_id === currentUserId ? "You" : displayName(member.profiles).split(" ")[0];
-              const canManageMember = isOwner && member.user_id !== currentUserId && member.user_id !== group.created_by;
+              const canRemoveMember = isOwner && member.user_id !== currentUserId && member.user_id !== group.created_by;
               const selected = selectedMemberId === member.user_id;
-              const openMemberActions = () => {
-                if (canManageMember) {
-                  openModal("remove-group-member", `${group.id}:${member.user_id}`);
-                  return;
-                }
-                setSelectedMemberId(selected ? null : member.user_id);
-              };
               return (
                 <div key={member.user_id} className="w-16 shrink-0 overflow-visible text-center">
                   <div
                     role="button"
                     tabIndex={0}
-                    onClick={openMemberActions}
+                    onClick={() => setSelectedMemberId(selected ? null : member.user_id)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        openMemberActions();
+                        setSelectedMemberId(selected ? null : member.user_id);
                       }
                     }}
                     className="relative z-0 mx-auto grid size-11 overflow-visible place-items-center rounded-2xl bg-primary text-base font-bold text-primary-foreground shadow-primary-action"
@@ -2177,6 +1998,27 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
                   >
                     {displayName(member.profiles).charAt(0).toUpperCase()}
                     {member.user_id === group.created_by ? <span className="absolute -right-1 -top-1 z-10 grid size-4 place-items-center rounded-full bg-warning text-primary-foreground"><Crown className="size-2.5" /></span> : null}
+                    {selected && canRemoveMember ? (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Remove ${name}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openModal("remove-group-member", `${group.id}:${member.user_id}`);
+                        }}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openModal("remove-group-member", `${group.id}:${member.user_id}`);
+                          }
+                        }}
+                        className="absolute -right-1.5 -top-1.5 z-20 grid size-6 place-items-center rounded-full bg-destructive text-destructive-foreground shadow-soft ring-2 ring-card"
+                      >
+                        <X className="size-3" />
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-1.5 truncate text-center text-xs font-bold text-foreground">{name}</p>
                 </div>
@@ -2422,9 +2264,7 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
       }
     } catch (error) {
       console.error("Biometric lock update failed", error);
-      const message = getFriendlyErrorMessage(error, "device");
-      setBiometricError(message);
-      toast({ title: "Fingerprint lock failed", description: message, variant: "destructive" });
+      setBiometricError(error instanceof Error ? error.message : "Could not update fingerprint lock.");
     } finally {
       setBiometricBusy(false);
     }
@@ -2857,7 +2697,6 @@ const ActionModal = ({
   modal,
   data,
   currentUserId,
-  currentProfile,
   onClose,
   refresh,
   openModal,
@@ -2865,16 +2704,14 @@ const ActionModal = ({
   modal: ModalState;
   data: AppData;
   currentUserId: string;
-  currentProfile: Profile | null;
   onClose: () => void;
-  refresh: (options?: { silent?: boolean }) => Promise<void>;
+  refresh: () => Promise<void>;
   openModal: (type: ModalType, item?: string) => void;
 }) => {
   const { toast } = useToast();
   const { signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const actorName = displayName(currentProfile);
   const type = modal.type;
   const expense = data.expenses.find((item) => item.id === modal.item);
   const settlement = data.settlements.find((item) => item.id === modal.item);
@@ -2902,7 +2739,7 @@ const ActionModal = ({
     type === "edit-group" ? "Edit group" :
     type === "delete-group" ? "Delete group" :
     type === "leave-group" ? "Leave group" :
-    type === "remove-group-member" ? "Member actions" :
+    type === "remove-group-member" ? "Remove member" :
     type === "invite-members" ? "Invite members" :
     type === "group-details" ? group?.name || "Group details" :
     type === "friend-details" ? `${displayName(friend)} details` :
@@ -2924,27 +2761,8 @@ const ActionModal = ({
     navigate("/split", { replace: true });
   };
 
-  useEffect(() => {
-    if (type !== "notifications") return;
-    const unreadIds = data.notifications.filter((item) => !item.is_read).map((item) => item.id);
-    if (!unreadIds.length) return;
-    supabase
-      .from("notifications" as never)
-      .update({ is_read: true } as never)
-      .in("id", unreadIds as never)
-      .then(({ error }) => {
-        if (error) console.warn("Could not mark notifications as read", error);
-        else void refresh({ silent: true });
-      });
-  }, [data.notifications, refresh, type]);
-
   const saveExpense = async ({ expense: payload, splits, expenseId }: { expense: ExpensePayload; splits: Array<{ user_id: string; amount_owed: number }>; expenseId?: string }) => {
     try {
-      const selectedGroup = payload.group_id ? data.groups.find((item) => item.id === payload.group_id) : undefined;
-      const sharedRecipients = payload.group_id
-        ? selectedGroup?.group_members.map((member) => member.user_id) || splits.map((split) => split.user_id)
-        : splits.map((split) => split.user_id);
-      const expenseName = payload.category || "Expense";
       if (expenseId) {
         const hasSettlementState = Boolean(
           expense?.expense_splits?.some((split) => Number(split.amount_paid || 0) > 0 || split.has_paid) ||
@@ -2960,21 +2778,6 @@ const ActionModal = ({
           const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: expenseId, amount_paid: payload.status === "cleared" ? split.amount_owed : 0, has_paid: payload.status === "cleared" })));
           if (splitError) throw splitError;
         }
-        if (splits.length || payload.group_id) {
-          notifySharedAction({
-            type: payload.group_id ? "group_expense_updated" : "split_expense_updated",
-            recipients: sharedRecipients,
-            title: payload.group_id ? "Group expense updated" : "Split expense updated",
-            message: payload.group_id
-              ? `${actorName} updated ${expenseName} expense in ${selectedGroup?.name || "your group"}.`
-              : `${actorName} updated ${expenseName} expense from Friends split.`,
-            entity_type: "expense",
-            entity_id: expenseId,
-            amount: payload.amount,
-            expense_name: expenseName,
-            group_name: selectedGroup?.name,
-          });
-        }
       } else {
         const { data: inserted, error } = await supabase.from("expenses").insert(payload).select("id").single();
         if (error || !inserted) throw error;
@@ -2982,66 +2785,40 @@ const ActionModal = ({
           const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: inserted.id, amount_paid: payload.status === "cleared" ? split.amount_owed : 0, has_paid: payload.status === "cleared" })));
           if (splitError) throw splitError;
         }
-        if (splits.length || payload.group_id) {
-          notifySharedAction({
-            type: payload.group_id ? "group_expense_added" : "split_expense_added",
-            recipients: sharedRecipients,
-            title: payload.group_id ? "New group expense" : "New split expense",
-            message: payload.group_id
-              ? `${actorName} added ${expenseName} expense in ${selectedGroup?.name || "your group"}.`
-              : `${actorName} added ${expenseName} expense to Friends split.`,
-            entity_type: "expense",
-            entity_id: inserted.id,
-            amount: payload.amount,
-            expense_name: expenseName,
-            group_name: selectedGroup?.name,
-          });
+        if (payload.group_id) {
+          supabase.functions
+            .invoke("send-expense-notification", { body: { expense_id: inserted.id } })
+            .then(({ data, error }) => {
+              if (error) console.error("Expense notification failed", error);
+              else if (data?.emailSent === false) console.warn("Expense notification skipped", data);
+            })
+            .catch((error) => console.error("Expense notification failed", error));
         }
       }
       toast({ title: "Expense saved", description: "Balances and history were updated." });
       await closeAndRefresh();
     } catch (error) {
-      toast({ title: "Save failed", description: getFriendlyErrorMessage(error, "expense"), variant: "destructive" });
+      toast({ title: "Save failed", description: error instanceof Error ? error.message : "Could not save expense.", variant: "destructive" });
       throw error;
     }
   };
 
   const deleteExpense = async () => {
     if (!expense) return;
-    const deleteGroup = expense.group_id ? data.groups.find((item) => item.id === expense.group_id) : undefined;
-    const deleteRecipients = expense.group_id
-      ? deleteGroup?.group_members.map((member) => member.user_id) || []
-      : [expense.paid_by, ...(expense.expense_splits || []).map((split) => split.user_id)];
-    const deleteExpenseName = expense.category || "Expense";
     const { error: settlementError } = await supabase.from("split_settlements" as never).delete().eq("expense_id", expense.id);
     if (settlementError) {
-      toast({ title: "Delete failed", description: getFriendlyErrorMessage(settlementError, "delete"), variant: "destructive" });
+      toast({ title: "Delete failed", description: settlementError.message, variant: "destructive" });
       return;
     }
     const { error: splitError } = await supabase.from("expense_splits").delete().eq("expense_id", expense.id);
     if (splitError) {
-      toast({ title: "Delete failed", description: getFriendlyErrorMessage(splitError, "delete"), variant: "destructive" });
+      toast({ title: "Delete failed", description: splitError.message, variant: "destructive" });
       return;
     }
     const { error } = await supabase.from("expenses").delete().eq("id", expense.id);
     if (error) {
-      toast({ title: "Delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" });
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
     } else {
-      if (!isPersonalOnlyExpense(expense)) {
-        notifySharedAction({
-          type: expense.group_id ? "group_expense_deleted" : "split_expense_deleted",
-          recipients: deleteRecipients,
-          title: expense.group_id ? "Group expense deleted" : "Split expense deleted",
-          message: expense.group_id
-            ? `${actorName} deleted ${deleteExpenseName} expense from ${deleteGroup?.name || "your group"}.`
-            : `${actorName} deleted ${deleteExpenseName} expense from Friends split.`,
-          entity_type: "expense",
-          entity_id: expense.id,
-          amount: expense.amount,
-          expense_name: deleteExpenseName,
-          group_name: deleteGroup?.name,
-        });
-      }
       toast({ title: "Expense deleted", description: "Balances were updated for everyone involved." });
       if (location.pathname.startsWith("/split/")) await closeRefreshAndReturnToSplit();
       else await closeAndRefresh();
@@ -3058,19 +2835,9 @@ const ActionModal = ({
       p_note: payload.note || null,
     } as never);
     if (error) {
-      toast({ title: "Settlement failed", description: getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
+      toast({ title: "Settlement failed", description: error.message, variant: "destructive" });
       return;
     }
-    notifySharedAction({
-      type: payload.group_id ? "group_settled" : "split_settled",
-      recipients: [payload.from_user_id, payload.to_user_id],
-      title: payload.group_id ? "Group settlement completed" : "Split settled",
-      message: `${actorName} recorded a ${money(payload.amount)} settlement.`,
-      entity_type: "settlement",
-      entity_id: null,
-      amount: payload.amount,
-      group_name: payload.group_id ? data.groups.find((item) => item.id === payload.group_id)?.name : null,
-    });
     toast({ title: "Settlement saved", description: "Balances were updated." });
     await closeAndRefresh();
   };
@@ -3082,11 +2849,11 @@ const ActionModal = ({
       return;
     }
     const { error } = await supabase.from("expenses").update({ status: "cleared" }).eq("id", expense.id);
-    if (error) toast({ title: "Update failed", description: getFriendlyErrorMessage(error, "expense"), variant: "destructive" });
+    if (error) toast({ title: "Update failed", description: error.message, variant: "destructive" });
     else {
       const splitUpdates = await Promise.all((expense.expense_splits || []).map((split) => supabase.from("expense_splits").update({ has_paid: true, amount_paid: split.amount_owed }).eq("id", split.id)));
       const splitError = splitUpdates.find((result) => result.error)?.error;
-      if (splitError) toast({ title: "Split update failed", description: getFriendlyErrorMessage(splitError, "expense"), variant: "destructive" });
+      if (splitError) toast({ title: "Split update failed", description: splitError.message, variant: "destructive" });
       else await closeAndRefresh();
     }
   };
@@ -3107,15 +2874,6 @@ const ActionModal = ({
       const members = [{ group_id: inserted.id, user_id: currentUserId }, ...payload.memberIds.map((user_id) => ({ group_id: inserted.id, user_id }))];
       const { error: memberError } = await supabase.from("group_members").insert(members);
       if (memberError) throw memberError;
-      notifySharedAction({
-        type: "group_created_user_added",
-        recipients: payload.memberIds,
-        title: "Added to a new group",
-        message: `${actorName} added you to ${payload.name}.`,
-        entity_type: "group",
-        entity_id: inserted.id,
-        group_name: payload.name,
-      });
       toast({ title: "Group created" });
     }
     await closeAndRefresh();
@@ -3124,7 +2882,7 @@ const ActionModal = ({
   const sendInvite = async (email: string) => {
     if (!group || !email.trim()) return;
     const { data: inviteResult, error } = await supabase.functions.invoke("send-invite", { body: { email: email.trim().toLowerCase(), group_id: group.id, group_name: group.name, inviter_name: "A friend" } });
-    if (error) toast({ title: "Invite failed", description: getFriendlyErrorMessage(error, "invite"), variant: "destructive" });
+    if (error) toast({ title: "Invite failed", description: error.message, variant: "destructive" });
     else {
       if (inviteResult && inviteResult.emailSent === false) toast({ title: "Invite link created", description: "Email could not be sent. Copy the invite link manually." });
       else toast({ title: "Invite sent" });
@@ -3146,7 +2904,7 @@ const ActionModal = ({
       .eq("username", cleanUsername)
       .maybeSingle();
     if (lookupError) {
-      toast({ title: "Add member failed", description: getFriendlyErrorMessage(lookupError, "group"), variant: "destructive" });
+      toast({ title: "Add member failed", description: lookupError.message, variant: "destructive" });
       return false;
     }
     if (!foundUser) {
@@ -3163,18 +2921,9 @@ const ActionModal = ({
     }
     const { error } = await supabase.from("group_members").insert({ group_id: group.id, user_id: foundUser.user_id });
     if (error) {
-      toast({ title: "Add member failed", description: getFriendlyErrorMessage(error, "group"), variant: "destructive" });
+      toast({ title: "Add member failed", description: error.message, variant: "destructive" });
       return false;
     }
-    notifySharedAction({
-      type: "group_user_added",
-      recipients: [foundUser.user_id],
-      title: "Added to group",
-      message: `${actorName} added you to ${group.name}.`,
-      entity_type: "group",
-      entity_id: group.id,
-      group_name: group.name,
-    });
     toast({ title: "Member added successfully", description: `${displayName(foundUser)} was added to ${group.name}.` });
     await closeAndRefresh();
     return true;
@@ -3192,50 +2941,10 @@ const ActionModal = ({
     }
     const { error } = await supabase.from("group_members").delete().eq("group_id", memberGroup.id).eq("user_id", memberToRemove.user_id);
     if (error) {
-      toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "group"), variant: "destructive" });
+      toast({ title: "Remove failed", description: error.message, variant: "destructive" });
       return;
     }
-    notifySharedAction({
-      type: "group_user_removed",
-      recipients: [memberToRemove.user_id],
-      title: "Removed from group",
-      message: `${actorName} removed you from ${memberGroup.name}.`,
-      entity_type: "group",
-      entity_id: memberGroup.id,
-      group_name: memberGroup.name,
-    });
     toast({ title: "Member removed", description: `${displayName(memberToRemove.profiles)} was removed from the group.` });
-    await closeAndRefresh();
-  };
-
-  const makeGroupAdmin = async () => {
-    if (!memberGroup || !memberToRemove) return;
-    if (memberGroup.created_by !== currentUserId) {
-      toast({ title: "Admin transfer failed", description: "Only the current group admin can make another member admin.", variant: "destructive" });
-      return;
-    }
-    if (memberToRemove.user_id === currentUserId) {
-      toast({ title: "Admin transfer failed", description: "You are already the group admin.", variant: "destructive" });
-      return;
-    }
-    const { error } = await supabase.rpc("transfer_group_admin" as never, {
-      p_group_id: memberGroup.id,
-      p_new_admin_user_id: memberToRemove.user_id,
-    } as never);
-    if (error) {
-      toast({ title: "Admin transfer failed", description: getFriendlyErrorMessage(error, "group"), variant: "destructive" });
-      return;
-    }
-    notifySharedAction({
-      type: "group_user_added",
-      recipients: [memberToRemove.user_id],
-      title: "You are now group admin",
-      message: `${actorName} made you admin of ${memberGroup.name}.`,
-      entity_type: "group",
-      entity_id: memberGroup.id,
-      group_name: memberGroup.name,
-    });
-    toast({ title: "Admin updated", description: `${displayName(memberToRemove.profiles)} is now admin of ${memberGroup.name}.` });
     await closeAndRefresh();
   };
 
@@ -3247,7 +2956,7 @@ const ActionModal = ({
     }
     const { error } = await supabase.from("group_members").delete().eq("group_id", group.id).eq("user_id", currentUserId);
     if (error) {
-      toast({ title: "Leave failed", description: getFriendlyErrorMessage(error, "group"), variant: "destructive" });
+      toast({ title: "Leave failed", description: error.message, variant: "destructive" });
       return;
     }
     toast({ title: "Left group", description: `You left ${group.name}.` });
@@ -3257,7 +2966,7 @@ const ActionModal = ({
   const deleteAccount = async () => {
     const { error } = await supabase.functions.invoke("delete-account");
     if (error) {
-      toast({ title: "Delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" });
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
       return;
     }
     toast({ title: "Account deleted", description: "Your account and related data were deleted." });
@@ -3268,31 +2977,30 @@ const ActionModal = ({
 
   return (
     <Dialog open={type !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] w-[calc(100vw_-_1.5rem)] max-w-[calc(100vw_-_1.5rem)] grid-rows-[auto,minmax(0,1fr)] gap-4 overflow-hidden rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:w-full sm:max-w-md sm:p-6">
-        <DialogHeader className="min-w-0 pr-6">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:w-full sm:max-w-md sm:p-6">
+        <DialogHeader>
           <DialogTitle className="text-foreground">{title}</DialogTitle>
           <DialogDescription>{type === "notifications" ? "Pending settlements, invites, and recent activity." : type === "saved" ? `${modal.item ?? "Action"} saved.` : "Complete the fields below."}</DialogDescription>
         </DialogHeader>
 
-        <div className="spendova-modal-body min-h-0 overflow-y-auto overscroll-contain pr-1">
-          {(type === "add-expense" || type === "group-expense" || type === "edit-expense") && (
-            <ExpenseForm userId={currentUserId} friends={data.friends} friend={type === "add-expense" ? friend : undefined} group={type === "group-expense" ? group : undefined} expense={type === "edit-expense" ? expense : undefined} onSubmit={saveExpense} onCancel={onClose} />
-          )}
+        {(type === "add-expense" || type === "group-expense" || type === "edit-expense") && (
+          <ExpenseForm userId={currentUserId} friends={data.friends} friend={type === "add-expense" ? friend : undefined} group={type === "group-expense" ? group : undefined} expense={type === "edit-expense" ? expense : undefined} onSubmit={saveExpense} onCancel={onClose} />
+        )}
 
-          {type === "choose-friend-expense" && <PickerList items={data.friends.map((item) => ({ id: item.user_id, title: displayName(item), subtitle: `@${item.username || "user"}` }))} emptyText="Add friends to start splitting expenses" onPick={(id) => openModal("add-expense", id)} />}
-          {type === "choose-group-expense" && <PickerList items={data.groups.map((item) => ({ id: item.id, title: item.name, subtitle: `${item.group_members.length} members` }))} emptyText="Create a group to split shared expenses" onPick={(id) => openModal("group-expense", id)} />}
+        {type === "choose-friend-expense" && <PickerList items={data.friends.map((item) => ({ id: item.user_id, title: displayName(item), subtitle: `@${item.username || "user"}` }))} emptyText="Add friends to start splitting expenses" onPick={(id) => openModal("add-expense", id)} />}
+        {type === "choose-group-expense" && <PickerList items={data.groups.map((item) => ({ id: item.id, title: item.name, subtitle: `${item.group_members.length} members` }))} emptyText="Create a group to split shared expenses" onPick={(id) => openModal("group-expense", id)} />}
 
-          {type === "log-tiffin" && <TiffinForm userId={currentUserId} defaultCategory={modal.item} onSubmit={async (payload) => { const { error } = await supabase.from("expenses").insert(payload); if (error) throw error; await closeAndRefresh(); }} onCancel={onClose} />}
-          {(type === "create-group" || type === "edit-group") && <CreateGroupForm friends={data.friends} group={type === "edit-group" ? group : undefined} onSubmit={saveGroup} onCancel={onClose} />}
+        {type === "log-tiffin" && <TiffinForm userId={currentUserId} defaultCategory={modal.item} onSubmit={async (payload) => { const { error } = await supabase.from("expenses").insert(payload); if (error) throw error; await closeAndRefresh(); }} onCancel={onClose} />}
+        {(type === "create-group" || type === "edit-group") && <CreateGroupForm friends={data.friends} group={type === "edit-group" ? group : undefined} onSubmit={saveGroup} onCancel={onClose} />}
 
-          {type === "group-details" && group && (
+        {type === "group-details" && group && (
           <div className="space-y-3">
             <div className="rounded-2xl bg-elevated p-4 text-sm"><p className="font-semibold text-foreground">Balance: {money(groupExpenses.reduce((sum, item) => sum + item.amount, 0))}</p><p className="mt-1 text-muted-foreground">{group.group_members.length} active members - Latest: {groupExpenses[0]?.category || "None"}</p></div>
             <div className="space-y-2">
               {group.group_members.map((member) => (
                 <div key={member.user_id} className="flex items-center justify-between rounded-2xl bg-elevated p-3 text-sm">
                   <span className="font-semibold text-foreground">{member.user_id === currentUserId ? "You" : displayName(member.profiles)}</span>
-                  {group.created_by === currentUserId && member.user_id !== currentUserId && member.user_id !== group.created_by ? <button onClick={() => openModal("remove-group-member", `${group.id}:${member.user_id}`)} className="text-xs font-bold text-primary">Manage</button> : null}
+                  {group.created_by === currentUserId && member.user_id !== currentUserId && member.user_id !== group.created_by ? <button onClick={() => openModal("remove-group-member", `${group.id}:${member.user_id}`)} className="text-xs font-bold text-destructive">Remove</button> : null}
                 </div>
               ))}
             </div>
@@ -3310,53 +3018,42 @@ const ActionModal = ({
               {group.created_by === currentUserId ? <Button variant="destructive" onClick={() => openModal("delete-group", group.id)}><Trash2 />Delete</Button> : null}
             </div>
           </div>
-          )}
+        )}
 
-          {type === "invite-members" && group && <InviteMembers group={group} invites={data.groupInvites[group.id] || []} currentUserId={currentUserId} onInvite={sendInvite} onAddByUsername={addMemberByUsername} />}
-          {type === "add-friend" && <AddFriendForm currentUserId={currentUserId} friends={data.friends} requests={[...data.incomingRequests, ...data.outgoingRequests]} onRequest={async (receiverId) => { if (receiverId === currentUserId) { toast({ title: "Request failed", description: "You cannot send a friend request to yourself.", variant: "destructive" }); return; } const { data: connection, error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: receiverId, status: "pending" }).select("id").single(); if (error) toast({ title: "Request failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); else { notifySharedAction({ type: "friend_request_received", recipients: [receiverId], title: "New friend request", message: `${actorName} sent you a friend request.`, entity_type: "connection", entity_id: connection?.id || null }); await closeAndRefresh(); } }} onCancel={onClose} />}
+        {type === "invite-members" && group && <InviteMembers group={group} invites={data.groupInvites[group.id] || []} currentUserId={currentUserId} onInvite={sendInvite} onAddByUsername={addMemberByUsername} />}
+        {type === "add-friend" && <AddFriendForm currentUserId={currentUserId} friends={data.friends} requests={[...data.incomingRequests, ...data.outgoingRequests]} onRequest={async (receiverId) => { if (receiverId === currentUserId) { toast({ title: "Request failed", description: "You cannot send a friend request to yourself.", variant: "destructive" }); return; } const { error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: receiverId, status: "pending" }); if (error) toast({ title: "Request failed", description: error.message, variant: "destructive" }); else await closeAndRefresh(); }} onCancel={onClose} />}
 
-          {type === "friend-requests" && (
+        {type === "friend-requests" && (
           <div className="space-y-4">
-            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Incoming</p><div className="space-y-2">{data.incomingRequests.length === 0 ? <EmptyCard text="No incoming requests." /> : data.incomingRequests.map((request) => <RequestCard key={request.id} request={request} onAccept={async () => { const { error } = await supabase.from("connections").update({ status: "accepted" }).eq("id", request.id); if (error) { toast({ title: "Accept failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } notifySharedAction({ type: "friend_request_accepted", recipients: [request.requester_id], title: "Friend request accepted", message: `${actorName} accepted your friend request.`, entity_type: "connection", entity_id: request.id }); await closeAndRefresh(); }} onReject={async () => { const { error } = await supabase.from("connections").update({ status: "rejected" }).eq("id", request.id); if (error) { toast({ title: "Reject failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeAndRefresh(); }} />)}</div></div>
-            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Outgoing</p><div className="space-y-2">{data.outgoingRequests.length === 0 ? <EmptyCard text="No outgoing requests." /> : data.outgoingRequests.map((request) => <div key={request.id} className="flex items-center justify-between rounded-2xl bg-elevated p-3"><div><p className="font-bold text-foreground">{displayName(request.profiles)}</p><p className="text-xs text-muted-foreground">@{request.profiles.username}</p></div><Button size="sm" variant="quiet" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", request.id); if (error) { toast({ title: "Cancel failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeAndRefresh(); }}>Cancel</Button></div>)}</div></div>
+            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Incoming</p><div className="space-y-2">{data.incomingRequests.length === 0 ? <EmptyCard text="No incoming requests." /> : data.incomingRequests.map((request) => <RequestCard key={request.id} request={request} onAccept={async () => { const { error } = await supabase.from("connections").update({ status: "accepted" }).eq("id", request.id); if (error) { toast({ title: "Accept failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} onReject={async () => { const { error } = await supabase.from("connections").update({ status: "rejected" }).eq("id", request.id); if (error) { toast({ title: "Reject failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }} />)}</div></div>
+            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Outgoing</p><div className="space-y-2">{data.outgoingRequests.length === 0 ? <EmptyCard text="No outgoing requests." /> : data.outgoingRequests.map((request) => <div key={request.id} className="flex items-center justify-between rounded-2xl bg-elevated p-3"><div><p className="font-bold text-foreground">{displayName(request.profiles)}</p><p className="text-xs text-muted-foreground">@{request.profiles.username}</p></div><Button size="sm" variant="quiet" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", request.id); if (error) { toast({ title: "Cancel failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }}>Cancel</Button></div>)}</div></div>
           </div>
-          )}
+        )}
 
-          {type === "friend-details" && friend && (
+        {type === "friend-details" && friend && (
           <div className="space-y-3">
             <div className="space-y-2 rounded-2xl bg-elevated p-4 text-sm">
               {data.expenses.filter((expense) => expense.paid_by === friend.user_id || expense.expense_splits?.some((split) => split.user_id === friend.user_id)).slice(0, 4).map((item) => <div key={item.id} className="flex justify-between"><span className="text-muted-foreground">{item.category}</span><span className="font-semibold text-foreground">{money(item.amount)}</span></div>)}
             </div>
-            <Button variant="destructive" className="w-full" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeAndRefresh(); }}><UserMinus />Remove friend</Button>
+            <Button variant="destructive" className="w-full" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeAndRefresh(); }}><UserMinus />Remove friend</Button>
           </div>
-          )}
+        )}
 
-          {type === "settle-up" && (group || friend) && (
-            <SettleForm currentUserId={currentUserId} friend={friend} group={group} balances={group ? balances : friendBalances} defaultAmount={(group ? balances : friendBalances).find((balance) => balance.fromUserId === currentUserId || balance.toUserId === currentUserId)?.amount || 0} onSubmit={saveSettlement} onCancel={onClose} />
-          )}
+        {type === "settle-up" && (group || friend) && (
+          <SettleForm currentUserId={currentUserId} friend={friend} group={group} balances={group ? balances : friendBalances} defaultAmount={(group ? balances : friendBalances).find((balance) => balance.fromUserId === currentUserId || balance.toUserId === currentUserId)?.amount || 0} onSubmit={saveSettlement} onCancel={onClose} />
+        )}
 
-          {type === "delete-expense" && <ConfirmBox title="Delete expense?" text="This will update balances for everyone involved." action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
-          {type === "clear-expense" && <ConfirmBox text={`Mark "${expense?.category || "expense"}" as cleared?`} action="Mark cleared" onCancel={onClose} onConfirm={clearExpense} />}
-          {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { if (group.created_by !== currentUserId) { toast({ title: "Delete failed", description: "Only the group owner can delete this group.", variant: "destructive" }); return; } const recipients = group.group_members.map((member) => member.user_id); const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" }); return; } notifySharedAction({ type: "group_deleted", recipients, title: "Group deleted", message: `${actorName} deleted ${group.name}.`, entity_type: "group", entity_id: group.id, group_name: group.name }); toast({ title: "Group deleted" }); await closeRefreshAndReturnToSplit(); }} />}
-          {type === "leave-group" && group && <ConfirmBox title="Leave group?" text="Are you sure you want to leave this group?" action="Leave Group" destructive onCancel={onClose} onConfirm={leaveGroup} />}
-          {type === "remove-group-member" && memberGroup && memberToRemove && (
-            <div className="space-y-3">
-              <div className="rounded-2xl bg-elevated p-4 text-sm">
-                <p className="font-bold text-foreground">{displayName(memberToRemove.profiles)}</p>
-                <p className="mt-1 text-muted-foreground">Manage this member in {memberGroup.name}.</p>
-              </div>
-              <Button className="w-full" onClick={makeGroupAdmin}><Crown />Make admin</Button>
-              <Button variant="destructive" className="w-full" onClick={removeGroupMember}><UserMinus />Remove person</Button>
-              <Button variant="quiet" className="w-full" onClick={onClose}>Cancel</Button>
-            </div>
-          )}
-          {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeRefreshAndReturnToSplit(); }} />}
-          {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
-          {type === "delete-account" && <ConfirmBox title="Delete account?" text="This will permanently delete your account and related data. This action cannot be undone." action="Delete Account" destructive onCancel={onClose} onConfirm={deleteAccount} />}
-          {type === "notifications" && <NotificationsList data={data} currentUserId={currentUserId} />}
-          {type === "chart-details" && <SpendingDetails expenses={data.expenses} currentUserId={currentUserId} />}
-          {type === "saved" && <EmptyCard text="Saved." />}
-        </div>
+        {type === "delete-expense" && <ConfirmBox title="Delete expense?" text="This will update balances for everyone involved." action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
+        {type === "clear-expense" && <ConfirmBox text={`Mark "${expense?.category || "expense"}" as cleared?`} action="Mark cleared" onCancel={onClose} onConfirm={clearExpense} />}
+        {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { if (group.created_by !== currentUserId) { toast({ title: "Delete failed", description: "Only the group owner can delete this group.", variant: "destructive" }); return; } const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: error.message, variant: "destructive" }); return; } toast({ title: "Group deleted" }); await closeRefreshAndReturnToSplit(); }} />}
+        {type === "leave-group" && group && <ConfirmBox title="Leave group?" text="Are you sure you want to leave this group?" action="Leave Group" destructive onCancel={onClose} onConfirm={leaveGroup} />}
+        {type === "remove-group-member" && memberGroup && memberToRemove && <ConfirmBox title="Remove member?" text={`Remove ${displayName(memberToRemove.profiles)} from ${memberGroup.name}?`} action="Remove" destructive onCancel={onClose} onConfirm={removeGroupMember} />}
+        {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: error.message, variant: "destructive" }); return; } await closeRefreshAndReturnToSplit(); }} />}
+        {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
+        {type === "delete-account" && <ConfirmBox title="Delete account?" text="This will permanently delete your account and related data. This action cannot be undone." action="Delete Account" destructive onCancel={onClose} onConfirm={deleteAccount} />}
+        {type === "notifications" && <NotificationsList data={data} currentUserId={currentUserId} />}
+        {type === "chart-details" && <SpendingDetails expenses={data.expenses} currentUserId={currentUserId} />}
+        {type === "saved" && <EmptyCard text="Saved." />}
       </DialogContent>
     </Dialog>
   );
@@ -3475,58 +3172,6 @@ const ConfirmBox = ({ title, text, action, destructive, onCancel, onConfirm }: {
   );
 };
 
-const SupportCoffeeWidget = () => {
-  const [open, setOpen] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
-
-  if (dismissed) return null;
-
-  return (
-    <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+7.25rem)] right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end sm:bottom-6 sm:right-6">
-      <div
-        className={`mb-3 w-[min(20rem,calc(100vw-2rem))] origin-bottom-right rounded-[1.25rem] border border-border/80 bg-card p-4 shadow-panel transition-all duration-300 ease-out ${
-          open ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-3 scale-95 opacity-0"
-        } ${open ? "pointer-events-auto" : ""}`}
-        aria-hidden={!open}
-      >
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-base font-black tracking-tight text-foreground">Buy me a coffee</h2>
-            <p className="mt-1 text-sm font-medium text-muted-foreground">Keep Spendova running!</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              setDismissed(true);
-            }}
-            className="grid size-8 shrink-0 place-items-center rounded-full bg-elevated text-muted-foreground transition hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="Close support popup"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-        <div className="mx-auto grid w-full place-items-center rounded-2xl border border-border/70 bg-background p-3">
-          <img src="/support-qr.png" alt="Payment QR code" className="aspect-square w-full max-w-56 rounded-xl object-contain" loading="lazy" />
-        </div>
-        <p className="mt-3 text-center text-xs font-bold text-muted-foreground">Scan with GPay · PhonePe · Paytm</p>
-      </div>
-
-      {!open ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="pointer-events-auto relative grid size-14 place-items-center rounded-full bg-card text-primary shadow-panel ring-1 ring-primary/15 transition hover:scale-105 hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="Open Buy me a coffee QR"
-        >
-          <span className="absolute inset-0 rounded-full bg-primary/20 motion-safe:animate-ping" aria-hidden="true" />
-          <Coffee className="relative size-6" />
-        </button>
-      ) : null}
-    </div>
-  );
-};
-
 const Index = () => {
   const { user, profile, loading: authLoading } = useAuth();
   const location = useLocation();
@@ -3546,8 +3191,8 @@ const Index = () => {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
-    safeStorage.setItem(THEME_STORAGE_KEY, theme);
-    safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    window.localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
   }, [theme]);
 
   if (!authLoading && !user) return <Navigate to="/login" replace />;
@@ -3563,12 +3208,11 @@ const Index = () => {
   const toggleTheme = () => setTheme((current) => (current === "dark" ? "light" : "dark"));
   const openModal = (type: ModalType, item?: string) => setModal({ type, item });
   const summary = user ? getSummary(data.expenses, user.id, data.settlements) : getSummary([], "");
-  const unreadNotifications = data.notifications.filter((item) => !item.is_read).length;
 
   const saveProfile = async (fullName: string, username: string) => {
     if (!user) return;
     const { error } = await supabase.from("profiles").update({ full_name: fullName, username }).eq("user_id", user.id);
-    if (error) toast({ title: "Profile update failed", description: getFriendlyErrorMessage(error, "profile"), variant: "destructive" });
+    if (error) toast({ title: "Profile update failed", description: error.message, variant: "destructive" });
     else {
       toast({ title: "Profile updated" });
       await refresh();
@@ -3576,7 +3220,7 @@ const Index = () => {
   };
 
   if (authLoading || loading || !user) {
-    return <DashboardLoadingFallback />;
+    return <div className="grid min-h-screen place-items-center bg-background text-foreground">Loading Spendova...</div>;
   }
 
   const friendDetail = friendDetailId ? data.friends.find((friend) => friend.user_id === friendDetailId) : undefined;
@@ -3587,7 +3231,7 @@ const Index = () => {
   const deleteSettlement = async (settlementId: string) => {
     const { error } = await supabase.rpc("delete_split_settlement" as never, { p_settlement_id: settlementId } as never);
     if (error) {
-      toast({ title: "Delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" });
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
       return;
     }
     toast({ title: "Settlement deleted", description: "Balances were restored." });
@@ -3599,24 +3243,24 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto min-h-screen max-w-3xl px-4 pb-36 sm:px-6">
-        {!showingDetailPage && <AppHeader title={title === "Home" ? "Overview" : title} theme={theme} unreadCount={unreadNotifications} onThemeToggle={toggleTheme} onProfile={() => navigate("/profile")} openModal={openModal} />}
+        {!showingDetailPage && <AppHeader title={title === "Home" ? "Overview" : title} theme={theme} onThemeToggle={toggleTheme} onProfile={() => navigate("/profile")} openModal={openModal} />}
         {friendDetailId && !friendDetail && <Navigate to="/split" replace />}
         {groupDetailId && !groupDetail && <Navigate to="/split" replace />}
         {expenseDetailId && !expenseDetail && <Navigate to="/split" replace />}
         {settlementDetailId && !settlementDetail && <Navigate to="/split" replace />}
-        {friendDetail && <FriendDetailView friend={friendDetail} data={data} currentUserId={user.id} theme={theme} unreadCount={unreadNotifications} onThemeToggle={toggleTheme} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
+        {friendDetail && <FriendDetailView friend={friendDetail} data={data} currentUserId={user.id} theme={theme} onThemeToggle={toggleTheme} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
         {expenseDetail && <ExpenseDetailView expense={expenseDetail} settlements={data.settlements} currentUserId={user.id} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
         {settlementDetail && <SettlementDetailView settlement={settlementDetail} currentUserId={user.id} onBack={backToSplit} onDelete={deleteSettlement} />}
         {groupDetail && <GroupDetailView group={groupDetail} data={data} currentUserId={user.id} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} settlements={data.settlements} summary={summary} currentUserId={user.id} groups={data.groups} friends={data.friends} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "tiffin" && <TiffinView expenses={data.expenses} openModal={openModal} />}
+        {/* {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "tiffin" && <TiffinView expenses={data.expenses} openModal={openModal} />} */}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "profile" && <ProfileView userId={user.id} profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
-        <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p>
+        {/* <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p> */}
       </div>
       <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-3xl px-4 pb-4">
-        <div className="grid grid-cols-3 rounded-[1.4rem] border border-border/80 bg-card p-2 shadow-panel backdrop-blur">
+        <div className="grid grid-cols-4 rounded-[1.4rem] border border-border/80 bg-card p-2 shadow-panel backdrop-blur">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = activeContentTab === tab.key;
@@ -3629,8 +3273,7 @@ const Index = () => {
           })}
         </div>
       </nav>
-      <SupportCoffeeWidget />
-      <ActionModal modal={modal} data={data} currentUserId={user.id} currentProfile={profile} onClose={() => setModal({ type: null })} refresh={refresh} openModal={openModal} />
+      <ActionModal modal={modal} data={data} currentUserId={user.id} onClose={() => setModal({ type: null })} refresh={refresh} openModal={openModal} />
     </div>
   );
 };
