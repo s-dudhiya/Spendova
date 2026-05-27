@@ -2881,7 +2881,7 @@ const ActionModal = ({
   currentUserId: string;
   currentProfile: Profile | null;
   onClose: () => void;
-  refresh: () => Promise<void>;
+  refresh: (options?: { silent?: boolean }) => Promise<void>;
   openModal: (type: ModalType, item?: string) => void;
 }) => {
   const { toast } = useToast();
@@ -2948,7 +2948,7 @@ const ActionModal = ({
       .in("id", unreadIds as never)
       .then(({ error }) => {
         if (error) console.warn("Could not mark notifications as read", error);
-        else void refresh();
+        else void refresh({ silent: true });
       });
   }, [data.notifications, refresh, type]);
 
