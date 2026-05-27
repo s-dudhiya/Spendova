@@ -20,7 +20,7 @@ const AdminLogin = () => {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [adminCheck, setAdminCheck] = useState<AdminCheck>("loading");
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signIn } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -42,7 +42,7 @@ const AdminLogin = () => {
     event.preventDefault();
     setSubmitting(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await signIn(email, password);
       if (error) throw error;
 
       const { data: isAdmin, error: adminError } = await supabase.rpc("is_admin" as never);
