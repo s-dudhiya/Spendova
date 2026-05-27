@@ -25,7 +25,8 @@ async function findUserByEmail(supabaseAdmin: any, email: string) {
 }
 
 async function cleanupAuthOtps(supabaseAdmin: any) {
-  await supabaseAdmin.rpc('cleanup_expired_auth_otps').catch(() => undefined)
+  const { error } = await supabaseAdmin.rpc('cleanup_expired_auth_otps')
+  if (error) console.warn('cleanup_expired_auth_otps skipped:', error.message)
 }
 
 serve(async (req) => {

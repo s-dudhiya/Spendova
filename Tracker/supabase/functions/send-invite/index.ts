@@ -50,7 +50,8 @@ function notificationEmailHtml(inviterName: string, groupName: string, appUrl: s
 }
 
 async function cleanupEphemeralData(supabaseAdmin: any) {
-  await supabaseAdmin.rpc('cleanup_ephemeral_auth_data').catch(() => undefined)
+  const { error } = await supabaseAdmin.rpc('cleanup_ephemeral_auth_data')
+  if (error) console.warn('cleanup_ephemeral_auth_data skipped:', error.message)
 }
 
 serve(async (req) => {
@@ -164,7 +165,7 @@ serve(async (req) => {
     }
 
     if (existingUser?.id && existingUser.id !== userData.user.id) {
-      await supabaseAdmin.from('notifications').insert({
+      const { error: notificationError } = await supabaseAdmin.from('notifications').insert({
         user_id: existingUser.id,
         actor_id: userData.user.id,
         type: 'group_user_added',
@@ -173,9 +174,8 @@ serve(async (req) => {
         entity_type: 'group',
         entity_id: group_id,
         is_read: false,
-      }).catch((notificationError) => {
-        console.warn('Could not create group invite notification', notificationError)
       })
+      if (notificationError) console.warn('Could not create group invite notification', notificationError.message)
     }
 
     return new Response(JSON.stringify({ success: true, inviteCreated: true, emailSent, reason: emailReason, inviteUrl, isExistingUser: !!existingUser }), {

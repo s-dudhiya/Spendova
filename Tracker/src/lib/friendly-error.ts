@@ -47,10 +47,16 @@ export function getFriendlyErrorMessage(error: unknown, context: ErrorContext = 
     text.includes("network") ||
     text.includes("offline") ||
     text.includes("timeout") ||
-    text.includes("timed out") ||
-    text.includes("edge function")
+    text.includes("timed out")
   ) {
     return "Network issue. Please check your connection and try again.";
+  }
+
+  if (text.includes("edge function")) {
+    if (context === "otp_resend" || context === "otp" || context === "password_reset") {
+      return "Could not send the verification code. Please try again.";
+    }
+    return "We couldn’t complete this request. Please try again.";
   }
 
   if (text.includes("invalid") && (text.includes("otp") || text.includes("code") || text.includes("token"))) {
