@@ -17,6 +17,7 @@ import {
   Fingerprint,
   Home,
   Link as LinkIcon,
+  MessageSquare,
   MoreVertical,
   Moon,
   Pencil,
@@ -33,6 +34,7 @@ import {
   UserMinus,
   UserPlus,
   UtensilsCrossed,
+  Upload,
   WalletCards,
   X,
 } from "lucide-react";
@@ -67,6 +69,7 @@ type Theme = "light" | "dark";
 type SplitStrategy = "equal" | "exact" | "percentage";
 type ModalType =
   | "notifications"
+  | "feedback-support"
   | "add-expense"
   | "log-tiffin"
   | "chart-details"
@@ -186,6 +189,22 @@ type NotificationRow = {
   created_at: string;
 };
 
+type FeedbackReportRow = {
+  id: string;
+  user_id: string;
+  type: "bug_report" | "feature_request" | "suggestion" | "general_feedback";
+  title: string;
+  description: string;
+  screenshot_url: string | null;
+  priority: "low" | "medium" | "high" | "critical";
+  status: "open" | "investigating" | "resolved" | "closed";
+  device_info: Record<string, unknown>;
+  app_version: string;
+  admin_notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type ExpensePayload = {
   user_id: string;
   paid_by: string;
@@ -279,6 +298,95 @@ const timeAgo = (value?: string | null) => {
 const displayName = (profile?: Profile | null) => profile?.full_name || profile?.username || profile?.email || "User";
 const toPaise = (amount: number) => Math.round((Number.isFinite(amount) ? amount : 0) * 100);
 const fromPaise = (paise: number) => Number((paise / 100).toFixed(2));
+const APP_VERSION = "2.1";
+const MAX_FEEDBACK_IMAGE_SIZE = 1024 * 1024;
+
+const feedbackTypeOptions: Array<{ value: FeedbackReportRow["type"]; label: string }> = [
+  { value: "bug_report", label: "Bug Report" },
+  { value: "feature_request", label: "Feature Request" },
+  { value: "suggestion", label: "Suggestion" },
+  { value: "general_feedback", label: "General Feedback" },
+];
+
+const feedbackStatusLabel = (status: FeedbackReportRow["status"]) => ({
+  open: "Open",
+  investigating: "Investigating",
+  resolved: "Resolved",
+  closed: "Closed",
+}[status]);
+
+const getDeviceInfo = () => {
+  const userAgent = navigator.userAgent || "";
+  const platform = navigator.platform || "";
+  const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(userAgent);
+  const os = /iPhone|iPad|iPod/i.test(userAgent)
+    ? "iOS"
+    : /Android/i.test(userAgent)
+      ? "Android"
+      : /Win/i.test(platform)
+        ? "Windows"
+        : /Mac/i.test(platform)
+          ? "macOS"
+          : /Linux/i.test(platform)
+            ? "Linux"
+            : "Unknown";
+  const browser = /CriOS|Chrome/i.test(userAgent)
+    ? "Chrome"
+    : /FxiOS|Firefox/i.test(userAgent)
+      ? "Firefox"
+      : /Safari/i.test(userAgent)
+        ? "Safari"
+        : "Unknown";
+  return {
+    app_version: APP_VERSION,
+    browser,
+    os,
+    platform,
+    device_type: isMobile ? "Mobile" : "Desktop",
+    viewport: typeof window !== "undefined" ? `${window.innerWidth}x${window.innerHeight}` : "unknown",
+    user_agent: userAgent,
+    timestamp: new Date().toISOString(),
+  };
+};
+
+const loadFeedbackImage = async (file: File): Promise<ImageBitmap | HTMLImageElement> => {
+  if ("createImageBitmap" in window) return createImageBitmap(file);
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read the screenshot."));
+    };
+    image.src = url;
+  });
+};
+
+const compressFeedbackImage = async (file: File): Promise<Blob> => {
+  if (!file.type.startsWith("image/")) throw new Error("Please upload an image file.");
+  if (file.size <= MAX_FEEDBACK_IMAGE_SIZE) return file;
+
+  const bitmap = await loadFeedbackImage(file);
+  const canvas = document.createElement("canvas");
+  const maxSide = 1280;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not prepare the screenshot.");
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+  const toBlob = (quality: number) => new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", quality));
+  for (const quality of [0.82, 0.72, 0.62, 0.52]) {
+    const blob = await toBlob(quality);
+    if (blob && blob.size <= MAX_FEEDBACK_IMAGE_SIZE) return blob;
+  }
+  throw new Error("Image must be under 1 MB.");
+};
 const notifySharedAction = (payload: {
   type: string;
   recipients: string[];
@@ -2467,6 +2575,16 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
             </span>
           </button>
           {biometricError && <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">{biometricError}</p>}
+          <button onClick={() => openModal("feedback-support")} className="flex w-full items-center justify-between rounded-2xl bg-elevated p-4 font-bold text-foreground shadow-soft">
+            <span className="flex items-center gap-3">
+              <span className="grid size-10 place-items-center rounded-full bg-primary/10 text-primary"><MessageSquare className="size-5" /></span>
+              <span className="text-left">
+                <span className="block">Feedback & Support</span>
+                <span className="mt-0.5 block text-xs font-medium text-muted-foreground">Report bugs or send suggestions.</span>
+              </span>
+            </span>
+            <ChevronRight className="size-4 text-muted-foreground" />
+          </button>
           <div className="pt-1">
             <button onClick={() => openModal("logout")} className="w-full rounded-full bg-destructive/15 px-4 py-3 font-bold text-destructive">Logout</button>
           </div>
@@ -2516,6 +2634,126 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
         <button onClick={() => openModal("delete-account")} className="mt-4 w-full rounded-full bg-destructive/15 px-4 py-3 font-bold text-destructive">Delete Account</button>
       </section>
     </main>
+  );
+};
+
+const FeedbackForm = ({ userId, onSubmit, onCancel }: { userId: string; onSubmit: (payload: { type: FeedbackReportRow["type"]; title: string; description: string; priority: FeedbackReportRow["priority"]; screenshot?: File | null }) => Promise<void>; onCancel: () => void }) => {
+  const { toast } = useToast();
+  const [type, setType] = useState<FeedbackReportRow["type"]>("bug_report");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [critical, setCritical] = useState(false);
+  const [screenshot, setScreenshot] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [reports, setReports] = useState<FeedbackReportRow[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    const loadReports = async () => {
+      const { data, error } = await supabase
+        .from("feedback_reports" as never)
+        .select("id,user_id,type,title,description,screenshot_url,priority,status,device_info,app_version,admin_notes,created_at,updated_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (active && !error) setReports((data || []) as unknown as FeedbackReportRow[]);
+    };
+    loadReports();
+    const channel = supabase
+      .channel(`feedback-user-${userId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "feedback_reports", filter: `user_id=eq.${userId}` }, loadReports)
+      .subscribe();
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
+  const handleFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      setScreenshot(null);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Unsupported file", description: "Please upload a screenshot image.", variant: "destructive" });
+      event.target.value = "";
+      return;
+    }
+    if (file.size > 6 * MAX_FEEDBACK_IMAGE_SIZE) {
+      toast({ title: "Image too large", description: "Please choose a smaller screenshot.", variant: "destructive" });
+      event.target.value = "";
+      return;
+    }
+    setScreenshot(file);
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!title.trim() || description.trim().length < 10) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        type,
+        title: title.trim(),
+        description: description.trim(),
+        priority: critical ? "critical" : "medium",
+        screenshot,
+      });
+      setTitle("");
+      setDescription("");
+      setScreenshot(null);
+      setCritical(false);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-sm font-semibold text-foreground">Type</p>
+        <div className="grid grid-cols-2 gap-2">
+          {feedbackTypeOptions.map((option) => (
+            <button key={option.value} type="button" onClick={() => setType(option.value)} className={`rounded-full px-3 py-2 text-xs font-bold transition-colors ${type === option.value ? "bg-primary text-primary-foreground shadow-primary-action" : "bg-elevated text-foreground"}`}>
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <Field label="Title" value={title} onChange={setTitle} placeholder="Short summary" />
+      <label className="block text-sm font-semibold text-foreground">
+        Description
+        <textarea value={description} onChange={(event) => setDescription(event.target.value.slice(0, 2000))} rows={5} className="mt-2 w-full resize-none rounded-2xl border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-ring" placeholder="Tell us what happened or what you would like to see." />
+        <span className="mt-1 block text-right text-xs font-medium text-muted-foreground">{description.length}/2000</span>
+      </label>
+      <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-dashed border-border bg-elevated p-4 text-sm font-semibold text-foreground">
+        <span className="min-w-0">
+          <span className="flex items-center gap-2"><Upload className="size-4 text-primary" /> Screenshot</span>
+          <span className="mt-1 block truncate text-xs font-medium text-muted-foreground">{screenshot ? screenshot.name : "Optional image, max 1 MB after compression"}</span>
+        </span>
+        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleFile} className="hidden" />
+      </label>
+      <label className="flex items-center justify-between rounded-2xl bg-elevated p-4 text-sm font-bold text-foreground">
+        Critical issue
+        <input type="checkbox" checked={critical} onChange={(event) => setCritical(event.target.checked)} className="size-4 accent-primary" />
+      </label>
+      {reports.length > 0 && (
+        <div className="space-y-2 rounded-2xl bg-elevated p-3">
+          <p className="text-xs font-bold uppercase text-muted-foreground">Recent reports</p>
+          {reports.map((report) => (
+            <div key={report.id} className="flex items-center justify-between gap-3 rounded-xl bg-card px-3 py-2 text-sm">
+              <span className="min-w-0 truncate font-semibold text-foreground">{report.title}</span>
+              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-1 text-[11px] font-bold text-primary">{feedbackStatusLabel(report.status)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2 pt-2">
+        <Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button>
+        <Button type="submit" className="flex-1" disabled={submitting || title.trim().length < 3 || description.trim().length < 10}>{submitting ? "Sending..." : "Submit"}</Button>
+      </div>
+    </form>
   );
 };
 
@@ -2913,6 +3151,7 @@ const ActionModal = ({
     type === "settle-up" ? `Settle up - ${group?.name || displayName(friend) || ""}` :
     type === "logout" ? "Logout" :
     type === "delete-account" ? "Delete Account" :
+    type === "feedback-support" ? "Feedback & Support" :
     type === "notifications" ? "Notifications" : "Saved";
 
   const closeAndRefresh = async () => {
@@ -2938,6 +3177,42 @@ const ActionModal = ({
         else void refresh({ silent: true });
       });
   }, [data.notifications, refresh, type]);
+
+  const submitFeedback = async (payload: { type: FeedbackReportRow["type"]; title: string; description: string; priority: FeedbackReportRow["priority"]; screenshot?: File | null }) => {
+    try {
+      let screenshotPath: string | null = null;
+      if (payload.screenshot) {
+        const blob = await compressFeedbackImage(payload.screenshot);
+        if (blob.size > MAX_FEEDBACK_IMAGE_SIZE) throw new Error("Image must be under 1 MB.");
+        const randomId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const path = `${currentUserId}/${randomId}.webp`;
+        const { error: uploadError } = await supabase.storage.from("feedback-screenshots").upload(path, blob, {
+          contentType: blob.type || "image/webp",
+          upsert: false,
+        });
+        if (uploadError) throw uploadError;
+        screenshotPath = path;
+      }
+
+      const { error } = await supabase.from("feedback_reports" as never).insert({
+        user_id: currentUserId,
+        type: payload.type,
+        title: payload.title,
+        description: payload.description,
+        screenshot_url: screenshotPath,
+        priority: payload.priority,
+        status: "open",
+        device_info: getDeviceInfo(),
+        app_version: APP_VERSION,
+      } as never);
+      if (error) throw error;
+      toast({ title: "Thank you!", description: "Your feedback has been sent." });
+      onClose();
+    } catch (error) {
+      toast({ title: "Feedback failed", description: getFriendlyErrorMessage(error, "feedback"), variant: "destructive" });
+      throw error;
+    }
+  };
 
   const saveExpense = async ({ expense: payload, splits, expenseId }: { expense: ExpensePayload; splits: Array<{ user_id: string; amount_owed: number }>; expenseId?: string }) => {
     try {
@@ -3272,13 +3547,14 @@ const ActionModal = ({
       <DialogContent className="grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] w-[calc(100vw_-_1.5rem)] max-w-[calc(100vw_-_1.5rem)] grid-rows-[auto,minmax(0,1fr)] gap-4 overflow-hidden rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:w-full sm:max-w-md sm:p-6">
         <DialogHeader className="min-w-0 pr-6">
           <DialogTitle className="text-foreground">{title}</DialogTitle>
-          <DialogDescription>{type === "notifications" ? "Pending settlements, invites, and recent activity." : type === "saved" ? `${modal.item ?? "Action"} saved.` : "Complete the fields below."}</DialogDescription>
+          <DialogDescription>{type === "notifications" ? "Pending settlements, invites, and recent activity." : type === "feedback-support" ? "Send feedback, bugs, or suggestions." : type === "saved" ? `${modal.item ?? "Action"} saved.` : "Complete the fields below."}</DialogDescription>
         </DialogHeader>
 
         <div className="spendova-modal-body min-h-0 overflow-y-auto overscroll-contain pr-1">
           {(type === "add-expense" || type === "group-expense" || type === "edit-expense") && (
             <ExpenseForm userId={currentUserId} friends={data.friends} friend={type === "add-expense" ? friend : undefined} group={type === "group-expense" ? group : undefined} expense={type === "edit-expense" ? expense : undefined} onSubmit={saveExpense} onCancel={onClose} />
           )}
+          {type === "feedback-support" && <FeedbackForm userId={currentUserId} onSubmit={submitFeedback} onCancel={onClose} />}
 
           {type === "choose-friend-expense" && <PickerList items={data.friends.map((item) => ({ id: item.user_id, title: displayName(item), subtitle: `@${item.username || "user"}` }))} emptyText="Add friends to start splitting expenses" onPick={(id) => openModal("add-expense", id)} />}
           {type === "choose-group-expense" && <PickerList items={data.groups.map((item) => ({ id: item.id, title: item.name, subtitle: `${item.group_members.length} members` }))} emptyText="Create a group to split shared expenses" onPick={(id) => openModal("group-expense", id)} />}

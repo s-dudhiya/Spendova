@@ -12,6 +12,7 @@ type ErrorContext =
   | "friend"
   | "invite"
   | "admin"
+  | "feedback"
   | "delete"
   | "unknown";
 
@@ -117,6 +118,8 @@ export function getFriendlyErrorMessage(error: unknown, context: ErrorContext = 
       return "This invite is unavailable or has expired.";
     case "admin":
       return "Could not complete the admin action. Please try again.";
+    case "feedback":
+      return "Could not send your feedback. Please try again.";
     case "delete":
       return "Could not delete this item. Please try again.";
     case "network":
