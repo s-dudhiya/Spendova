@@ -3482,11 +3482,11 @@ const SupportCoffeeWidget = () => {
   if (dismissed) return null;
 
   return (
-    <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+7.25rem)] right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end sm:bottom-6 sm:right-6">
+    <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+7.25rem)] right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end sm:bottom-6 sm:right-6">
       <div
         className={`mb-3 w-[min(20rem,calc(100vw-2rem))] origin-bottom-right rounded-[1.25rem] border border-border/80 bg-card p-4 shadow-panel transition-all duration-300 ease-out ${
           open ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-3 scale-95 opacity-0"
-        }`}
+        } ${open ? "pointer-events-auto" : ""}`}
         aria-hidden={!open}
       >
         <div className="mb-3 flex items-start justify-between gap-3">
@@ -3516,7 +3516,7 @@ const SupportCoffeeWidget = () => {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="relative grid size-14 place-items-center rounded-full bg-card text-primary shadow-panel ring-1 ring-primary/15 transition hover:scale-105 hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="pointer-events-auto relative grid size-14 place-items-center rounded-full bg-card text-primary shadow-panel ring-1 ring-primary/15 transition hover:scale-105 hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Open Buy me a coffee QR"
         >
           <span className="absolute inset-0 rounded-full bg-primary/20 motion-safe:animate-ping" aria-hidden="true" />
