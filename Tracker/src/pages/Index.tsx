@@ -3475,6 +3475,58 @@ const ConfirmBox = ({ title, text, action, destructive, onCancel, onConfirm }: {
   );
 };
 
+const SupportCoffeeWidget = () => {
+  const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  if (dismissed) return null;
+
+  return (
+    <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+7.25rem)] right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end sm:bottom-6 sm:right-6">
+      <div
+        className={`mb-3 w-[min(20rem,calc(100vw-2rem))] origin-bottom-right rounded-[1.25rem] border border-border/80 bg-card p-4 shadow-panel transition-all duration-300 ease-out ${
+          open ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-3 scale-95 opacity-0"
+        }`}
+        aria-hidden={!open}
+      >
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-base font-black tracking-tight text-foreground">Buy me a coffee</h2>
+            <p className="mt-1 text-sm font-medium text-muted-foreground">Keep Spendova running!</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setDismissed(true);
+            }}
+            className="grid size-8 shrink-0 place-items-center rounded-full bg-elevated text-muted-foreground transition hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Close support popup"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="mx-auto grid w-full place-items-center rounded-2xl border border-border/70 bg-background p-3">
+          <img src="/support-qr.png" alt="Payment QR code" className="aspect-square w-full max-w-56 rounded-xl object-contain" loading="lazy" />
+        </div>
+        <p className="mt-3 text-center text-xs font-bold text-muted-foreground">Scan with GPay · PhonePe · Paytm</p>
+      </div>
+
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="relative grid size-14 place-items-center rounded-full bg-card text-primary shadow-panel ring-1 ring-primary/15 transition hover:scale-105 hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="Open Buy me a coffee QR"
+        >
+          <span className="absolute inset-0 rounded-full bg-primary/20 motion-safe:animate-ping" aria-hidden="true" />
+          <Coffee className="relative size-6" />
+        </button>
+      ) : null}
+    </div>
+  );
+};
+
 const Index = () => {
   const { user, profile, loading: authLoading } = useAuth();
   const location = useLocation();
@@ -3577,6 +3629,7 @@ const Index = () => {
           })}
         </div>
       </nav>
+      <SupportCoffeeWidget />
       <ActionModal modal={modal} data={data} currentUserId={user.id} currentProfile={profile} onClose={() => setModal({ type: null })} refresh={refresh} openModal={openModal} />
     </div>
   );
