@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS public.feedback_reports (
   user_id uuid NOT NULL REFERENCES public.profiles(user_id) ON DELETE CASCADE,
   type text NOT NULL CHECK (type IN ('bug_report', 'feature_request', 'suggestion', 'general_feedback')),
   title text NOT NULL CHECK (char_length(title) BETWEEN 3 AND 120),
-  description text NOT NULL CHECK (char_length(description) BETWEEN 10 AND 2000),
+  description text NOT NULL CHECK (char_length(description) BETWEEN 1 AND 2000),
   screenshot_url text,
   priority text NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'critical')),
   status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'investigating', 'resolved', 'closed')),
@@ -19,6 +19,29 @@ CREATE INDEX IF NOT EXISTS feedback_reports_user_created_idx
 
 CREATE INDEX IF NOT EXISTS feedback_reports_admin_status_idx
   ON public.feedback_reports (status, priority, created_at DESC);
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'feedback_reports_description_check'
+      AND conrelid = 'public.feedback_reports'::regclass
+  ) THEN
+    ALTER TABLE public.feedback_reports DROP CONSTRAINT feedback_reports_description_check;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'feedback_reports_description_length_check'
+      AND conrelid = 'public.feedback_reports'::regclass
+  ) THEN
+    ALTER TABLE public.feedback_reports
+      ADD CONSTRAINT feedback_reports_description_length_check
+      CHECK (char_length(description) BETWEEN 1 AND 2000);
+  END IF;
+END $$;
 
 ALTER TABLE public.feedback_reports ENABLE ROW LEVEL SECURITY;
 

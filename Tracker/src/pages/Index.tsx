@@ -2690,7 +2690,7 @@ const FeedbackForm = ({ userId, onSubmit, onCancel }: { userId: string; onSubmit
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!title.trim() || description.trim().length < 10) return;
+    if (!title.trim() || !description.trim()) return;
     setSubmitting(true);
     try {
       await onSubmit({
@@ -2751,7 +2751,7 @@ const FeedbackForm = ({ userId, onSubmit, onCancel }: { userId: string; onSubmit
       )}
       <div className="flex gap-2 pt-2">
         <Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" className="flex-1" disabled={submitting || title.trim().length < 3 || description.trim().length < 10}>{submitting ? "Sending..." : "Submit"}</Button>
+        <Button type="submit" className="flex-1" disabled={submitting || !title.trim() || !description.trim()}>{submitting ? "Sending..." : "Submit"}</Button>
       </div>
     </form>
   );
