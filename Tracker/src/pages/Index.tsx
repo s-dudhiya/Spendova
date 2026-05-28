@@ -839,20 +839,6 @@ function getPersonalShareStatus(expense: ExpenseRow, currentUserId: string) {
   return splitRemaining(mySplit) <= 0.009 ? "cleared" as const : "pending" as const;
 }
 
-function getFriendNetSettled(expense: ExpenseRow, currentUserId: string, allExpenses: ExpenseRow[], settlements: SplitSettlementRow[]) {
-  if (expense.group_id) return false;
-  const otherSplit = (expense.expense_splits || []).find((split) => split.user_id !== currentUserId);
-  const friendId = expense.paid_by === currentUserId ? otherSplit?.user_id : expense.paid_by;
-  if (!friendId || friendId === currentUserId) return false;
-  const balances = buildDebtBalances(allExpenses, settlements, { currentUserId, friendId, groupId: null });
-  const net = balances.reduce((sum, balance) => {
-    if (balance.toUserId === currentUserId) return sum + balance.amount;
-    if (balance.fromUserId === currentUserId) return sum - balance.amount;
-    return sum;
-  }, 0);
-  return Math.abs(net) <= 0.009;
-}
-
 function getPersonalExpenseDisplay(expense: ExpenseRow, currentUserId: string, groups: GroupRow[], friends: FriendProfile[], allExpenses: ExpenseRow[], settlements: SplitSettlementRow[]) {
   const personalOnly = isPersonalOnlyExpense(expense);
   if (personalOnly) {
@@ -1634,7 +1620,6 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const net = owedToMe - iOwe;
-  const friendNetSettled = Math.abs(net) <= 0.009;
   const balanceText = net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled";
   const balanceClass = net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground";
   const expenses = data.expenses.filter((expense) => !expense.group_id && (expense.paid_by === friend.user_id || expense.paid_by === currentUserId) && expense.expense_splits?.some((split) => split.user_id === friend.user_id || split.user_id === currentUserId));
@@ -1649,8 +1634,8 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
         : expense.expense_splits?.find((split) => split.user_id === currentUserId);
       const paidAmount = Number(targetSplit?.amount_paid || (targetSplit?.has_paid ? targetSplit.amount_owed : 0) || 0);
       const remaining = Math.max(Number(targetSplit?.amount_owed || 0) - paidAmount, 0);
-      const remainingImpact = friendNetSettled ? 0 : impact < 0 ? -remaining : remaining;
-      const status: FriendActivityStatus = friendNetSettled || remaining <= 0.009 ? "paid" : paidAmount > 0 ? "partial" : "pending";
+      const remainingImpact = impact < 0 ? -remaining : remaining;
+      const status: FriendActivityStatus = remaining <= 0.009 ? "paid" : paidAmount > 0 ? "partial" : "pending";
       const item = {
         id: expense.id,
         created_at: expense.created_at,
@@ -3023,71 +3008,91 @@ const PickerList = ({ items, emptyText, onPick }: { items: Array<{ id: string; t
   </div>
 );
 
-const SettleForm = ({ currentUserId, friend, group, settlement, balances, defaultAmount, onSubmit, onCancel }: { currentUserId: string; friend?: FriendProfile; group?: GroupRow; settlement?: SplitSettlementRow; balances: DebtBalance[]; defaultAmount: number; onSubmit: (payload: SettlementPayload) => Promise<void>; onCancel: () => void }) => {
-  const firstBalance = balances[0];
-  const [fromUserId, setFromUserId] = useState(settlement?.from_user_id || firstBalance?.fromUserId || currentUserId);
-  const [toUserId, setToUserId] = useState(settlement?.to_user_id || firstBalance?.toUserId || friend?.user_id || currentUserId);
-  const [amount, setAmount] = useState(settlement?.amount ? String(Number(settlement.amount).toFixed(2)) : defaultAmount > 0 ? String(defaultAmount.toFixed(2)) : "");
+const SettleForm = ({ group, settlement, balances, onSubmit, onCancel }: { group?: GroupRow; settlement?: SplitSettlementRow; balances: DebtBalance[]; onSubmit: (payload: SettlementPayload) => Promise<void>; onCancel: () => void }) => {
+  const [selectedSuggestionKey, setSelectedSuggestionKey] = useState<string | null>(null);
   const [date, setDate] = useState(settlement?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
   const [note, setNote] = useState(settlement?.note || "");
   const [submitting, setSubmitting] = useState(false);
-  const settlementCounterparty = settlement ? (settlement.from_user_id === currentUserId ? { user_id: settlement.to_user_id, name: displayName(settlement.to_profile) } : { user_id: settlement.from_user_id, name: displayName(settlement.from_profile) }) : null;
-  const members = group
-    ? group.group_members.map((member) => ({ user_id: member.user_id, name: member.user_id === currentUserId ? "You" : displayName(member.profiles) }))
-    : [{ user_id: currentUserId, name: "You" }, ...(friend ? [{ user_id: friend.user_id, name: displayName(friend) }] : settlementCounterparty ? [settlementCounterparty] : [])];
-  const parsed = Number(amount);
-  const paidDirection = fromUserId === currentUserId ? "me-to-friend" : "friend-to-me";
+  const selectedSuggestion = balances.find((balance) => `${balance.fromUserId}-${balance.toUserId}` === selectedSuggestionKey);
+  const canSubmit = Boolean(selectedSuggestion) && !submitting;
   const pickSuggestion = (balance: DebtBalance) => {
-    setFromUserId(balance.fromUserId);
-    setToUserId(balance.toUserId);
-    setAmount(balance.amount.toFixed(2));
-  };
-  const setFriendDirection = (direction: "me-to-friend" | "friend-to-me") => {
-    if (!friend) return;
-    if (direction === "me-to-friend") {
-      setFromUserId(currentUserId);
-      setToUserId(friend.user_id);
-    } else {
-      setFromUserId(friend.user_id);
-      setToUserId(currentUserId);
-    }
+    setSelectedSuggestionKey(`${balance.fromUserId}-${balance.toUserId}`);
   };
 
   return (
     <form className="space-y-4" onSubmit={async (event) => {
       event.preventDefault();
-      if (!parsed || parsed <= 0 || fromUserId === toUserId || submitting) return;
+      if (!selectedSuggestion || submitting) return;
       setSubmitting(true);
       try {
-        await onSubmit({ settlementId: settlement?.id, from_user_id: fromUserId, to_user_id: toUserId, amount: parsed, group_id: group?.id || settlement?.group_id || null, note: note.trim() || null, created_at: new Date(date).toISOString() });
+        await onSubmit({ settlementId: settlement?.id, from_user_id: selectedSuggestion.fromUserId, to_user_id: selectedSuggestion.toUserId, amount: selectedSuggestion.amount, group_id: group?.id || settlement?.group_id || null, note: note.trim() || null, created_at: new Date(date).toISOString() });
       } finally {
         setSubmitting(false);
       }
     }}>
+      <p className="text-sm font-semibold text-muted-foreground">
+        {selectedSuggestion ? "Review settlement details and confirm." : "Choose a settlement below to continue."}
+      </p>
       {balances.length > 0 && (
-        <div className="space-y-2 rounded-2xl bg-elevated p-3">
-          <p className="text-xs font-bold uppercase text-muted-foreground">Suggested settlements</p>
-          {balances.map((balance) => <button key={`${balance.fromUserId}-${balance.toUserId}`} type="button" onClick={() => pickSuggestion(balance)} className="flex w-full items-center justify-between rounded-xl bg-background px-3 py-2 text-left text-sm"><span className="font-semibold text-foreground">{balance.fromName} pays {balance.toName}</span><span className="font-bold text-primary">{money(balance.amount)}</span></button>)}
-        </div>
-      )}
-      <Field label="Amount" type="number" placeholder="0" value={amount} onChange={setAmount} />
-      {friend ? (
-        <div>
-          <p className="mb-2 text-sm font-semibold text-foreground">Paid by</p>
-          <div className="grid grid-cols-2 gap-2 rounded-2xl bg-elevated p-1">
-            <button type="button" onClick={() => setFriendDirection("me-to-friend")} className={`rounded-xl px-3 py-2.5 text-xs font-bold transition-colors ${paidDirection === "me-to-friend" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>I paid friend</button>
-            <button type="button" onClick={() => setFriendDirection("friend-to-me")} className={`rounded-xl px-3 py-2.5 text-xs font-bold transition-colors ${paidDirection === "friend-to-me" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>Friend paid me</button>
+        <div className="space-y-3 rounded-2xl border border-primary/15 bg-elevated p-3 shadow-soft">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-bold uppercase tracking-wide text-foreground">Recommended settlement</p>
+            <span className="text-[11px] font-bold text-primary">Tap to select</span>
+          </div>
+          <div className="space-y-2">
+            {balances.map((balance) => {
+              const suggestionKey = `${balance.fromUserId}-${balance.toUserId}`;
+              const selected = selectedSuggestionKey === suggestionKey;
+              return (
+                <button
+                  key={suggestionKey}
+                  type="button"
+                  onClick={() => pickSuggestion(balance)}
+                  className={`flex min-h-[64px] w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition-all active:scale-[0.99] ${selected ? "border-primary bg-primary/10 shadow-primary-action" : "border-border/70 bg-background hover:border-primary/40 hover:bg-primary/5"}`}
+                  aria-pressed={selected}
+                >
+                  <span className="min-w-0">
+                    <span className="block font-black text-foreground">{balance.fromName} pay {balance.toName}</span>
+                    <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">{selected ? "Selected for confirmation" : "Tap to select this settlement"}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="text-base font-black text-primary">{money(balance.amount)}</span>
+                    <span className={`grid size-8 place-items-center rounded-full ${selected ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"}`}>
+                      {selected ? <Check className="size-4" /> : <ArrowRight className="size-4" />}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-2">
-          <label className="text-sm font-semibold text-foreground">From<select value={fromUserId} onChange={(event) => setFromUserId(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm">{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>
-          <label className="text-sm font-semibold text-foreground">To<select value={toUserId} onChange={(event) => setToUserId(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm">{members.map((member) => <option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></label>
-        </div>
       )}
+      {selectedSuggestion ? (
+        <div className="space-y-3 rounded-2xl border border-success/20 bg-success/10 p-4">
+          <div className="flex items-center gap-2">
+            <span className="grid size-8 place-items-center rounded-full bg-success text-success-foreground">
+              <Check className="size-4" />
+            </span>
+            <div>
+              <p className="text-sm font-black text-foreground">Settlement Summary</p>
+              <p className="text-xs font-semibold text-muted-foreground">System-calculated and ready to confirm</p>
+            </div>
+          </div>
+          <div className="grid gap-2 text-sm">
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-background/70 px-3 py-2">
+              <span className="font-semibold text-muted-foreground">Amount</span>
+              <span className="font-black text-foreground">{money(selectedSuggestion.amount)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-background/70 px-3 py-2">
+              <span className="font-semibold text-muted-foreground">Payment Flow</span>
+              <span className="text-right font-black text-foreground">{selectedSuggestion.fromName} pay {selectedSuggestion.toName}</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {settlement ? <Field label="Date" type="date" value={date} onChange={setDate} /> : null}
       <Textarea label="Note (optional)" placeholder="Paid by UPI, cash..." value={note} onChange={setNote} />
-      <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button type="submit" className="flex-1" disabled={submitting || !parsed || parsed <= 0 || fromUserId === toUserId}>{submitting ? "Saving..." : "Confirm Settlement"}</Button></div>
+      <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button type="submit" className="flex-1" disabled={!canSubmit}>{submitting ? "Saving..." : selectedSuggestion ? "Confirm Settlement" : "Select settlement first"}</Button></div>
     </form>
   );
 };
@@ -3609,7 +3614,7 @@ const ActionModal = ({
           )}
 
           {type === "settle-up" && (group || friend) && (
-            <SettleForm currentUserId={currentUserId} friend={friend} group={group} balances={group ? balances : friendBalances} defaultAmount={(group ? balances : friendBalances).find((balance) => balance.fromUserId === currentUserId || balance.toUserId === currentUserId)?.amount || 0} onSubmit={saveSettlement} onCancel={onClose} />
+            <SettleForm group={group} balances={group ? balances : friendBalances} onSubmit={saveSettlement} onCancel={onClose} />
           )}
 
           {type === "delete-expense" && <ConfirmBox title="Delete expense?" text="This will update balances for everyone involved." action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
