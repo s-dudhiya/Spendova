@@ -115,6 +115,7 @@ All colors MUST be HSL.
 @layer base {
   * {
     @apply border-border;
+    box-sizing: border-box;
   }
 
   html,
@@ -182,18 +183,17 @@ All colors MUST be HSL.
   }
 
   .spendova-modal-body {
-    padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+    padding: 0.25rem 0.625rem max(0.375rem, env(safe-area-inset-bottom)) 0.25rem;
+    scrollbar-gutter: stable;
     -webkit-overflow-scrolling: touch;
   }
 
-  .spendova-modal-body > form > :last-child,
-  .spendova-modal-body > div > .flex:last-child {
-    position: sticky;
-    bottom: 0;
-    z-index: 1;
-    margin-bottom: 0;
-    padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
-    background: hsl(var(--card));
+  .spendova-modal-body :is(input, textarea, select) {
+    max-width: 100%;
+  }
+
+  .spendova-modal-body :is(input, textarea, select):focus {
+    --tw-ring-inset: inset;
   }
 
 }

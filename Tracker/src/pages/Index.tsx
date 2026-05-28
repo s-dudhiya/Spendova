@@ -510,7 +510,7 @@ const FilterSheet = ({ open, onOpenChange, title, onClear, children }: { open: b
 const FilterField = ({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) => (
   <label className="block text-sm font-semibold text-foreground">
     {label}
-    <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-medium">
+    <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-inset focus:ring-ring">
       {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
     </select>
   </label>
@@ -575,7 +575,7 @@ const Field = ({
 }) => (
   <label className="block text-sm font-semibold text-foreground">
     {label}
-    <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-ring" placeholder={placeholder} />
+    <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder={placeholder} />
     {hint ? <span className="mt-1 block text-xs font-medium text-muted-foreground">{hint}</span> : null}
   </label>
 );
@@ -583,7 +583,7 @@ const Field = ({
 const Textarea = ({ label, placeholder, value, onChange }: { label: string; placeholder?: string; value: string; onChange: (value: string) => void }) => (
   <label className="block text-sm font-semibold text-foreground">
     {label}
-    <textarea value={value} onChange={(event) => onChange(event.target.value)} rows={2} className="mt-2 w-full resize-none rounded-2xl border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-ring" placeholder={placeholder} />
+    <textarea value={value} onChange={(event) => onChange(event.target.value)} rows={2} className="mt-2 w-full resize-none rounded-2xl border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder={placeholder} />
   </label>
 );
 
@@ -2423,7 +2423,7 @@ const TiffinView = ({ expenses, openModal }: { expenses: ExpenseRow[]; openModal
       <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
         <p className="mb-2 text-sm font-semibold text-foreground">Quick add</p>
         <div className="flex gap-2">
-          <input readOnly className="min-w-0 flex-1 rounded-full border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring" placeholder={`Add ${category} amount`} />
+          <input readOnly className="min-w-0 flex-1 rounded-full border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder={`Add ${category} amount`} />
           <Button onClick={() => openModal("log-tiffin", category)} size="icon" className="shadow-primary-action"><Plus /></Button>
         </div>
       </section>
@@ -2712,7 +2712,7 @@ const FeedbackForm = ({ userId, onSubmit, onCancel }: { userId: string; onSubmit
       <Field label="Title" value={title} onChange={setTitle} placeholder="Short summary" />
       <label className="block text-sm font-semibold text-foreground">
         Description
-        <textarea value={description} onChange={(event) => setDescription(event.target.value.slice(0, 2000))} rows={5} className="mt-2 w-full resize-none rounded-2xl border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-ring" placeholder="Tell us what happened or what you would like to see." />
+        <textarea value={description} onChange={(event) => setDescription(event.target.value.slice(0, 2000))} rows={5} className="mt-2 w-full resize-none rounded-2xl border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder="Tell us what happened or what you would like to see." />
         <span className="mt-1 block text-right text-xs font-medium text-muted-foreground">{description.length}/2000</span>
       </label>
       <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-dashed border-border bg-elevated p-4 text-sm font-semibold text-foreground">
@@ -2857,7 +2857,7 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
           </div>
           <div>
             <p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Who paid</p>
-            <select value={payer} onChange={(event) => setPayer(event.target.value)} className="w-full rounded-full border border-input bg-background px-4 py-3 text-sm">
+            <select value={payer} onChange={(event) => setPayer(event.target.value)} className="w-full rounded-full border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring">
               {selectedMembers.map((member) => <option key={member.user_id} value={member.user_id}>{member.name}</option>)}
             </select>
           </div>
@@ -2875,7 +2875,7 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
               {selectedMembers.map((member) => (
                 <label key={member.user_id} className="flex items-center gap-2 text-xs font-semibold text-foreground">
                   <span className="w-20 truncate">{member.name}</span>
-                  <input type="number" value={splitValues[member.user_id] || ""} onChange={(event) => setSplitValues({ ...splitValues, [member.user_id]: event.target.value })} className="flex-1 rounded-full border border-input bg-background px-3 py-2 text-sm" placeholder={strategy === "percentage" ? "0%" : "0"} />
+                  <input type="number" value={splitValues[member.user_id] || ""} onChange={(event) => setSplitValues({ ...splitValues, [member.user_id]: event.target.value })} className="flex-1 rounded-full border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder={strategy === "percentage" ? "0%" : "0"} />
                 </label>
               ))}
             </div>
@@ -3563,7 +3563,7 @@ const ActionModal = ({
           <DialogDescription>{type === "notifications" ? "Pending settlements, invites, and recent activity." : type === "feedback-support" ? "Send feedback, bugs, or suggestions." : type === "saved" ? `${modal.item ?? "Action"} saved.` : "Complete the fields below."}</DialogDescription>
         </DialogHeader>
 
-        <div className="spendova-modal-body min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div className="spendova-modal-body min-h-0 overflow-y-auto overflow-x-visible overscroll-contain">
           {(type === "add-expense" || type === "group-expense" || type === "edit-expense") && (
             <ExpenseForm userId={currentUserId} friends={data.friends} friend={type === "add-expense" ? friend : undefined} group={type === "group-expense" ? group : undefined} expense={type === "edit-expense" ? expense : undefined} onSubmit={saveExpense} onCancel={onClose} />
           )}
