@@ -1798,6 +1798,8 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
                 const impactClass = item.impact > 0 ? "text-success" : item.impact < 0 ? "text-destructive" : "text-muted-foreground";
                 const statusLabel = item.status === "paid" ? "Paid" : item.status === "partial" ? "Partial" : "Pending";
                 const statusClass = item.status === "paid" ? "bg-success/15 text-success" : item.status === "partial" ? "bg-primary/10 text-primary" : "bg-warning/15 text-warning";
+                const iconBgClass = item.kind === "settlement" ? "bg-success/15" : item.impact < 0 ? "bg-warning/15" : "bg-primary/10";
+                const iconTextClass = item.kind === "settlement" ? "text-success" : item.impact < 0 ? "text-warning" : "text-primary";
                 return (
                   <div
                     key={`${item.kind}-${item.id}`}
@@ -1808,8 +1810,9 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
                     onKeyDown={(event) => handleActivityKeyDown(event, item)}
                     className={`relative flex w-full cursor-pointer items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-elevated/70 active:bg-elevated ${index < activity.length - 1 ? "border-b border-border/60" : ""}`}
                   >
-                    <span className={`z-10 grid size-10 shrink-0 place-items-center rounded-full ${item.kind === "settlement" ? "bg-success/15 text-success" : item.impact < 0 ? "bg-warning/15 text-warning" : "bg-primary/10 text-primary"}`}>
-                      <Icon className="size-4" />
+                    <span className={`relative z-10 grid size-10 shrink-0 place-items-center rounded-full bg-card ${iconTextClass}`}>
+                      <span className={`absolute inset-0 rounded-full ${iconBgClass}`} />
+                      <Icon className="relative size-4" />
                     </span>
                     <div className="min-w-0 flex-1">
                       <h3 className="truncate text-sm font-bold text-foreground">{item.title}</h3>
@@ -2749,8 +2752,9 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
   const [date, setDate] = useState(expense?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
   const [amount, setAmount] = useState(expense ? String(expense.amount) : "");
   const [note, setNote] = useState(expense?.note || "");
-  const [status, setStatus] = useState<"pending" | "cleared">(expense?.status === "cleared" ? "cleared" : "pending");
-  const [splitOn, setSplitOn] = useState(Boolean(group || friend || expense?.expense_splits?.length));
+  const initialSplitOn = Boolean(group || friend || expense?.expense_splits?.length);
+  const [status, setStatus] = useState<"pending" | "cleared">(initialSplitOn ? "cleared" : expense?.status === "cleared" ? "cleared" : "pending");
+  const [splitOn, setSplitOn] = useState(initialSplitOn);
   const [strategy, setStrategy] = useState<SplitStrategy>((expense?.split_type as SplitStrategy) || "equal");
   const [participants, setParticipants] = useState<string[]>(group || friend ? members.map((member) => member.user_id) : [userId]);
   const [payer, setPayer] = useState(expense?.paid_by || userId);
@@ -2765,6 +2769,13 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
 
   const toggleParticipant = (id: string) => {
     setParticipants((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
+  };
+  const toggleSplit = () => {
+    setSplitOn((value) => {
+      const next = !value;
+      setStatus(next ? "cleared" : "pending");
+      return next;
+    });
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -2803,7 +2814,7 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
           category: name.trim(),
           amount: parsedAmount,
           note: note.trim() || null,
-          status,
+          status: splitOn ? "cleared" : status,
           split_type: splitOn ? strategy : "none",
           group_id: group?.id || expense?.group_id || null,
           created_at: new Date(date).toISOString(),
@@ -2820,26 +2831,15 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
       <Field label="Expense name" placeholder="Dinner, groceries..." value={name} onChange={setName} />
       <Field label="Date" type="date" value={date} onChange={setDate} />
       <Field label="Amount" type="number" placeholder="0" value={amount} onChange={setAmount} />
-      <Textarea label="Note (optional)" placeholder="Add a note" value={note} onChange={setNote} />
       {isEdit && hasSettlementState ? (
         <div className="rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs font-semibold text-warning">
           This expense has settlements. Editing split details is blocked until those settlements are reversed.
         </div>
       ) : null}
-      {isEdit && (
-        <div>
-          <p className="mb-2 text-sm font-semibold text-foreground">Status</p>
-          <div className="flex gap-1 rounded-full bg-elevated p-1">
-            {(["pending", "cleared"] as const).map((item) => (
-              <button key={item} type="button" onClick={() => setStatus(item)} className={`flex-1 rounded-full px-3 py-2 text-xs font-bold capitalize ${status === item ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{item}</button>
-            ))}
-          </div>
-        </div>
-      )}
       {!group && !friend && (
         <label className="flex items-center justify-between rounded-2xl bg-elevated p-4 text-sm font-semibold text-foreground">
           <span>Split with friends</span>
-          <button type="button" onClick={() => setSplitOn((value) => !value)} className={`relative h-6 w-11 rounded-full transition-colors ${splitOn ? "bg-primary" : "bg-muted"}`}>
+          <button type="button" onClick={toggleSplit} className={`relative h-6 w-11 rounded-full transition-colors ${splitOn ? "bg-primary" : "bg-muted"}`}>
             <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all ${splitOn ? "left-5" : "left-0.5"}`} />
           </button>
         </label>
@@ -2882,6 +2882,14 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
           )}
         </div>
       )}
+      <label className={`flex items-start justify-between gap-3 rounded-2xl p-4 text-sm font-semibold text-foreground ${splitOn ? "border border-primary/15 bg-primary/5" : "bg-elevated"}`}>
+        <span>
+          <span className="block">Mark as cleared</span>
+          <span className="mt-1 block text-xs font-medium text-muted-foreground">{splitOn ? "Split expenses are cleared through the settlement flow." : "Unchecked expenses remain pending."}</span>
+        </span>
+        <input type="checkbox" checked={splitOn || status === "cleared"} disabled={splitOn} onChange={(event) => setStatus(event.target.checked ? "cleared" : "pending")} className="mt-1 size-4 shrink-0 accent-primary disabled:cursor-default" />
+      </label>
+      <Textarea label="Note (optional)" placeholder="Add a note" value={note} onChange={setNote} />
       <div className="flex gap-2 pt-2">
         <Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button>
         <Button type="submit" className="flex-1" disabled={submitting}>{submitting ? "Saving..." : isEdit ? "Save" : "Add"}</Button>
