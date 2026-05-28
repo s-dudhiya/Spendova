@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { getFriendlyErrorMessage } from "@/lib/friendly-error";
+import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-error";
 import { safeStorage } from "@/lib/startup-safety";
 
 const AUTH_BRAND_IMAGE = "/brand/login-branding-image.png";
@@ -16,6 +16,7 @@ const SIGNUP_PASSWORD_KEY = "spendova_pending_signup_password";
 const OTP_LENGTH = 6;
 const OTP_TTL_SECONDS = 10 * 60;
 const RESEND_SECONDS = 60;
+const MIN_PASSWORD_LENGTH = 6;
 
 type OtpPurpose = "signup_verify" | "reset_password";
 
@@ -162,7 +163,15 @@ export default function VerifyOtp() {
     event.preventDefault();
     setFormError("");
     if (newPassword !== confirmPassword) {
-      setFormError("Passwords do not match.");
+      const message = getFriendlyErrorMessage("passwords do not match", "password_reset");
+      setFormError(message);
+      toast({ title: getFriendlyErrorTitle(message, "password_reset"), description: message, variant: "destructive" });
+      return;
+    }
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      const message = getFriendlyErrorMessage("weak password", "password_reset");
+      setFormError(message);
+      toast({ title: getFriendlyErrorTitle(message, "password_reset"), description: message, variant: "destructive" });
       return;
     }
     setSubmitting(true);
@@ -175,7 +184,7 @@ export default function VerifyOtp() {
       console.error("OTP password reset failed", error);
       const message = getFriendlyErrorMessage(error, "password_reset");
       setFormError(message);
-      toast({ title: "Password update failed", description: message, variant: "destructive" });
+      toast({ title: getFriendlyErrorTitle(error, "password_reset"), description: message, variant: "destructive" });
     } finally {
       setSubmitting(false);
     }

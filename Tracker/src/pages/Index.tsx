@@ -60,7 +60,7 @@ import { useToast } from "@/hooks/use-toast";
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
 import { canUsePlatformBiometrics, disableBiometricLock, enableBiometricLock, isBiometricLockEnabled } from "@/lib/biometric-lock";
 import { getDeviceId, listDeviceSessions, type DeviceSession } from "@/lib/device-session";
-import { getFriendlyErrorMessage } from "@/lib/friendly-error";
+import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-error";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 
 type TabKey = "home" | "split" | "personal" | "tiffin";
@@ -3207,7 +3207,7 @@ const ActionModal = ({
         screenshotPath = path;
       }
 
-      const { error } = await supabase.from("feedback_reports" as never).insert({
+      const { data: createdReport, error } = await supabase.from("feedback_reports" as never).insert({
         user_id: currentUserId,
         type: payload.type,
         title: payload.title,
@@ -3217,8 +3217,15 @@ const ActionModal = ({
         status: "open",
         device_info: getDeviceInfo(),
         app_version: APP_VERSION,
-      } as never);
+      } as never).select("id").single();
       if (error) throw error;
+      if ((createdReport as { id?: string } | null)?.id) {
+        void supabase.functions.invoke("feedback-ticket-email", {
+          body: { mode: "created", reportId: (createdReport as { id: string }).id },
+        }).then(({ error: emailError }) => {
+          if (emailError) console.warn("Could not send feedback admin email", emailError);
+        });
+      }
       toast({ title: "Thank you!", description: "Your feedback has been sent." });
       onClose();
     } catch (error) {
@@ -3603,7 +3610,7 @@ const ActionModal = ({
           )}
 
           {type === "invite-members" && group && <InviteMembers group={group} invites={data.groupInvites[group.id] || []} currentUserId={currentUserId} onInvite={sendInvite} onAddByUsername={addMemberByUsername} />}
-          {type === "add-friend" && <AddFriendForm currentUserId={currentUserId} friends={data.friends} requests={[...data.incomingRequests, ...data.outgoingRequests]} onRequest={async (receiverId) => { if (receiverId === currentUserId) { toast({ title: "Request failed", description: "You cannot send a friend request to yourself.", variant: "destructive" }); return; } const { data: connection, error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: receiverId, status: "pending" }).select("id").single(); if (error) toast({ title: "Request failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); else { notifySharedAction({ type: "friend_request_received", recipients: [receiverId], title: "New friend request", message: `${actorName} sent you a friend request.`, entity_type: "connection", entity_id: connection?.id || null }); await closeAndRefresh(); } }} onCancel={onClose} />}
+          {type === "add-friend" && <AddFriendForm currentUserId={currentUserId} friends={data.friends} requests={[...data.incomingRequests, ...data.outgoingRequests]} onRequest={async (receiverId) => { if (receiverId === currentUserId) { toast({ title: "Cannot add yourself", description: "Choose another Spendova user to send a friend request.", variant: "destructive" }); return; } const { data: connection, error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: receiverId, status: "pending" }).select("id").single(); if (error) toast({ title: getFriendlyErrorTitle(error, "friend"), description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); else { notifySharedAction({ type: "friend_request_received", recipients: [receiverId], title: "New friend request", message: `${actorName} sent you a friend request.`, entity_type: "connection", entity_id: connection?.id || null }); await closeAndRefresh(); } }} onCancel={onClose} />}
 
           {type === "friend-requests" && (
           <div className="space-y-4">

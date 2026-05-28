@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Eye, Lock, LogOut, Mail, MessageSquare, Paperclip, Send, Settings, Trash2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Eye, FileText, History, Inbox, Lock, LogOut, Mail, MessageSquare, Paperclip, Search, Send, Settings, Trash2, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,9 +27,21 @@ type FeedbackReport = {
   device_info: Record<string, any>;
   app_version: string;
   admin_notes: string | null;
+  internal_notes: string | null;
+  user_update_message: string | null;
   created_at: string;
   updated_at: string;
   profiles?: { user_id: string; full_name: string | null; username: string | null } | null;
+};
+
+type FeedbackEvent = {
+  id: string;
+  report_id: string;
+  event_type: "created" | "status_changed" | "priority_changed" | "admin_replied" | "note_updated";
+  status: FeedbackReport["status"] | null;
+  priority: FeedbackReport["priority"] | null;
+  message: string | null;
+  created_at: string;
 };
 
 const feedbackTypes = [
@@ -47,6 +59,16 @@ const feedbackTypeLabel = (type: FeedbackReport["type"]) => feedbackTypes.find((
 const feedbackStatusLabel = (status: FeedbackReport["status"]) => status.charAt(0).toUpperCase() + status.slice(1);
 const feedbackPriorityLabel = (priority: FeedbackReport["priority"]) => priority.charAt(0).toUpperCase() + priority.slice(1);
 const reportUserName = (report?: FeedbackReport | null) => report?.profiles?.full_name || report?.profiles?.username || "Spendova user";
+const editableNoteValue = (value?: string | null) => !value || value.trim().toUpperCase() === "N/A" ? "" : value;
+const badgeTone = (value: string) => value === "critical" ? "border-destructive/30 bg-destructive/10 text-destructive" : value === "resolved" || value === "closed" ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : value === "investigating" || value === "high" ? "border-primary/25 bg-primary/10 text-primary" : "border-border bg-elevated text-muted-foreground";
+const formatAdminDate = (date: string) => new Date(date).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+const eventLabel = (event: FeedbackEvent) => {
+  if (event.event_type === "created") return "Ticket created";
+  if (event.event_type === "status_changed") return `Status changed to ${event.status ? feedbackStatusLabel(event.status) : "updated"}`;
+  if (event.event_type === "priority_changed") return `Priority changed to ${event.priority ? feedbackPriorityLabel(event.priority) : "updated"}`;
+  if (event.event_type === "admin_replied") return "Admin replied";
+  return "Internal notes updated";
+};
 
 const AdminLogin = () => {
   const [email, setEmail] = useState("");
@@ -183,28 +205,36 @@ const AdminDashboard = () => {
   const [message, setMessage] = useState("");
   const [recipientMode, setRecipientMode] = useState<"single" | "all">("single");
   const [targetEmail, setTargetEmail] = useState("");
+  const [testEmail, setTestEmail] = useState("");
   const [attachments, setAttachments] = useState<Array<{ name: string; data: string; size: number }>>([]);
-  const [isSending, setIsSending] = useState(false);
+  const [sendingMode, setSendingMode] = useState<"" | "test" | "broadcast">("");
+  const [readingFiles, setReadingFiles] = useState(0);
+  const [showPreview, setShowPreview] = useState(false);
   const [isMaintenance, setIsMaintenance] = useState(false);
   const [fetchingMaintenance, setFetchingMaintenance] = useState(false);
-  const [readingFiles, setReadingFiles] = useState(0);
   const [feedbackReports, setFeedbackReports] = useState<FeedbackReport[]>([]);
+  const [feedbackEvents, setFeedbackEvents] = useState<Record<string, FeedbackEvent[]>>({});
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [screenshotPreviewUrl, setScreenshotPreviewUrl] = useState("");
-  const [feedbackFilters, setFeedbackFilters] = useState({ type: "all", status: "all", priority: "all", date: "" });
+  const [feedbackFilters, setFeedbackFilters] = useState({ type: "all", status: "all", priority: "all", date: "", search: "" });
   const [savingReport, setSavingReport] = useState(false);
+  const [ticketDraft, setTicketDraft] = useState({ status: "open" as FeedbackReport["status"], priority: "medium" as FeedbackReport["priority"], internalNotes: "", userMessage: "" });
   const { toast } = useToast();
   const { signOut } = useAuth();
   const navigate = useNavigate();
+
   const selectedReport = feedbackReports.find((report) => report.id === selectedReportId) || feedbackReports[0] || null;
+  const selectedEvents = selectedReport ? feedbackEvents[selectedReport.id] || [] : [];
 
   const filteredReports = useMemo(() => feedbackReports.filter((report) => {
-    const dateMatches = !feedbackFilters.date || report.created_at?.startsWith(feedbackFilters.date);
-    return (feedbackFilters.type === "all" || report.type === feedbackFilters.type)
+    const query = feedbackFilters.search.trim().toLowerCase();
+    const searchable = `${report.title} ${report.description} ${reportUserName(report)}`.toLowerCase();
+    return (!query || searchable.includes(query))
+      && (!feedbackFilters.date || report.created_at?.startsWith(feedbackFilters.date))
+      && (feedbackFilters.type === "all" || report.type === feedbackFilters.type)
       && (feedbackFilters.status === "all" || report.status === feedbackFilters.status)
-      && (feedbackFilters.priority === "all" || report.priority === feedbackFilters.priority)
-      && dateMatches;
+      && (feedbackFilters.priority === "all" || report.priority === feedbackFilters.priority);
   }), [feedbackFilters, feedbackReports]);
 
   const feedbackStats = useMemo(() => ({
@@ -225,12 +255,23 @@ const AdminDashboard = () => {
     const channel = supabase
       .channel("admin-feedback-reports")
       .on("postgres_changes", { event: "*", schema: "public", table: "feedback_reports" }, () => void fetchFeedbackReports({ silent: true }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "feedback_report_events" }, () => void fetchFeedbackEvents({ silent: true }))
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!selectedReport) return;
+    setTicketDraft({
+      status: selectedReport.status,
+      priority: selectedReport.priority,
+      internalNotes: editableNoteValue(selectedReport.internal_notes) || editableNoteValue(selectedReport.admin_notes),
+      userMessage: editableNoteValue(selectedReport.user_update_message),
+    });
+  }, [selectedReport?.id, selectedReport?.status, selectedReport?.priority, selectedReport?.internal_notes, selectedReport?.admin_notes, selectedReport?.user_update_message]);
 
   useEffect(() => {
     let active = true;
@@ -260,17 +301,35 @@ const AdminDashboard = () => {
     }
   };
 
+  const fetchFeedbackEvents = async (options?: { silent?: boolean }) => {
+    try {
+      const { data, error } = await supabase
+        .from("feedback_report_events" as never)
+        .select("id,report_id,event_type,status,priority,message,created_at")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const grouped = ((data || []) as unknown as FeedbackEvent[]).reduce<Record<string, FeedbackEvent[]>>((acc, event) => {
+        acc[event.report_id] = [...(acc[event.report_id] || []), event];
+        return acc;
+      }, {});
+      setFeedbackEvents(grouped);
+    } catch (error) {
+      if (!options?.silent) console.warn("Could not fetch feedback event history", error);
+    }
+  };
+
   const fetchFeedbackReports = async (options?: { silent?: boolean }) => {
     if (!options?.silent) setFeedbackLoading(true);
     try {
       const { data, error } = await supabase
         .from("feedback_reports" as never)
-        .select("id,user_id,type,title,description,screenshot_url,priority,status,device_info,app_version,admin_notes,created_at,updated_at,profiles!feedback_reports_user_id_fkey(user_id,full_name,username)")
+        .select("id,user_id,type,title,description,screenshot_url,priority,status,device_info,app_version,admin_notes,internal_notes,user_update_message,created_at,updated_at,profiles!feedback_reports_user_id_fkey(user_id,full_name,username)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       const reports = (data || []) as unknown as FeedbackReport[];
       setFeedbackReports(reports);
       setSelectedReportId((current) => current && reports.some((report) => report.id === current) ? current : reports[0]?.id || null);
+      await fetchFeedbackEvents({ silent: true });
     } catch (error) {
       console.error("Failed to fetch feedback reports", error);
       toast({ title: "Feedback unavailable", description: getFriendlyErrorMessage(error, "feedback"), variant: "destructive" });
@@ -279,14 +338,27 @@ const AdminDashboard = () => {
     }
   };
 
-  const updateFeedbackReport = async (reportId: string, patch: Partial<Pick<FeedbackReport, "status" | "priority" | "admin_notes">>) => {
+  const updateSelectedTicket = async () => {
+    if (!selectedReport) return;
     setSavingReport(true);
     try {
-      const { error } = await supabase.from("feedback_reports" as never).update(patch as never).eq("id", reportId);
+      const { error } = await supabase.from("feedback_reports" as never).update({
+        status: ticketDraft.status,
+        priority: ticketDraft.priority,
+        internal_notes: ticketDraft.internalNotes,
+        user_update_message: ticketDraft.userMessage,
+      } as never).eq("id", selectedReport.id);
       if (error) throw error;
-      toast({ title: "Report updated", description: "Feedback status has been saved." });
+
+      const { error: emailError } = await supabase.functions.invoke("feedback-ticket-email", {
+        body: { mode: "updated", reportId: selectedReport.id, userUpdateMessage: ticketDraft.userMessage },
+      });
+      if (emailError) throw emailError;
+
+      toast({ title: "Ticket updated", description: "Status, priority, notes, and user email were sent." });
       await fetchFeedbackReports({ silent: true });
     } catch (error) {
+      console.error("Ticket update failed", error);
       toast({ title: "Update failed", description: getFriendlyErrorMessage(error, "feedback"), variant: "destructive" });
     } finally {
       setSavingReport(false);
@@ -317,7 +389,7 @@ const AdminDashboard = () => {
       const { error } = await supabase.from("site_settings").update({ is_maintenance_mode: checked, updated_at: new Date().toISOString() }).eq("id", 1);
       if (error) throw error;
       toast({ title: "Site state updated", description: `Maintenance mode is now ${checked ? "ON" : "OFF"}.` });
-    } catch (error: any) {
+    } catch (error) {
       console.error("Failed to update maintenance state", error);
       setIsMaintenance(!checked);
       toast({ title: "Update failed", description: getFriendlyErrorMessage(error, "admin"), variant: "destructive" });
@@ -325,15 +397,11 @@ const AdminDashboard = () => {
   };
 
   const handleLogout = () => {
-    setPasswordlessCleanup();
-    signOut().finally(() => navigate("/admin/login", { replace: true }));
-  };
-
-  const setPasswordlessCleanup = () => {
     setSubject("");
     setMessage("");
     setTargetEmail("");
     setAttachments([]);
+    signOut().finally(() => navigate("/admin/login", { replace: true }));
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -344,7 +412,6 @@ const AdminDashboard = () => {
       event.target.value = "";
       return;
     }
-
     files.forEach((file) => {
       setReadingFiles((count) => count + 1);
       const reader = new FileReader();
@@ -352,7 +419,6 @@ const AdminDashboard = () => {
         setReadingFiles((count) => count - 1);
         const data = reader.result as string;
         if (data) setAttachments((current) => [...current, { name: file.name, data, size: file.size }]);
-        else toast({ title: "Read error", description: `Could not read ${file.name}.`, variant: "destructive" });
       };
       reader.onerror = () => {
         setReadingFiles((count) => count - 1);
@@ -360,270 +426,323 @@ const AdminDashboard = () => {
       };
       reader.readAsDataURL(file);
     });
-
     event.target.value = "";
   };
 
-  const removeAttachment = (indexToRemove: number) => {
-    setAttachments((current) => current.filter((_, index) => index !== indexToRemove));
-  };
+  const removeAttachment = (indexToRemove: number) => setAttachments((current) => current.filter((_, index) => index !== indexToRemove));
 
-  const handleSendBroadcast = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const sendAdminMail = async (mode: "test" | "broadcast") => {
     if (!subject.trim() || !message.trim()) {
       toast({ title: "Required fields", description: "Please provide both a subject and a message.", variant: "destructive" });
       return;
     }
-    if (recipientMode === "single" && !targetEmail.trim()) {
-      toast({ title: "Recipient required", description: "Enter the email address you want to test with.", variant: "destructive" });
+    const email = mode === "test" ? testEmail.trim() : targetEmail.trim();
+    if ((mode === "test" || recipientMode === "single") && !email) {
+      toast({ title: "Recipient required", description: "Enter an email address before sending.", variant: "destructive" });
       return;
     }
-
-    setIsSending(true);
+    setSendingMode(mode);
     try {
-      const { error } = await supabase.functions.invoke("send-admin-mail", {
+      const { data, error } = await supabase.functions.invoke("send-admin-mail", {
         body: {
           subject,
           htmlBody: message,
           attachments,
-          recipientMode,
-          targetEmail: recipientMode === "single" ? targetEmail.trim().toLowerCase() : undefined,
-          sendToAll: recipientMode === "all",
+          recipientMode: mode === "test" || recipientMode === "single" ? "single" : "all",
+          targetEmail: mode === "test" ? testEmail.trim().toLowerCase() : recipientMode === "single" ? targetEmail.trim().toLowerCase() : undefined,
+          sendToAll: mode === "broadcast" && recipientMode === "all",
         },
       });
       if (error) throw error;
-      toast({ title: recipientMode === "single" ? "Email sent" : "Broadcast sent", description: "The email was successfully dispatched." });
-      setSubject("");
-      setMessage("");
-      setAttachments([]);
-    } catch (error: any) {
+      toast({ title: mode === "test" ? "Test email sent" : "Email sent", description: data?.recipientCount ? `Delivered to ${data.recipientCount} recipient${data.recipientCount === 1 ? "" : "s"}.` : "The email was dispatched." });
+      if (mode === "broadcast") {
+        setSubject("");
+        setMessage("");
+        setAttachments([]);
+      }
+    } catch (error) {
       console.error("Broadcast error", error);
-      toast({ title: "Broadcast failed", description: getFriendlyErrorMessage(error, "admin"), variant: "destructive" });
+      toast({ title: "Email failed", description: getFriendlyErrorMessage(error, "admin"), variant: "destructive" });
     } finally {
-      setIsSending(false);
+      setSendingMode("");
     }
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 text-foreground md:p-8">
-      <div className="mx-auto max-w-6xl space-y-8">
-        <div className="mb-8 flex items-center justify-between">
+    <div className="min-h-screen bg-background px-4 py-5 text-foreground sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl space-y-5">
+        <header className="flex flex-col gap-4 rounded-[1.25rem] border border-primary/15 bg-card px-5 py-4 shadow-panel sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid size-11 place-items-center rounded-2xl bg-primary/10 text-primary">
+            <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
               <Mail className="size-5" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Spendova Admin Portal</h1>
-              <p className="text-sm text-muted-foreground">Broadcast messages and manage global app state.</p>
+              <h1 className="text-xl font-bold text-foreground sm:text-2xl">Spendova Admin Portal</h1>
+              <p className="text-sm text-muted-foreground">Support operations, global controls, and user communications.</p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={handleLogout} className="text-destructive hover:bg-destructive/10 hover:text-destructive">
+          <Button variant="outline" size="sm" onClick={handleLogout} className="self-start text-destructive hover:bg-destructive/10 hover:text-destructive sm:self-auto">
             <LogOut className="mr-2 size-4" /> Log Out
           </Button>
-        </div>
+        </header>
 
-        <Card className="rounded-[1.25rem] border-primary/20 bg-card shadow-panel">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-foreground">
-              <MessageSquare className="size-5 text-primary" />
-              Feedback / Issues
-            </CardTitle>
-            <CardDescription>Review user feedback, bug reports, and support tickets.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-              {[
-                ["Total Reports", feedbackStats.total],
-                ["Open", feedbackStats.open],
-                ["Investigating", feedbackStats.investigating],
-                ["Resolved", feedbackStats.resolved],
-                ["Critical", feedbackStats.critical],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-2xl bg-elevated p-3 shadow-soft">
-                  <p className="text-xs font-semibold text-muted-foreground">{label}</p>
-                  <p className="mt-1 text-2xl font-bold text-foreground">{value}</p>
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.85fr)]">
+          <Card className="rounded-[1.25rem] border-primary/20 bg-card shadow-panel">
+            <CardHeader className="space-y-4 pb-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-foreground">
+                    <MessageSquare className="size-5 text-primary" /> Feedback / Issues
+                  </CardTitle>
+                  <CardDescription>Review, prioritize, respond, and track user tickets.</CardDescription>
                 </div>
-              ))}
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-4">
-              <select value={feedbackFilters.type} onChange={(event) => setFeedbackFilters((current) => ({ ...current, type: event.target.value }))} className="h-11 rounded-2xl border border-input bg-background px-3 text-sm text-foreground">
-                {feedbackTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-              <select value={feedbackFilters.status} onChange={(event) => setFeedbackFilters((current) => ({ ...current, status: event.target.value }))} className="h-11 rounded-2xl border border-input bg-background px-3 text-sm text-foreground">
-                {feedbackStatuses.map((status) => <option key={status} value={status}>{status === "all" ? "All statuses" : feedbackStatusLabel(status as FeedbackReport["status"])}</option>)}
-              </select>
-              <select value={feedbackFilters.priority} onChange={(event) => setFeedbackFilters((current) => ({ ...current, priority: event.target.value }))} className="h-11 rounded-2xl border border-input bg-background px-3 text-sm text-foreground">
-                {feedbackPriorities.map((priority) => <option key={priority} value={priority}>{priority === "all" ? "All priorities" : feedbackPriorityLabel(priority as FeedbackReport["priority"])}</option>)}
-              </select>
-              <Input type="date" value={feedbackFilters.date} onChange={(event) => setFeedbackFilters((current) => ({ ...current, date: event.target.value }))} className="h-11 rounded-2xl" />
-            </div>
-
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
-              <div className="overflow-hidden rounded-2xl border border-border bg-elevated">
-                <div className="grid grid-cols-[0.8fr_1.3fr_0.9fr_0.8fr_0.8fr_0.9fr_44px] gap-2 border-b border-border px-4 py-3 text-xs font-bold uppercase text-muted-foreground max-md:hidden">
-                  <span>Type</span><span>Title</span><span>User</span><span>Priority</span><span>Status</span><span>Created</span><span />
-                </div>
-                <div className="max-h-[460px] overflow-y-auto">
-                  {feedbackLoading ? (
-                    <div className="p-5 text-sm font-medium text-muted-foreground">Loading feedback...</div>
-                  ) : filteredReports.length === 0 ? (
-                    <div className="p-5 text-sm font-medium text-muted-foreground">No feedback reports yet.</div>
-                  ) : filteredReports.map((report) => (
-                    <button key={report.id} type="button" onClick={() => setSelectedReportId(report.id)} className={`grid w-full gap-2 border-b border-border/70 px-4 py-3 text-left text-sm transition-colors md:grid-cols-[0.8fr_1.3fr_0.9fr_0.8fr_0.8fr_0.9fr_44px] ${selectedReport?.id === report.id ? "bg-primary/10" : "hover:bg-card"}`}>
-                      <span className="font-semibold text-foreground">{feedbackTypeLabel(report.type)}</span>
-                      <span className="min-w-0 truncate font-bold text-foreground">{report.title}</span>
-                      <span className="truncate text-muted-foreground">{reportUserName(report)}</span>
-                      <span className={report.priority === "critical" ? "font-bold text-destructive" : "text-muted-foreground"}>{feedbackPriorityLabel(report.priority)}</span>
-                      <span className="text-muted-foreground">{feedbackStatusLabel(report.status)}</span>
-                      <span className="text-muted-foreground">{new Date(report.created_at).toLocaleDateString("en-IN")}</span>
-                      <Eye className="size-4 text-primary max-md:hidden" />
-                    </button>
-                  ))}
-                </div>
+                <Button type="button" variant="outline" size="sm" onClick={() => fetchFeedbackReports()} disabled={feedbackLoading}>Refresh</Button>
               </div>
-
-              <div className="rounded-2xl border border-border bg-elevated p-4 shadow-soft">
-                {selectedReport ? (
-                  <div className="space-y-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold uppercase text-muted-foreground">{feedbackTypeLabel(selectedReport.type)}</p>
-                        <h3 className="mt-1 truncate text-lg font-bold text-foreground">{selectedReport.title}</h3>
-                        <p className="mt-1 text-sm text-muted-foreground">{reportUserName(selectedReport)} · {new Date(selectedReport.created_at).toLocaleString("en-IN")}</p>
-                      </div>
-                      {selectedReport.priority === "critical" ? <AlertTriangle className="size-5 shrink-0 text-destructive" /> : null}
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                {[
+                  ["Total", feedbackStats.total, Inbox],
+                  ["Open", feedbackStats.open, Clock],
+                  ["Investigating", feedbackStats.investigating, Search],
+                  ["Resolved", feedbackStats.resolved, CheckCircle2],
+                  ["Critical", feedbackStats.critical, AlertTriangle],
+                ].map(([label, value, Icon]) => (
+                  <div key={String(label)} className="rounded-2xl border border-border bg-elevated p-3 shadow-soft">
+                    <div className="flex items-center justify-between gap-2 text-xs font-semibold text-muted-foreground">
+                      <span>{String(label)}</span>
+                      <Icon className="size-4 text-primary" />
                     </div>
-                    <p className="rounded-2xl bg-card p-3 text-sm leading-6 text-foreground">{selectedReport.description}</p>
-                    {screenshotPreviewUrl ? <img src={screenshotPreviewUrl} alt="Feedback screenshot" className="max-h-72 w-full rounded-2xl border border-border object-contain bg-background" /> : null}
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Status</Label>
-                        <select value={selectedReport.status} onChange={(event) => updateFeedbackReport(selectedReport.id, { status: event.target.value as FeedbackReport["status"] })} disabled={savingReport} className="h-11 w-full rounded-2xl border border-input bg-background px-3 text-sm text-foreground">
-                          {feedbackStatuses.filter((status) => status !== "all").map((status) => <option key={status} value={status}>{feedbackStatusLabel(status as FeedbackReport["status"])}</option>)}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Priority</Label>
-                        <select value={selectedReport.priority} onChange={(event) => updateFeedbackReport(selectedReport.id, { priority: event.target.value as FeedbackReport["priority"] })} disabled={savingReport} className="h-11 w-full rounded-2xl border border-input bg-background px-3 text-sm text-foreground">
-                          {feedbackPriorities.filter((priority) => priority !== "all").map((priority) => <option key={priority} value={priority}>{feedbackPriorityLabel(priority as FeedbackReport["priority"])}</option>)}
-                        </select>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Internal admin notes</Label>
-                      <Textarea value={selectedReport.admin_notes || ""} onChange={(event) => {
-                        const value = event.target.value;
-                        setFeedbackReports((current) => current.map((report) => report.id === selectedReport.id ? { ...report, admin_notes: value } : report));
-                      }} className="min-h-24 text-sm" placeholder="Private notes for the admin team." />
-                      <Button type="button" variant="outline" disabled={savingReport} onClick={() => updateFeedbackReport(selectedReport.id, { admin_notes: selectedReport.admin_notes || "" })}>Save notes</Button>
-                    </div>
-                    <div className="rounded-2xl bg-card p-3 text-xs text-muted-foreground">
-                      <p>App v{selectedReport.app_version}</p>
-                      <p>{selectedReport.device_info?.device_type || "Device"} · {selectedReport.device_info?.os || "OS"} · {selectedReport.device_info?.browser || "Browser"}</p>
-                      <p className="break-all">{selectedReport.device_info?.viewport || ""}</p>
-                    </div>
-                    <Button type="button" variant="destructive" disabled={savingReport} onClick={() => deleteFeedbackReport(selectedReport)} className="w-full">
-                      <Trash2 className="mr-2 size-4" /> Delete ticket
-                    </Button>
+                    <p className="mt-1 text-2xl font-bold text-foreground">{String(value)}</p>
                   </div>
-                ) : (
-                  <p className="text-sm font-medium text-muted-foreground">Select a report to view details.</p>
-                )}
+                ))}
               </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-8 md:grid-cols-2">
-          <Card className="h-fit rounded-[1.25rem] border-primary/20 bg-card shadow-panel">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-foreground">
-                <Settings className="size-5 text-primary" />
-                Site Controls
-              </CardTitle>
-              <CardDescription>Manage global application state.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between rounded-2xl border border-border bg-elevated p-4 shadow-soft">
-                <div className="space-y-0.5">
-                  <Label className="text-base font-semibold">Maintenance Mode</Label>
-                  <p className="text-sm text-muted-foreground">Redirect all users to the maintenance page.</p>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 lg:grid-cols-[minmax(180px,1.2fr)_repeat(4,minmax(120px,1fr))]">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input value={feedbackFilters.search} onChange={(event) => setFeedbackFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Search tickets" className="h-11 rounded-2xl pl-9 focus-visible:ring-inset" />
                 </div>
-                <Switch checked={isMaintenance} onCheckedChange={toggleMaintenanceMode} disabled={fetchingMaintenance} className="data-[state=checked]:bg-destructive" />
+                <select value={feedbackFilters.type} onChange={(event) => setFeedbackFilters((current) => ({ ...current, type: event.target.value }))} className="h-11 rounded-2xl border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35">
+                  {feedbackTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+                <select value={feedbackFilters.status} onChange={(event) => setFeedbackFilters((current) => ({ ...current, status: event.target.value }))} className="h-11 rounded-2xl border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35">
+                  {feedbackStatuses.map((status) => <option key={status} value={status}>{status === "all" ? "All statuses" : feedbackStatusLabel(status as FeedbackReport["status"])}</option>)}
+                </select>
+                <select value={feedbackFilters.priority} onChange={(event) => setFeedbackFilters((current) => ({ ...current, priority: event.target.value }))} className="h-11 rounded-2xl border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35">
+                  {feedbackPriorities.map((priority) => <option key={priority} value={priority}>{priority === "all" ? "All priorities" : feedbackPriorityLabel(priority as FeedbackReport["priority"])}</option>)}
+                </select>
+                <Input type="date" value={feedbackFilters.date} onChange={(event) => setFeedbackFilters((current) => ({ ...current, date: event.target.value }))} className="h-11 rounded-2xl focus-visible:ring-inset" />
+              </div>
+
+              <div className="grid overflow-hidden rounded-2xl border border-border bg-elevated lg:grid-cols-[minmax(280px,0.9fr)_minmax(0,1.25fr)]">
+                <div className="border-b border-border bg-card/45 lg:border-b-0 lg:border-r">
+                  <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                    <p className="text-sm font-bold text-foreground">Tickets</p>
+                    <span className="text-xs font-semibold text-muted-foreground">{filteredReports.length} shown</span>
+                  </div>
+                  <div className="max-h-[620px] overflow-y-auto p-2">
+                    {feedbackLoading ? (
+                      <div className="p-4 text-sm font-medium text-muted-foreground">Loading feedback...</div>
+                    ) : filteredReports.length === 0 ? (
+                      <div className="p-4 text-sm font-medium text-muted-foreground">No feedback reports found.</div>
+                    ) : filteredReports.map((report) => (
+                      <button key={report.id} type="button" onClick={() => setSelectedReportId(report.id)} className={`w-full rounded-2xl border p-3 text-left transition ${selectedReport?.id === report.id ? "border-primary/40 bg-primary/10 shadow-soft" : "border-transparent hover:border-border hover:bg-background"}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-bold text-foreground">{report.title}</p>
+                            <p className="mt-1 truncate text-xs text-muted-foreground">{reportUserName(report)} - {new Date(report.created_at).toLocaleDateString("en-IN")}</p>
+                          </div>
+                          {report.priority === "critical" ? <AlertTriangle className="size-4 shrink-0 text-destructive" /> : <Eye className="size-4 shrink-0 text-primary" />}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          <span className="rounded-full border border-border bg-background px-2 py-1 text-[11px] font-bold text-muted-foreground">{feedbackTypeLabel(report.type)}</span>
+                          <span className={`rounded-full border px-2 py-1 text-[11px] font-bold ${badgeTone(report.priority)}`}>{feedbackPriorityLabel(report.priority)}</span>
+                          <span className={`rounded-full border px-2 py-1 text-[11px] font-bold ${badgeTone(report.status)}`}>{feedbackStatusLabel(report.status)}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="min-w-0 bg-card p-4 sm:p-5">
+                  {selectedReport ? (
+                    <div className="space-y-5">
+                      <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold uppercase text-muted-foreground">{feedbackTypeLabel(selectedReport.type)}</p>
+                          <h2 className="mt-1 text-xl font-bold leading-tight text-foreground">{selectedReport.title}</h2>
+                          <p className="mt-1 text-sm text-muted-foreground">{reportUserName(selectedReport)} - {formatAdminDate(selectedReport.created_at)}</p>
+                        </div>
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${badgeTone(selectedReport.priority)}`}>{feedbackPriorityLabel(selectedReport.priority)}</span>
+                          <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${badgeTone(selectedReport.status)}`}>{feedbackStatusLabel(selectedReport.status)}</span>
+                        </div>
+                      </div>
+
+                      <section className="rounded-2xl border border-border bg-elevated p-4">
+                        <div className="mb-2 flex items-center gap-2 text-sm font-bold text-foreground"><FileText className="size-4 text-primary" /> Description</div>
+                        <p className="whitespace-pre-line text-sm leading-6 text-foreground">{selectedReport.description}</p>
+                        {screenshotPreviewUrl ? <img src={screenshotPreviewUrl} alt="Feedback screenshot" className="mt-4 max-h-72 w-full rounded-2xl border border-border bg-background object-contain" /> : null}
+                      </section>
+
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Status</Label>
+                          <select value={ticketDraft.status} onChange={(event) => setTicketDraft((current) => ({ ...current, status: event.target.value as FeedbackReport["status"] }))} disabled={savingReport} className="h-11 w-full rounded-2xl border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35">
+                            {feedbackStatuses.filter((status) => status !== "all").map((status) => <option key={status} value={status}>{feedbackStatusLabel(status as FeedbackReport["status"])}</option>)}
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Priority</Label>
+                          <select value={ticketDraft.priority} onChange={(event) => setTicketDraft((current) => ({ ...current, priority: event.target.value as FeedbackReport["priority"] }))} disabled={savingReport} className="h-11 w-full rounded-2xl border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35">
+                            {feedbackPriorities.filter((priority) => priority !== "all").map((priority) => <option key={priority} value={priority}>{feedbackPriorityLabel(priority as FeedbackReport["priority"])}</option>)}
+                          </select>
+                        </div>
+                      </div>
+
+                      <section className="grid gap-4 lg:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Internal Notes</Label>
+                          <Textarea value={ticketDraft.internalNotes} onChange={(event) => setTicketDraft((current) => ({ ...current, internalNotes: event.target.value }))} className="min-h-32 text-sm focus-visible:ring-inset" placeholder="Private notes. Never emailed to the user." />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>User Update Message</Label>
+                          <Textarea value={ticketDraft.userMessage} onChange={(event) => setTicketDraft((current) => ({ ...current, userMessage: event.target.value }))} className="min-h-32 text-sm focus-visible:ring-inset" placeholder="Optional message included in the user email." />
+                        </div>
+                      </section>
+
+                      <div className="flex flex-col gap-3 rounded-2xl border border-border bg-elevated p-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="text-sm text-muted-foreground">
+                          <p className="font-semibold text-foreground">Admin communication</p>
+                          <p>Update Ticket saves all fields and emails the user once.</p>
+                        </div>
+                        <Button type="button" onClick={updateSelectedTicket} disabled={savingReport} className="sm:w-auto">{savingReport ? "Updating..." : "Update Ticket"}</Button>
+                      </div>
+
+                      <section className="rounded-2xl border border-border bg-elevated p-4">
+                        <div className="mb-3 flex items-center gap-2 text-sm font-bold text-foreground"><History className="size-4 text-primary" /> Timeline</div>
+                        <div className="space-y-3">
+                          {(selectedEvents.length ? selectedEvents : [{ id: "fallback", event_type: "created", report_id: selectedReport.id, status: selectedReport.status, priority: selectedReport.priority, message: "Ticket created", created_at: selectedReport.created_at } as FeedbackEvent]).map((event) => (
+                            <div key={event.id} className="flex gap-3">
+                              <span className="mt-1 grid size-7 shrink-0 place-items-center rounded-full bg-primary/10 text-primary"><Clock className="size-3.5" /></span>
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-foreground">{eventLabel(event)}</p>
+                                {event.message && event.event_type === "admin_replied" ? <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{event.message}</p> : null}
+                                <p className="mt-0.5 text-xs text-muted-foreground">{formatAdminDate(event.created_at)}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+
+                      <div className="rounded-2xl border border-border bg-elevated p-3 text-xs text-muted-foreground">
+                        <p>App v{selectedReport.app_version}</p>
+                        <p>{selectedReport.device_info?.device_type || "Device"} / {selectedReport.device_info?.os || "OS"} / {selectedReport.device_info?.browser || "Browser"}</p>
+                        <p className="break-all">{selectedReport.device_info?.viewport || ""}</p>
+                      </div>
+                      <Button type="button" variant="destructive" disabled={savingReport} onClick={() => deleteFeedbackReport(selectedReport)} className="w-full">
+                        <Trash2 className="mr-2 size-4" /> Delete ticket
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-sm font-medium text-muted-foreground">Select a report to view details.</p>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="rounded-[1.25rem] border-primary/20 bg-card shadow-panel">
-            <CardHeader>
-              <CardTitle className="text-foreground">Broadcast Email</CardTitle>
-              <CardDescription>Send a test email to one user, or broadcast to every registered Spendova user.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSendBroadcast} className="space-y-6">
-                <div className="space-y-3">
-                  <Label>Recipients</Label>
-                  <div className="grid grid-cols-2 gap-2 rounded-full bg-elevated p-1">
-                    <button type="button" onClick={() => setRecipientMode("single")} className={`rounded-full px-3 py-2 text-sm font-semibold transition-colors ${recipientMode === "single" ? "bg-primary text-primary-foreground shadow-primary-action" : "text-muted-foreground"}`}>Specific user</button>
-                    <button type="button" onClick={() => setRecipientMode("all")} className={`rounded-full px-3 py-2 text-sm font-semibold transition-colors ${recipientMode === "all" ? "bg-primary text-primary-foreground shadow-primary-action" : "text-muted-foreground"}`}>All users</button>
+          <div className="space-y-5">
+            <Card className="rounded-[1.25rem] border-primary/20 bg-card shadow-panel">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-foreground"><Settings className="size-5 text-primary" /> Site Controls</CardTitle>
+                <CardDescription>Manage global application state.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-elevated p-4 shadow-soft">
+                  <div className="space-y-1">
+                    <Label className="text-sm font-bold">Maintenance Mode</Label>
+                    <p className="text-sm leading-5 text-muted-foreground">Temporarily redirect users while maintenance is active.</p>
                   </div>
-                  {recipientMode === "single" && (
-                    <div className="space-y-2">
-                      <Label htmlFor="targetEmail">Test recipient email</Label>
-                      <Input id="targetEmail" type="email" placeholder="user@example.com" value={targetEmail} onChange={(event) => setTargetEmail(event.target.value)} />
-                    </div>
-                  )}
+                  <Switch checked={isMaintenance} onCheckedChange={toggleMaintenanceMode} disabled={fetchingMaintenance} className="data-[state=checked]:bg-destructive" />
                 </div>
+              </CardContent>
+            </Card>
 
-                <div className="space-y-2">
-                  <Label htmlFor="subject">Email Subject</Label>
-                  <Input id="subject" placeholder="e.g. Scheduled Maintenance Notice" value={subject} onChange={(event) => setSubject(event.target.value)} maxLength={100} />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="message">Email Message</Label>
-                  <Textarea id="message" placeholder={"Hi there,\n\nWe will be performing scheduled maintenance on Spendova.\n\nThank you for your patience."} value={message} onChange={(event) => setMessage(event.target.value)} className="min-h-[250px] text-sm" />
-                  <p className="text-xs text-muted-foreground">Spendova will apply the official email layout automatically.</p>
-                </div>
-
+            <Card className="rounded-[1.25rem] border-primary/20 bg-card shadow-panel">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-foreground"><Send className="size-5 text-primary" /> Broadcast Email</CardTitle>
+                <CardDescription>Compose, preview, test, then send announcements.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <div className="space-y-3">
-                  <Label>Attachments (Max 100MB)</Label>
+                  <Label>Recipient Type</Label>
+                  <div className="grid grid-cols-2 gap-1 rounded-2xl bg-elevated p-1">
+                    <button type="button" onClick={() => setRecipientMode("single")} className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${recipientMode === "single" ? "bg-primary text-primary-foreground shadow-primary-action" : "text-muted-foreground hover:bg-background"}`}>Specific user</button>
+                    <button type="button" onClick={() => setRecipientMode("all")} className={`rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${recipientMode === "all" ? "bg-primary text-primary-foreground shadow-primary-action" : "text-muted-foreground hover:bg-background"}`}>All users</button>
+                  </div>
+                </div>
+                {recipientMode === "single" ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="targetEmail">Recipient Email</Label>
+                    <Input id="targetEmail" type="email" placeholder="user@example.com" value={targetEmail} onChange={(event) => setTargetEmail(event.target.value)} className="focus-visible:ring-inset" />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 rounded-2xl border border-border bg-elevated p-3 text-sm text-muted-foreground">
+                    <Users className="size-4 text-primary" /> Sends to every registered Spendova user after testing.
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="testEmail">Test Email</Label>
+                  <Input id="testEmail" type="email" placeholder="admin@example.com" value={testEmail} onChange={(event) => setTestEmail(event.target.value)} className="focus-visible:ring-inset" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="subject">Subject</Label>
+                  <Input id="subject" placeholder="Scheduled maintenance notice" value={subject} onChange={(event) => setSubject(event.target.value)} maxLength={100} className="focus-visible:ring-inset" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="message">Message</Label>
+                  <Textarea id="message" placeholder={"Hi there,\n\nWe will be performing scheduled maintenance on Spendova.\n\nThank you for your patience."} value={message} onChange={(event) => setMessage(event.target.value)} className="min-h-36 text-sm focus-visible:ring-inset" />
+                  <p className="text-xs text-muted-foreground">Spendova applies the official email layout automatically.</p>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label>Attachments</Label>
+                    <span className="text-xs text-muted-foreground">Max 100MB total</span>
+                  </div>
                   <Input type="file" id="file-upload" multiple className="hidden" onChange={handleFileChange} />
-                  <Button type="button" variant="outline" onClick={() => document.getElementById("file-upload")?.click()}>
+                  <Button type="button" variant="outline" className="w-full justify-center" onClick={() => document.getElementById("file-upload")?.click()}>
                     <Paperclip className="mr-2 size-4" /> Select Files
                   </Button>
-
-                  {readingFiles > 0 && (
-                    <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-elevated px-3 py-2 text-xs text-muted-foreground">
-                      <div className="size-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-                      Reading {readingFiles} file{readingFiles > 1 ? "s" : ""}...
-                    </div>
-                  )}
-
-                  {attachments.length > 0 && (
-                    <div className="mt-2 space-y-2">
+                  {readingFiles > 0 ? <div className="rounded-xl border border-border bg-elevated px-3 py-2 text-xs text-muted-foreground">Reading {readingFiles} file{readingFiles > 1 ? "s" : ""}...</div> : null}
+                  {attachments.length > 0 ? (
+                    <div className="space-y-2">
                       {attachments.map((file, index) => (
-                        <div key={`${file.name}-${index}`} className="flex items-center justify-between rounded-md border bg-elevated p-2 text-sm">
-                          <span className="max-w-[200px] truncate">{file.name}</span>
-                          <div className="flex items-center gap-2">
+                        <div key={`${file.name}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-elevated p-2 text-sm">
+                          <span className="min-w-0 truncate">{file.name}</span>
+                          <div className="flex shrink-0 items-center gap-2">
                             <span className="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(1)} MB</span>
-                            <Button type="button" variant="ghost" size="icon" className="size-6 text-destructive hover:bg-destructive/10" onClick={() => removeAttachment(index)}>
-                              <X className="size-3" />
-                            </Button>
+                            <Button type="button" variant="ghost" size="icon" className="size-7 text-destructive hover:bg-destructive/10" onClick={() => removeAttachment(index)}><X className="size-3" /></Button>
                           </div>
                         </div>
                       ))}
                     </div>
-                  )}
+                  ) : null}
                 </div>
-
-                <Button type="submit" disabled={isSending || readingFiles > 0} className="w-full">
-                  {isSending ? "Sending Email..." : <><Send className="mr-2 size-4" /> {recipientMode === "single" ? "Send Test Email" : "Dispatch Email to All Users"}</>}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+                {showPreview ? (
+                  <div className="rounded-2xl border border-border bg-elevated p-4">
+                    <p className="text-sm font-bold text-foreground">{subject || "Email subject"}</p>
+                    <p className="mt-2 whitespace-pre-line text-sm leading-6 text-muted-foreground">{message || "Email message preview"}</p>
+                  </div>
+                ) : null}
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <Button type="button" variant="outline" onClick={() => setShowPreview((current) => !current)}>Preview</Button>
+                  <Button type="button" variant="outline" disabled={Boolean(sendingMode) || readingFiles > 0} onClick={() => sendAdminMail("test")}>{sendingMode === "test" ? "Sending..." : "Send Test"}</Button>
+                  <Button type="button" disabled={Boolean(sendingMode) || readingFiles > 0} onClick={() => sendAdminMail("broadcast")}>{sendingMode === "broadcast" ? "Sending..." : recipientMode === "all" ? "Send Broadcast" : "Send Email"}</Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>

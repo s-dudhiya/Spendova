@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { markFreshLoginUnlocked } from '@/lib/biometric-lock';
 import { checkDeviceSession, registerDeviceSession, revokeCurrentDeviceSession } from '@/lib/device-session';
-import { getFriendlyErrorMessage } from '@/lib/friendly-error';
+import { getFriendlyErrorMessage, getFriendlyErrorTitle } from '@/lib/friendly-error';
 import { bootLog, safeStorage, withTimeout } from '@/lib/startup-safety';
 
 interface Profile {
@@ -266,7 +266,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       console.error("Supabase sign-in error", error);
-      toast({ title: "Sign In Failed", description: getFriendlyErrorMessage(error, "auth"), variant: "destructive" });
+      toast({ title: getFriendlyErrorTitle(error, "auth"), description: getFriendlyErrorMessage(error, "auth"), variant: "destructive" });
       return { error };
     }
 

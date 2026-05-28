@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { getFriendlyErrorMessage } from "@/lib/friendly-error";
+import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-error";
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
 import { safeStorage } from "@/lib/startup-safety";
 
@@ -16,6 +16,8 @@ const AUTH_BRAND_IMAGE_MOBILE = "/brand/login-branding-image-mobile.webp";
 const AUTH_BRAND_IMAGE_TABLET = "/brand/login-branding-image-tablet.webp";
 const AUTH_BRAND_IMAGE_DESKTOP = "/brand/login-branding-image-desktop.webp";
 const SIGNUP_PASSWORD_KEY = "spendova_pending_signup_password";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MIN_PASSWORD_LENGTH = 6;
 
 const getInitialTheme = (): Theme => {
   if (typeof window === "undefined") return "light";
@@ -120,8 +122,22 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
     event.preventDefault();
     setFormError("");
 
+    if (!EMAIL_PATTERN.test(email.trim())) {
+      const message = getFriendlyErrorMessage("invalid email", "auth");
+      setFormError(message);
+      toast({ title: getFriendlyErrorTitle(message, "auth"), description: message, variant: "destructive" });
+      return;
+    }
     if (isRegister && password !== confirmPassword) {
-      setFormError("Passwords do not match.");
+      const message = getFriendlyErrorMessage("passwords do not match", "signup");
+      setFormError(message);
+      toast({ title: getFriendlyErrorTitle(message, "signup"), description: message, variant: "destructive" });
+      return;
+    }
+    if (isRegister && password.length < MIN_PASSWORD_LENGTH) {
+      const message = getFriendlyErrorMessage("weak password", "signup");
+      setFormError(message);
+      toast({ title: getFriendlyErrorTitle(message, "signup"), description: message, variant: "destructive" });
       return;
     }
     if (isRegister && usernameStatus !== "available") {
@@ -157,9 +173,10 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
       navigate(`/verify-otp?${params.toString()}`, { replace: true });
     } catch (error) {
       console.error("OTP auth form error", error);
-      const message = getFriendlyErrorMessage(error, isLogin ? "auth" : isRegister ? "otp_resend" : "password_reset");
+      const context = isLogin ? "auth" : isRegister ? "signup" : "password_reset";
+      const message = getFriendlyErrorMessage(error, context);
       setFormError(message);
-      toast({ title: isLogin ? "Sign in failed" : "Request failed", description: message, variant: "destructive" });
+      toast({ title: getFriendlyErrorTitle(error, context), description: message, variant: "destructive" });
     } finally {
       setSubmitting(false);
     }
