@@ -2882,13 +2882,25 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
           )}
         </div>
       )}
-      <label className={`flex items-start justify-between gap-3 rounded-2xl p-4 text-sm font-semibold text-foreground ${splitOn ? "border border-primary/15 bg-primary/5" : "bg-elevated"}`}>
-        <span>
-          <span className="block">Mark as cleared</span>
-          <span className="mt-1 block text-xs font-medium text-muted-foreground">{splitOn ? "Split expenses are cleared through the settlement flow." : "Unchecked expenses remain pending."}</span>
-        </span>
-        <input type="checkbox" checked={splitOn || status === "cleared"} disabled={splitOn} onChange={(event) => setStatus(event.target.checked ? "cleared" : "pending")} className="mt-1 size-4 shrink-0 accent-primary disabled:cursor-default" />
-      </label>
+      {!splitOn && (
+  <label className="flex items-start justify-between gap-3 rounded-2xl p-4 text-sm font-semibold text-foreground bg-elevated">
+    <span>
+      <span className="block">Mark as cleared</span>
+      <span className="mt-1 block text-xs font-medium text-muted-foreground">
+        Unchecked expenses remain pending.
+      </span>
+    </span>
+
+    <input
+      type="checkbox"
+      checked={status === "cleared"}
+      onChange={(event) =>
+        setStatus(event.target.checked ? "cleared" : "pending")
+      }
+      className="mt-1 size-4 shrink-0 accent-primary"
+    />
+  </label>
+)}
       <Textarea label="Note (optional)" placeholder="Add a note" value={note} onChange={setNote} />
       <div className="flex gap-2 pt-2">
         <Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button>
