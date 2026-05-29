@@ -3137,7 +3137,6 @@ const ActionModal = ({
   const { toast } = useToast();
   const { signOut } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const actorName = displayName(currentProfile);
   const type = modal.type;
   const expense = data.expenses.find((item) => item.id === modal.item);
@@ -3183,7 +3182,8 @@ const ActionModal = ({
     await refresh();
     onClose();
   };
-  const closeRefreshAndReturnToSplit = async () => {
+  const closeRefreshAndReturnToSplitList = async (subTab: "friends" | "groups") => {
+    safeStorage.setItem("spendova-split-tab", subTab);
     await refresh();
     onClose();
     navigate("/split", { replace: true });
@@ -3351,8 +3351,7 @@ const ActionModal = ({
         });
       }
       toast({ title: "Expense deleted", description: "Balances were updated for everyone involved." });
-      if (location.pathname.startsWith("/split/")) await closeRefreshAndReturnToSplit();
-      else await closeAndRefresh();
+      await closeAndRefresh();
     }
   };
 
@@ -3559,7 +3558,7 @@ const ActionModal = ({
       return;
     }
     toast({ title: "Left group", description: `You left ${group.name}.` });
-    await closeRefreshAndReturnToSplit();
+    await closeRefreshAndReturnToSplitList("groups");
   };
 
   const deleteAccount = async () => {
@@ -3636,7 +3635,7 @@ const ActionModal = ({
             <div className="space-y-2 rounded-2xl bg-elevated p-4 text-sm">
               {data.expenses.filter((expense) => expense.paid_by === friend.user_id || expense.expense_splits?.some((split) => split.user_id === friend.user_id)).slice(0, 4).map((item) => <div key={item.id} className="flex justify-between"><span className="text-muted-foreground">{item.category}</span><span className="font-semibold text-foreground">{money(item.amount)}</span></div>)}
             </div>
-            <Button variant="destructive" className="w-full" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeAndRefresh(); }}><UserMinus />Remove friend</Button>
+            <Button variant="destructive" className="w-full" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeRefreshAndReturnToSplitList("friends"); }}><UserMinus />Remove friend</Button>
           </div>
           )}
 
@@ -3646,7 +3645,7 @@ const ActionModal = ({
 
           {type === "delete-expense" && <ConfirmBox title="Delete expense?" text="This will update balances for everyone involved." action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
           {type === "clear-expense" && <ConfirmBox text={`Mark "${expense?.category || "expense"}" as cleared?`} action="Mark cleared" onCancel={onClose} onConfirm={clearExpense} />}
-          {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { if (group.created_by !== currentUserId) { toast({ title: "Delete failed", description: "Only the group owner can delete this group.", variant: "destructive" }); return; } const recipients = group.group_members.map((member) => member.user_id); const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" }); return; } notifySharedAction({ type: "group_deleted", recipients, title: "Group deleted", message: `${actorName} deleted ${group.name}.`, entity_type: "group", entity_id: group.id, group_name: group.name }); toast({ title: "Group deleted" }); await closeRefreshAndReturnToSplit(); }} />}
+          {type === "delete-group" && group && <ConfirmBox title="Delete group?" text="This will remove the group but will not affect your personal account data." action="Delete" destructive onCancel={onClose} onConfirm={async () => { if (group.created_by !== currentUserId) { toast({ title: "Delete failed", description: "Only the group owner can delete this group.", variant: "destructive" }); return; } const recipients = group.group_members.map((member) => member.user_id); const { error } = await supabase.from("groups").delete().eq("id", group.id); if (error) { toast({ title: "Delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" }); return; } notifySharedAction({ type: "group_deleted", recipients, title: "Group deleted", message: `${actorName} deleted ${group.name}.`, entity_type: "group", entity_id: group.id, group_name: group.name }); toast({ title: "Group deleted" }); await closeRefreshAndReturnToSplitList("groups"); }} />}
           {type === "leave-group" && group && <ConfirmBox title="Leave group?" text="Are you sure you want to leave this group?" action="Leave Group" destructive onCancel={onClose} onConfirm={leaveGroup} />}
           {type === "remove-group-member" && memberGroup && memberToRemove && (
             <div className="space-y-3">
@@ -3659,7 +3658,7 @@ const ActionModal = ({
               <Button variant="quiet" className="w-full" onClick={onClose}>Cancel</Button>
             </div>
           )}
-          {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeRefreshAndReturnToSplit(); }} />}
+          {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeRefreshAndReturnToSplitList("friends"); }} />}
           {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
           {type === "delete-account" && <ConfirmBox title="Delete account?" text="This will permanently delete your account and related data. This action cannot be undone." action="Delete Account" destructive onCancel={onClose} onConfirm={deleteAccount} />}
           {type === "notifications" && <NotificationsList data={data} currentUserId={currentUserId} />}
