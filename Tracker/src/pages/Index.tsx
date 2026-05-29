@@ -3253,7 +3253,7 @@ const ActionModal = ({
         if (error) throw error;
         await supabase.from("expense_splits").delete().eq("expense_id", expenseId);
         if (splits.length) {
-          const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: expenseId, amount_paid: payload.status === "cleared" ? split.amount_owed : 0, has_paid: payload.status === "cleared" })));
+          const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: expenseId, amount_paid: 0, has_paid: false })));
           if (splitError) throw splitError;
         }
         if (splits.length || payload.group_id) {
@@ -3275,7 +3275,7 @@ const ActionModal = ({
         const { data: inserted, error } = await supabase.from("expenses").insert(payload).select("id").single();
         if (error || !inserted) throw error;
         if (splits.length) {
-          const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: inserted.id, amount_paid: payload.status === "cleared" ? split.amount_owed : 0, has_paid: payload.status === "cleared" })));
+          const { error: splitError } = await supabase.from("expense_splits").insert(splits.map((split) => ({ ...split, expense_id: inserted.id, amount_paid: 0, has_paid: false })));
           if (splitError) throw splitError;
         }
         if (splits.length || payload.group_id) {

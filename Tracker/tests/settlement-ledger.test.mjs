@@ -111,6 +111,110 @@ function reconcilePendingCycle(expenses, userA, userB, groupId = null) {
 
 const split = (id, user_id, amount_owed, amount_paid = 0) => ({ id, user_id, amount_owed, amount_paid });
 const expense = (id, paid_by, group_id, splits) => ({ id, paid_by, group_id, splits });
+const createdSplit = (expense_id, split) => ({ ...split, expense_id, amount_paid: 0, has_paid: false });
+
+function createGroupSplits({ expenseId, amount, participants, payer, strategy = "equal", values = {} }) {
+  let splits = [];
+  if (strategy === "equal") {
+    const totalCents = cents(amount);
+    const baseShare = Math.floor(totalCents / participants.length);
+    let remainder = totalCents % participants.length;
+    splits = participants
+      .map((user_id) => {
+        const share = baseShare + (remainder > 0 ? 1 : 0);
+        remainder -= 1;
+        return { id: `${expenseId}-${user_id}`, user_id, amount_owed: money(share / 100) };
+      })
+      .filter((item) => item.user_id !== payer && item.amount_owed > 0);
+  } else if (strategy === "exact") {
+    splits = participants
+      .map((user_id) => ({ id: `${expenseId}-${user_id}`, user_id, amount_owed: Number(values[user_id] || 0) }))
+      .filter((item) => item.user_id !== payer && item.amount_owed > 0);
+  } else {
+    splits = participants
+      .map((user_id) => ({ id: `${expenseId}-${user_id}`, user_id, amount_owed: money((amount * Number(values[user_id] || 0)) / 100) }))
+      .filter((item) => item.user_id !== payer && item.amount_owed > 0);
+  }
+  return splits.map((item) => createdSplit(expenseId, item));
+}
+
+function assertOnlyPayerCleared({ participants, payer, splits }) {
+  assert.equal(splits.some((item) => item.user_id === payer), false);
+  for (const user of participants) {
+    if (user === payer) continue;
+    const row = splits.find((item) => item.user_id === user);
+    assert.ok(row, `${user} should have a debt row`);
+    assert.equal(row.amount_paid, 0);
+    assert.equal(row.has_paid, false);
+    assert.equal(statusForSplit(row), "pending");
+  }
+}
+
+test("equal split group expense starts with only payer cleared", () => {
+  const participants = ["you", "moiz", "husain", "kaid"];
+  const splits = createGroupSplits({ expenseId: "equal", amount: 80, participants, payer: "you" });
+
+  assertOnlyPayerCleared({ participants, payer: "you", splits });
+  assert.deepEqual(splits.map((item) => [item.user_id, item.amount_owed]), [["moiz", 20], ["husain", 20], ["kaid", 20]]);
+});
+
+test("exact split group expense starts with only payer cleared", () => {
+  const participants = ["you", "moiz", "husain", "kaid"];
+  const splits = createGroupSplits({
+    expenseId: "exact",
+    amount: 80,
+    participants,
+    payer: "you",
+    strategy: "exact",
+    values: { you: 20, moiz: 15, husain: 25, kaid: 20 },
+  });
+
+  assertOnlyPayerCleared({ participants, payer: "you", splits });
+});
+
+test("percentage split group expense starts with only payer cleared", () => {
+  const participants = ["you", "moiz", "husain", "kaid"];
+  const splits = createGroupSplits({
+    expenseId: "percentage",
+    amount: 80,
+    participants,
+    payer: "you",
+    strategy: "percentage",
+    values: { you: 25, moiz: 25, husain: 25, kaid: 25 },
+  });
+
+  assertOnlyPayerCleared({ participants, payer: "you", splits });
+});
+
+test("when another participant pays the full group expense only that participant is cleared", () => {
+  const participants = ["you", "moiz", "husain", "kaid"];
+  const splits = createGroupSplits({ expenseId: "other-payer", amount: 80, participants, payer: "moiz" });
+
+  assertOnlyPayerCleared({ participants, payer: "moiz", splits });
+  assert.deepEqual(splits.map((item) => item.user_id), ["you", "husain", "kaid"]);
+});
+
+test("adding a group expense does not auto-clear debtor split rows", () => {
+  const participants = ["you", "moiz", "husain", "kaid"];
+  const splits = createGroupSplits({ expenseId: "pending-group", amount: 80, participants, payer: "you" });
+  const item = expense("pending-group", "you", "group-1", splits);
+
+  assert.equal(statusForExpense(item), "pending");
+  assert.equal(balance([item], "group-1").get("moiz|you"), 20);
+  assert.equal(balance([item], "group-1").get("husain|you"), 20);
+  assert.equal(balance([item], "group-1").get("kaid|you"), 20);
+});
+
+test("settlement still clears pending group expense split rows", () => {
+  const participants = ["you", "moiz"];
+  const splits = createGroupSplits({ expenseId: "settle-group", amount: 80, participants, payer: "you" });
+  const expenses = [expense("settle-group", "you", "group-1", splits)];
+
+  settle(expenses, { from: "moiz", to: "you", amount: 40, groupId: "group-1" });
+
+  assert.equal(statusForExpense(expenses[0]), "settled");
+  assert.equal(balance(expenses, "group-1").size, 0);
+});
 
 test("equal opposite pending expenses auto-settle the active cycle", () => {
   const expenses = [
