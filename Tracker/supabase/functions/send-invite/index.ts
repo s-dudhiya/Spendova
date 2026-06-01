@@ -21,7 +21,7 @@ function inviteEmailHtml(inviterName: string, groupName: string, inviteUrl: stri
     title: 'You have been invited to a group',
     body: [
       `<strong style="color:#1f2230;">${safeInviterName}</strong> invited you to join <strong style="color:#1f2230;">${safeGroupName}</strong> on Spendova.`,
-      'Use the button below to review and accept the invitation. This invitation is valid for 14 days.',
+      'Use the button below to review and accept the invitation. This invitation is valid for 1 day.',
     ],
     button: { label: 'Accept invitation', url: inviteUrl },
     note: `If the button does not open, copy and paste this link into your browser:<br><a href="${safeInviteUrl}" style="color:#5b3fd6;word-break:break-all;text-decoration:none;">${safeInviteUrl}</a>`,
@@ -98,7 +98,7 @@ serve(async (req) => {
       })
     }
 
-    const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
     const { data: usersData } = await supabaseAdmin.auth.admin.listUsers()
     const existingUser = usersData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase())
@@ -114,7 +114,7 @@ serve(async (req) => {
     if (existingInvite) {
       const { data, error: updateErr } = await supabaseAdmin
         .from('group_invites')
-        .update({ status: 'pending', invited_by: userData.user.id, expires_at: expiresAt })
+        .update({ status: 'pending', invited_by: userData.user.id, invite_type: 'email', expires_at: expiresAt })
         .eq('id', existingInvite.id)
         .select('token').single()
       if (updateErr) throw updateErr
@@ -122,7 +122,7 @@ serve(async (req) => {
     } else {
       const { data, error: insertErr } = await supabaseAdmin
         .from('group_invites')
-        .insert({ group_id, invited_by: userData.user.id, email, status: 'pending', expires_at: expiresAt })
+        .insert({ group_id, invited_by: userData.user.id, email, status: 'pending', invite_type: 'email', expires_at: expiresAt })
         .select('token').single()
       if (insertErr) throw insertErr
       invite = data

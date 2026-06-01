@@ -157,10 +157,12 @@ type GroupRow = {
 
 type InviteRow = {
   id: string;
-  email: string;
+  email: string | null;
   token: string;
   status: string;
   created_at: string;
+  expires_at?: string | null;
+  invite_type?: "email" | "link";
 };
 
 type SplitSettlementRow = {
@@ -3689,9 +3691,61 @@ const InviteMembers = ({
   const [activeMode, setActiveMode] = useState<"email" | "username">("email");
   const [submitting, setSubmitting] = useState(false);
   const [adding, setAdding] = useState(false);
-  const inviteToken = invites.find((invite) => invite.status === "pending")?.token;
-  const link = inviteToken ? `${window.location.origin}/accept-invite?token=${inviteToken}` : "";
+  const [generatingLink, setGeneratingLink] = useState(false);
+  const [shareLink, setShareLink] = useState("");
   const canAddByUsername = group.created_by === currentUserId;
+  const emailInvites = invites.filter((invite) => invite.invite_type !== "link");
+  const existingShareInvite = invites.find((invite) => invite.invite_type === "link" && invite.status === "pending" && (!invite.expires_at || new Date(invite.expires_at).getTime() > Date.now()));
+  const effectiveShareLink = shareLink || (existingShareInvite ? `${window.location.origin}/accept-invite?token=${encodeURIComponent(existingShareInvite.token)}` : "");
+  const copyWithFallback = (text: string) => {
+    const input = document.createElement("textarea");
+    input.value = text;
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.appendChild(input);
+    input.select();
+    try {
+      if (!document.execCommand("copy")) throw new Error("Copy command failed");
+    } finally {
+      input.remove();
+    }
+  };
+  const copyShareLink = async () => {
+    if (!effectiveShareLink) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(effectiveShareLink);
+        } catch {
+          copyWithFallback(effectiveShareLink);
+        }
+      } else {
+        copyWithFallback(effectiveShareLink);
+      }
+      toast({ title: "Invite link copied", description: "The link expires in 1 day." });
+    } catch (error) {
+      console.error("Invite link copy failed", error);
+      toast({ title: "Copy failed", description: "Select the invite link and copy it manually.", variant: "destructive" });
+    }
+  };
+  const generateShareLink = async () => {
+    if (generatingLink) return;
+    setGeneratingLink(true);
+    try {
+      const { data, error } = await supabase.rpc("generate_group_invite_link" as never, { p_group_id: group.id } as never);
+      if (error) throw error;
+      const generated = (data ?? []) as Array<{ token?: string }>;
+      const token = generated[0]?.token;
+      if (!token) throw new Error("Invite link could not be generated");
+      setShareLink(`${window.location.origin}/accept-invite?token=${encodeURIComponent(token)}`);
+      toast({ title: "Invite link generated", description: "Anyone with a Spendova account can use it for 1 day." });
+    } catch (error) {
+      console.error("Invite link generation failed", error);
+      toast({ title: "Could not generate link", description: getFriendlyErrorMessage(error, "invite"), variant: "destructive" });
+    } finally {
+      setGeneratingLink(false);
+    }
+  };
   const submitInvite = async () => {
     if (submitting || !email.trim()) return;
     setSubmitting(true);
@@ -3722,23 +3776,20 @@ const InviteMembers = ({
           <div className="flex items-center gap-2 rounded-2xl bg-elevated p-3">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-bold text-foreground">Generate invite link</p>
-              {link ? <p className="truncate text-xs font-medium text-muted-foreground">{link}</p> : <p className="text-xs font-medium text-muted-foreground">Send an email invite first.</p>}
+              {effectiveShareLink ? <p className="truncate text-xs font-medium text-muted-foreground">{effectiveShareLink}</p> : <p className="text-xs font-medium text-muted-foreground">Create a shareable link that expires in 1 day.</p>}
             </div>
             <Button
               size="sm"
               variant="quiet"
-              disabled={!link}
-              onClick={async () => {
-                await navigator.clipboard?.writeText(link);
-                toast({ title: "Invite link copied" });
-              }}
+              disabled={generatingLink}
+              onClick={effectiveShareLink ? copyShareLink : generateShareLink}
             >
-              <Copy />Copy link
+              <Copy />{generatingLink ? "Generating..." : effectiveShareLink ? "Copy link" : "Generate"}
             </Button>
           </div>
           <Field label="Invite by email" type="email" value={email} onChange={setEmail} placeholder="friend@email.com" />
           <Button className="w-full" onClick={submitInvite} disabled={submitting || !email.trim()}>{submitting ? "Sending..." : "Send invite"}</Button>
-          {invites.length > 0 && <div className="space-y-2">{invites.map((invite) => <div key={invite.id} className="rounded-2xl bg-elevated p-3 text-sm"><span className="font-semibold">{invite.email}</span><span className="ml-2 text-muted-foreground">{invite.status}</span></div>)}</div>}
+          {emailInvites.length > 0 && <div className="space-y-2">{emailInvites.map((invite) => <div key={invite.id} className="rounded-2xl bg-elevated p-3 text-sm"><span className="font-semibold">{invite.email}</span><span className="ml-2 text-muted-foreground">{invite.status}</span></div>)}</div>}
         </div>
       ) : (
         <div className="space-y-3">
