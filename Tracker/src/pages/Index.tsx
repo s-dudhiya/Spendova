@@ -61,6 +61,7 @@ import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
 import { canUsePlatformBiometrics, disableBiometricLock, enableBiometricLock, isBiometricLockEnabled } from "@/lib/biometric-lock";
 import { getDeviceId, listDeviceSessions, type DeviceSession } from "@/lib/device-session";
 import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-error";
+import { getSpendingChartAverageLabel, getSpendingChartAxisLabels, getSpendingChartSummary, type SpendingChartBucketUnit } from "@/lib/spending-chart";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 
 type TabKey = "home" | "split" | "personal" | "tiffin";
@@ -1019,7 +1020,7 @@ const getRangeStart = (range: ChartRange, expenses: ExpenseRow[] = []) => {
   return start;
 };
 
-type ChartBucketUnit = "day" | "week" | "month" | "year";
+type ChartBucketUnit = SpendingChartBucketUnit;
 
 const chartBucketUnit = (range: ChartRange): ChartBucketUnit => {
   if (range === "7d") return "day";
@@ -1065,14 +1066,14 @@ function buildSpendingChart(expenses: ExpenseRow[], userId: string, range: Chart
   const start = getRangeStart(range, expenses);
   const end = new Date();
   const unit: ChartBucketUnit = range === "all" && monthSpan(start, end) > 18 ? "year" : chartBucketUnit(range);
-  const buckets = new Map<string, { label: string; value: number; date: Date }>();
+  const buckets = new Map<string, { label: string; value: number; date: Date; unit: ChartBucketUnit }>();
   const cursor = unit === "week" ? startOfWeek(start) : new Date(start);
   if (unit === "year") cursor.setMonth(0, 1);
   if (unit === "month") cursor.setDate(1);
   cursor.setHours(0, 0, 0, 0);
   while (cursor <= end) {
     const key = bucketKey(cursor, unit);
-    buckets.set(key, { label: bucketLabel(cursor, unit, range), value: 0, date: new Date(cursor) });
+    buckets.set(key, { label: bucketLabel(cursor, unit, range), value: 0, date: new Date(cursor), unit });
     stepChartCursor(cursor, unit);
   }
   expenses.forEach((expense) => {
@@ -1080,25 +1081,11 @@ function buildSpendingChart(expenses: ExpenseRow[], userId: string, range: Chart
     const date = new Date(expense.created_at);
     if (date < start || date > end) return;
     const key = bucketKey(date, unit);
-    const existing = buckets.get(key) || { label: bucketLabel(date, unit, range), value: 0, date };
+    const existing = buckets.get(key) || { label: bucketLabel(date, unit, range), value: 0, date, unit };
     existing.value += expenseImpactForUser(expense, userId);
     buckets.set(key, existing);
   });
   return [...buckets.values()].sort((a, b) => a.date.getTime() - b.date.getTime());
-}
-
-function chartTimelineLabels(chartData: Array<{ label: string; date: Date }>) {
-  return chartData.map((item) => item.label);
-}
-
-function chartAverageLabel(range: ChartRange) {
-  if (range === "all") return "Avg. per period";
-  return chartBucketUnit(range) === "month" ? "Avg. per month" : chartBucketUnit(range) === "week" ? "Avg. per week" : "Avg. per day";
-}
-
-function chartAverageValue(chartData: Array<{ value: number }>) {
-  const divisor = Math.max(chartData.length, 1);
-  return chartData.reduce((sum, item) => sum + item.value, 0) / divisor;
 }
 
 function niceChartMax(value: number) {
@@ -1191,10 +1178,10 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
   const chartData = useMemo(() => buildSpendingChart(expenses, userId, chartRange), [expenses, userId, chartRange]);
   const chartMax = niceChartMax(Math.max(...chartData.map((item) => item.value), 1));
   const chartTicks = [chartMax, chartMax * 0.75, chartMax * 0.5, chartMax * 0.25, 0];
-  const chartTotal = chartData.reduce((sum, item) => sum + item.value, 0);
-  const chartAverage = chartAverageValue(chartData);
+  const { total: chartTotal, average: chartAverage } = getSpendingChartSummary(chartData);
   const hasChartData = chartTotal > 0;
-  const chartLabels = chartTimelineLabels(chartData);
+  const chartLabels = getSpendingChartAxisLabels(chartData);
+  const chartAverageLabel = getSpendingChartAverageLabel(chartData[0]?.unit);
   const chartRanges = ["7d", "30d", "3m", "6m", "this_year", "all"] as const;
   const openChartFilters = () => {
     setDraftChartRange(chartRange);
@@ -1272,10 +1259,10 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
               </div>
               <div className="mt-3 grid w-full max-w-full grid-cols-[1.55rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2.4rem_minmax(0,1fr)] sm:gap-2">
                 <span />
-                <div className="grid min-w-0 gap-1 text-center text-[10px] font-bold text-muted-foreground sm:text-[11px]" style={{ gridTemplateColumns: `repeat(${chartLabels.length}, minmax(0, 1fr))` }}>{chartLabels.map((label, index) => <span key={`${label}-${index}`} className="truncate">{label}</span>)}</div>
+                <div className="relative h-4 min-w-0 text-[10px] font-bold text-muted-foreground sm:text-[11px]">{chartLabels.map((item, index) => <span key={`${item.index}-${item.label}`} className="absolute top-0 whitespace-nowrap" style={{ left: `${item.position}%`, transform: index === 0 ? undefined : index === chartLabels.length - 1 ? "translateX(-100%)" : "translateX(-50%)" }}>{item.label}</span>)}</div>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total Spending</p><p className="mt-2 text-lg font-black text-foreground">{money(chartTotal)}</p></div><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{chartAverageLabel(chartRange)}</p><p className="mt-2 text-lg font-black text-foreground">{money(chartAverage)}</p></div></div>
+            <div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total Spending</p><p className="mt-2 text-lg font-black text-foreground">{money(chartTotal)}</p></div><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{chartAverageLabel}</p><p className="mt-2 text-lg font-black text-foreground">{money(chartAverage)}</p></div></div>
             <p className="mt-3 text-sm font-medium text-muted-foreground">Keep tracking your expenses for better insights.</p>
           </>
         )}
