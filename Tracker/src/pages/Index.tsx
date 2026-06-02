@@ -303,6 +303,11 @@ const toPaise = (amount: number) => Math.round((Number.isFinite(amount) ? amount
 const fromPaise = (paise: number) => Number((paise / 100).toFixed(2));
 const APP_VERSION = "2.1";
 const MAX_FEEDBACK_IMAGE_SIZE = 1024 * 1024;
+const FEEDBACK_IMAGE_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
 
 const feedbackTypeOptions: Array<{ value: FeedbackReportRow["type"]; label: string }> = [
   { value: "bug_report", label: "Bug Report" },
@@ -370,7 +375,7 @@ const loadFeedbackImage = async (file: File): Promise<ImageBitmap | HTMLImageEle
 };
 
 const compressFeedbackImage = async (file: File): Promise<Blob> => {
-  if (!file.type.startsWith("image/")) throw new Error("Please upload an image file.");
+  if (!FEEDBACK_IMAGE_EXTENSIONS[file.type]) throw new Error("Please upload a JPEG, PNG, or WebP screenshot.");
   if (file.size <= MAX_FEEDBACK_IMAGE_SIZE) return file;
 
   const bitmap = await loadFeedbackImage(file);
@@ -389,6 +394,32 @@ const compressFeedbackImage = async (file: File): Promise<Blob> => {
     if (blob && blob.size <= MAX_FEEDBACK_IMAGE_SIZE) return blob;
   }
   throw new Error("Image must be under 1 MB.");
+};
+
+const getFeedbackImageExtension = (blob: Blob) => FEEDBACK_IMAGE_EXTENSIONS[blob.type];
+
+class FeedbackScreenshotUploadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FeedbackScreenshotUploadError";
+  }
+}
+
+const getFeedbackScreenshotUploadMessage = (error: FeedbackScreenshotUploadError) => {
+  const message = error.message.toLowerCase();
+  if (message.includes("payload too large") || message.includes("entity too large") || message.includes("file size")) {
+    return "The screenshot is too large to upload. Please choose a smaller image.";
+  }
+  if (message.includes("mime") || message.includes("content type") || message.includes("not supported")) {
+    return "This screenshot format is not supported. Please upload a JPEG, PNG, or WebP image.";
+  }
+  if (message.includes("permission") || message.includes("not authorized") || message.includes("unauthorized") || message.includes("row-level security")) {
+    return "The screenshot could not be uploaded because storage access was denied. Please sign in again and retry.";
+  }
+  if (message.includes("failed to fetch") || message.includes("network") || message.includes("offline") || message.includes("timeout")) {
+    return "The screenshot could not be uploaded. Please check your connection and try again.";
+  }
+  return "The screenshot could not be uploaded. Please try again.";
 };
 const notifySharedAction = (payload: {
   type: string;
@@ -2652,8 +2683,8 @@ const FeedbackForm = ({ userId, onSubmit, onCancel }: { userId: string; onSubmit
       setScreenshot(null);
       return;
     }
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Unsupported file", description: "Please upload a screenshot image.", variant: "destructive" });
+    if (!FEEDBACK_IMAGE_EXTENSIONS[file.type]) {
+      toast({ title: "Unsupported file", description: "Please upload a JPEG, PNG, or WebP screenshot.", variant: "destructive" });
       event.target.value = "";
       return;
     }
@@ -3193,19 +3224,28 @@ const ActionModal = ({
   }, [data.notifications, refresh, type]);
 
   const submitFeedback = async (payload: { type: FeedbackReportRow["type"]; title: string; description: string; priority: FeedbackReportRow["priority"]; screenshot?: File | null }) => {
+    let uploadedScreenshotPath: string | null = null;
     try {
       let screenshotPath: string | null = null;
       if (payload.screenshot) {
         const blob = await compressFeedbackImage(payload.screenshot);
         if (blob.size > MAX_FEEDBACK_IMAGE_SIZE) throw new Error("Image must be under 1 MB.");
+        const extension = getFeedbackImageExtension(blob);
+        if (!extension) throw new Error("Please upload a JPEG, PNG, or WebP screenshot.");
         const randomId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        const path = `${currentUserId}/${randomId}.webp`;
-        const { error: uploadError } = await supabase.storage.from("feedback-screenshots").upload(path, blob, {
-          contentType: blob.type || "image/webp",
-          upsert: false,
-        });
-        if (uploadError) throw uploadError;
+        const path = `${currentUserId}/${randomId}.${extension}`;
+        try {
+          const { error: uploadError } = await supabase.storage.from("feedback-screenshots").upload(path, blob, {
+            contentType: blob.type,
+            upsert: false,
+          });
+          if (uploadError) throw new FeedbackScreenshotUploadError(uploadError.message);
+        } catch (error) {
+          if (error instanceof FeedbackScreenshotUploadError) throw error;
+          throw new FeedbackScreenshotUploadError(error instanceof Error ? error.message : "Unknown upload error.");
+        }
         screenshotPath = path;
+        uploadedScreenshotPath = path;
       }
 
       const { data: createdReport, error } = await supabase.from("feedback_reports" as never).insert({
@@ -3230,7 +3270,17 @@ const ActionModal = ({
       toast({ title: "Thank you!", description: "Your feedback has been sent." });
       onClose();
     } catch (error) {
-      toast({ title: "Feedback failed", description: getFriendlyErrorMessage(error, "feedback"), variant: "destructive" });
+      if (uploadedScreenshotPath) {
+        try {
+          const { error: cleanupError } = await supabase.storage.from("feedback-screenshots").remove([uploadedScreenshotPath]);
+          if (cleanupError) console.warn("Could not clean up feedback screenshot after failed submission", cleanupError);
+        } catch (cleanupError) {
+          console.warn("Could not clean up feedback screenshot after failed submission", cleanupError);
+        }
+      }
+      const screenshotUploadFailed = error instanceof FeedbackScreenshotUploadError;
+      const message = screenshotUploadFailed ? getFeedbackScreenshotUploadMessage(error) : getFriendlyErrorMessage(error, "feedback");
+      toast({ title: screenshotUploadFailed ? "Screenshot upload failed" : "Feedback failed", description: message, variant: "destructive" });
       throw error;
     }
   };
