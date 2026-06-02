@@ -62,6 +62,48 @@ const cases = [
     context: "expense",
     expected: "We could not save this change. Please check the details and try again.",
   },
+  {
+    name: "device timeout is not reported as network failure",
+    error: { message: "The operation either timed out or was not allowed." },
+    context: "device",
+    expected: "Device verification was cancelled or timed out. Please try again.",
+  },
+  {
+    name: "expired session",
+    error: { message: "Invalid JWT: JWT expired", status: 401 },
+    context: "profile",
+    expected: "Your session has expired. Please sign in again.",
+  },
+  {
+    name: "missing invite",
+    error: { message: "Invite not found", status: 404 },
+    context: "invite",
+    expected: "This invite is unavailable or has expired.",
+  },
+  {
+    name: "upload too large",
+    error: { message: "Payload too large", status: 413 },
+    context: "admin",
+    expected: "This file is too large to upload. Please choose a smaller file.",
+  },
+  {
+    name: "validation failure",
+    error: { message: "Validation failed", status: 422 },
+    context: "profile",
+    expected: "Some details are invalid. Please review them and try again.",
+  },
+  {
+    name: "server unavailable",
+    error: { message: "Internal Server Error", status: 500 },
+    context: "expense",
+    expected: "The service is temporarily unavailable. Please try again shortly.",
+  },
+  {
+    name: "admin email configuration",
+    error: { message: "Missing SMTP credentials", status: 500 },
+    context: "admin",
+    expected: "Email service is not configured. Please add the SMTP credentials and try again.",
+  },
 ];
 
 for (const item of cases) {

@@ -153,15 +153,61 @@ export function getFriendlyErrorMessage(error: unknown, context: ErrorContext = 
     return context === "signup" ? "Please check your signup details and try again." : "Invalid email or password.";
   }
 
+  if (
+    text.includes("jwt expired") ||
+    text.includes("invalid jwt") ||
+    text.includes("session missing") ||
+    text.includes("no active session") ||
+    text.includes("refresh token")
+  ) {
+    return "Your session has expired. Please sign in again.";
+  }
+
   if (status === 401 || status === 403) {
     if (isAuthContext(context)) return "Invalid email or password.";
     return "You do not have permission to complete this action.";
   }
 
-  if (status && status >= 500 && text.includes("non-2xx")) {
+  if (
+    text.includes("webauthn") ||
+    text.includes("notallowederror") ||
+    text.includes("operation either timed out or was not allowed") ||
+    text.includes("privacy-considerations") ||
+    text.includes("fingerprint") ||
+    text.includes("face id") ||
+    text.includes("unlock was cancelled")
+  ) {
+    return "Device verification was cancelled or timed out. Please try again.";
+  }
+
+  if (status === 404 || text.includes("pgrst116")) {
+    if (context === "invite") return "This invite is unavailable or has expired.";
+    return "The requested item could not be found. It may have been removed.";
+  }
+
+  if (status === 409) {
+    if (context === "friend" || context === "group") return "This person is already added.";
+    return "This change conflicts with an existing record. Please refresh and try again.";
+  }
+
+  if (status === 413 || text.includes("payload too large") || text.includes("entity too large")) {
+    return "This file is too large to upload. Please choose a smaller file.";
+  }
+
+  if (status === 422 || text.includes("validation failed")) {
+    return "Some details are invalid. Please review them and try again.";
+  }
+
+  if (text.includes("missing smtp credentials")) {
+    return context === "admin"
+      ? "Email service is not configured. Please add the SMTP credentials and try again."
+      : "Email could not be sent right now. Please try again later.";
+  }
+
+  if (status && status >= 500) {
     if (context === "signup" || context === "otp_resend") return "Could not send the verification code. Please try again.";
     if (context === "password_reset") return "Could not update your password. Please try again.";
-    return "We could not complete this request. Please try again.";
+    return "The service is temporarily unavailable. Please try again shortly.";
   }
 
   if (text.includes("reset session expired") || text.includes("session expired")) {
@@ -207,17 +253,6 @@ export function getFriendlyErrorMessage(error: unknown, context: ErrorContext = 
     text.includes("timed out")
   ) {
     return "Network issue. Please check your connection and try again.";
-  }
-
-  if (
-    text.includes("webauthn") ||
-    text.includes("notallowederror") ||
-    text.includes("operation either timed out or was not allowed") ||
-    text.includes("privacy-considerations") ||
-    text.includes("fingerprint") ||
-    text.includes("face id")
-  ) {
-    return "Device verification was cancelled or timed out. Please try again.";
   }
 
   if (
