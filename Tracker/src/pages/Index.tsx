@@ -1420,12 +1420,22 @@ const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, f
 const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentUserId: string; openModal: (type: ModalType, item?: string) => void }) => {
   const navigate = useNavigate();
   const [subTab, setSubTabState] = useState<"friends" | "groups">(() => (safeStorage.getItem("spendova-split-tab") === "groups" ? "groups" : "friends"));
+  const seenRequestIdsStorageKey = `spendova-seen-friend-requests-${currentUserId}`;
+  const [seenRequestIds, setSeenRequestIds] = useState<string[]>(() => {
+    try {
+      const stored = JSON.parse(safeStorage.getItem(seenRequestIdsStorageKey) || "[]");
+      return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : [];
+    } catch {
+      return [];
+    }
+  });
   const [query, setQuery] = useState("");
   const defaultFilters = { balance: "all", sort: "highest" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
   const summary = getSummary(data.expenses, currentUserId, data.settlements);
-  const requestCount = data.incomingRequests.length + Object.values(data.groupInvites).flat().length;
+  const pendingRequestIds = [...data.incomingRequests, ...data.outgoingRequests].map((request) => request.id);
+  const requestCount = pendingRequestIds.filter((id) => !seenRequestIds.includes(id)).length;
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
   const clearFilters = () => setFilters(defaultFilters);
   const matchesBalanceFilter = (net: number) => {
@@ -1471,6 +1481,19 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
     safeStorage.setItem("spendova-split-scroll", String(window.scrollY));
     navigate(`/split/${kind}/${id}`);
   };
+  const openFriendRequests = () => {
+    safeStorage.setItem(seenRequestIdsStorageKey, JSON.stringify(pendingRequestIds));
+    setSeenRequestIds(pendingRequestIds);
+    openModal("friend-requests");
+  };
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(safeStorage.getItem(seenRequestIdsStorageKey) || "[]");
+      setSeenRequestIds(Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : []);
+    } catch {
+      setSeenRequestIds([]);
+    }
+  }, [seenRequestIdsStorageKey]);
   useEffect(() => {
     const saved = Number(safeStorage.getItem("spendova-split-scroll") || 0);
     if (saved > 0) {
@@ -1501,7 +1524,7 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
         {subTab === "friends" ? (
           <div className="grid grid-cols-2 gap-2">
             <Button onClick={() => openModal("add-friend")} variant="quiet" className="h-12"><UserPlus />Add Friend</Button>
-            <Button onClick={() => openModal("friend-requests")} variant="quiet" className="relative h-12">Requests<CountBadge count={requestCount} className="ring-background" /></Button>
+            <Button onClick={openFriendRequests} variant="quiet" className="relative h-12">Requests<CountBadge count={requestCount} className="ring-background" /></Button>
           </div>
         ) : (
           <Button onClick={() => openModal("create-group")} variant="quiet" className="h-12"><Plus />Create Group</Button>
