@@ -62,6 +62,12 @@ const reportUserName = (report?: FeedbackReport | null) => report?.profiles?.ful
 const editableNoteValue = (value?: string | null) => !value || value.trim().toUpperCase() === "N/A" ? "" : value;
 const badgeTone = (value: string) => value === "critical" ? "border-destructive/30 bg-destructive/10 text-destructive" : value === "resolved" || value === "closed" ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : value === "investigating" || value === "high" ? "border-primary/25 bg-primary/10 text-primary" : "border-border bg-elevated text-muted-foreground";
 const formatAdminDate = (date: string) => new Date(date).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+const isMissingStorageObjectError = (error: unknown) => {
+  if (!error || typeof error !== "object") return false;
+  const storageError = error as { message?: unknown; status?: unknown; statusCode?: unknown };
+  const message = typeof storageError.message === "string" ? storageError.message.toLowerCase() : "";
+  return Number(storageError.status) === 404 || Number(storageError.statusCode) === 404 || message.includes("not found") || message.includes("does not exist");
+};
 const eventLabel = (event: FeedbackEvent) => {
   if (event.event_type === "created") return "Ticket created";
   if (event.event_type === "status_changed") return `Status changed to ${event.status ? feedbackStatusLabel(event.status) : "updated"}`;
@@ -217,6 +223,7 @@ const AdminDashboard = () => {
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [screenshotPreviewUrl, setScreenshotPreviewUrl] = useState("");
+  const [deletingScreenshot, setDeletingScreenshot] = useState(false);
   const [feedbackFilters, setFeedbackFilters] = useState({ type: "all", status: "all", priority: "all", date: "", search: "" });
   const [savingReport, setSavingReport] = useState(false);
   const [ticketDraft, setTicketDraft] = useState({ status: "open" as FeedbackReport["status"], priority: "medium" as FeedbackReport["priority"], internalNotes: "", userMessage: "" });
@@ -380,6 +387,28 @@ const AdminDashboard = () => {
       toast({ title: "Delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" });
     } finally {
       setSavingReport(false);
+    }
+  };
+
+  const deleteFeedbackScreenshot = async (report: FeedbackReport) => {
+    if (!report.screenshot_url || !window.confirm("Delete this feedback screenshot? The feedback ticket will remain unchanged.")) return;
+    setDeletingScreenshot(true);
+    try {
+      const { error: storageError } = await supabase.storage.from("feedback-screenshots").remove([report.screenshot_url]);
+      if (storageError && !isMissingStorageObjectError(storageError)) throw storageError;
+      if (storageError) console.warn("Feedback screenshot was already missing from storage", storageError);
+
+      const { error } = await supabase.from("feedback_reports" as never).update({ screenshot_url: null } as never).eq("id", report.id);
+      if (error) throw error;
+
+      setScreenshotPreviewUrl("");
+      setFeedbackReports((current) => current.map((item) => item.id === report.id ? { ...item, screenshot_url: null } : item));
+      toast({ title: "Screenshot deleted", description: "The screenshot was removed. The feedback ticket was kept." });
+    } catch (error) {
+      console.error("Feedback screenshot delete failed", error);
+      toast({ title: "Screenshot delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" });
+    } finally {
+      setDeletingScreenshot(false);
     }
   };
 
@@ -582,7 +611,14 @@ const AdminDashboard = () => {
                       <section className="rounded-2xl border border-border bg-elevated p-4">
                         <div className="mb-2 flex items-center gap-2 text-sm font-bold text-foreground"><FileText className="size-4 text-primary" /> Description</div>
                         <p className="whitespace-pre-line text-sm leading-6 text-foreground">{selectedReport.description}</p>
-                        {screenshotPreviewUrl ? <img src={screenshotPreviewUrl} alt="Feedback screenshot" className="mt-4 max-h-72 w-full rounded-2xl border border-border bg-background object-contain" /> : null}
+                        {screenshotPreviewUrl ? (
+                          <div className="relative mt-4">
+                            <img src={screenshotPreviewUrl} alt="Feedback screenshot" className="max-h-72 w-full rounded-2xl border border-border bg-background object-contain" />
+                            <Button type="button" variant="destructive" size="icon" disabled={deletingScreenshot} onClick={() => deleteFeedbackScreenshot(selectedReport)} className="absolute right-2 top-2 size-8 rounded-full shadow-soft" aria-label="Delete feedback screenshot" title="Delete screenshot">
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </div>
+                        ) : null}
                       </section>
 
                       <div className="grid gap-4 lg:grid-cols-2">
