@@ -2155,33 +2155,33 @@ const PaymentProofPrompt = ({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && !busy && onCancel()}>
-      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[22rem] rounded-[1.25rem] border-border bg-card p-4 pr-11 shadow-panel sm:p-5 sm:pr-12">
-        <DialogHeader className="space-y-1 text-left">
-          <DialogTitle className="pr-2 text-lg leading-6 text-foreground">{mode === "upload" ? "Select proof" : title}</DialogTitle>
-          {description ? <DialogDescription className="pr-1 text-sm leading-5">{description}</DialogDescription> : null}
+      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[22rem] rounded-[1.25rem] border-border bg-card px-5 pb-5 pt-5 shadow-panel sm:px-6 sm:pb-6">
+        <DialogHeader className="mx-auto max-w-[17rem] space-y-1.5 text-center">
+          <DialogTitle className="text-lg leading-6 text-foreground">{mode === "upload" ? "Select proof" : title}</DialogTitle>
+          {description ? <DialogDescription className="text-sm leading-5">{description}</DialogDescription> : null}
         </DialogHeader>
         {mode === "choice" ? (
-          <div className="space-y-2 pt-2">
+          <div className="space-y-2.5 pt-3">
             <Button type="button" className="h-11 w-full rounded-2xl shadow-primary-action" onClick={() => setMode("upload")} disabled={busy}>
               <Upload className="size-4" />Yes, upload proof
             </Button>
             <Button type="button" variant="outline" className="h-11 w-full rounded-2xl" onClick={continueWithoutProof} disabled={busy}>
               {busy ? "Saving..." : "Continue without proof"}
             </Button>
-            <Button type="button" variant="quiet" className="h-10 w-full rounded-2xl" onClick={onCancel} disabled={busy}>Cancel</Button>
+            <Button type="button" variant="quiet" className="h-11 w-full rounded-2xl" onClick={onCancel} disabled={busy}>Cancel</Button>
           </div>
         ) : (
-          <div className="space-y-2 pt-2">
-            <label className="block rounded-2xl border border-dashed border-primary/40 bg-primary/5 px-3 py-4 text-center text-sm font-bold text-primary">
-              <Upload className="mx-auto mb-1.5 size-5" />
-              <span className="block truncate">{proofFile ? proofFile.name : "Choose image"}</span>
+          <div className="space-y-2.5 pt-3">
+            <label className="flex min-h-[92px] flex-col items-center justify-center rounded-2xl border border-dashed border-primary/40 bg-primary/5 px-4 py-4 text-center text-sm font-bold text-primary">
+              <Upload className="mb-2 size-5 shrink-0" />
+              <span className="block max-w-full truncate leading-5">{proofFile ? proofFile.name : "Choose image"}</span>
               <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => selectProof(event.target.files?.[0])} disabled={busy} />
             </label>
-            <div className="flex gap-2 pt-1">
-              <Button type="button" variant="quiet" className="flex-1" onClick={() => setMode("choice")} disabled={busy}>Back</Button>
-              <Button type="button" className="flex-1" onClick={() => runContinue(proofFile)} disabled={!proofFile || busy}>{busy ? "Uploading..." : "Continue"}</Button>
+            <div className="flex gap-2.5 pt-0.5">
+              <Button type="button" variant="quiet" className="h-11 flex-1 rounded-2xl" onClick={() => setMode("choice")} disabled={busy}>Back</Button>
+              <Button type="button" className="h-11 flex-1 rounded-2xl" onClick={() => runContinue(proofFile)} disabled={!proofFile || busy}>{busy ? "Uploading..." : "Continue"}</Button>
             </div>
-            <Button type="button" variant="outline" className="h-10 w-full rounded-2xl" onClick={continueWithoutProof} disabled={busy}>Continue without proof</Button>
+            <Button type="button" variant="outline" className="h-11 w-full rounded-2xl" onClick={continueWithoutProof} disabled={busy}>Continue without proof</Button>
           </div>
         )}
       </DialogContent>
