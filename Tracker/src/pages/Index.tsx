@@ -576,6 +576,14 @@ const sortByDateOrAmount = <T,>(items: T[], sort: AmountSort, getDate: (item: T)
   });
 };
 
+const sortTimelineByCreatedAt = <T,>(items: T[], getDate: (item: T) => string | null | undefined, direction: "newest" | "oldest" = "newest") => {
+  return [...items].sort((a, b) => {
+    const dateA = new Date(getDate(a) || 0).getTime();
+    const dateB = new Date(getDate(b) || 0).getTime();
+    return direction === "oldest" ? dateA - dateB : dateB - dateA;
+  });
+};
+
 const FilterTrigger = ({ count, onClick }: { count: number; onClick: () => void }) => (
   <button type="button" onClick={onClick} className="inline-flex items-center gap-1 text-xs font-bold text-primary">
     <Filter className="size-3.5" />Filter{count > 0 ? ` (${count})` : ""}
@@ -1704,6 +1712,7 @@ const GroupSummaryCard = ({ group, expenses, currentUserId, openModal }: { group
 type HistoryItem = { id: string; created_at: string | null; kind: "expense" | "settlement"; title: string; detail: string; amount: number };
 type FriendActivityStatus = "pending" | "partial" | "paid";
 type FriendActivityItem = HistoryItem & { impact: number; remainingImpact: number; status: FriendActivityStatus; paidById: string; icon: typeof CircleDollarSign };
+type GroupActivityItem = { kind: "expense"; expense: ExpenseRow; created_at: string | null; amount: number } | { kind: "settlement"; settlement: SplitSettlementRow; created_at: string | null; amount: number };
 type SettlementPayload = { from_user_id: string; to_user_id: string; amount: number; group_id?: string | null; note?: string | null; created_at?: string; settlementId?: string };
 
 const BalanceLabel = ({ amount }: { amount: number }) => (
@@ -1792,10 +1801,10 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
       };
       return { ...item, icon: getFriendActivityIcon(item) };
     }),
-  ].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+  ];
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
   const clearFilters = () => setFilters(defaultFilters);
-  const filteredActivity = sortByDateOrAmount(
+  const filteredActivity = sortTimelineByCreatedAt(
     activity.filter((item) => {
       if (filters.type !== "all" && item.kind !== (filters.type === "expenses" ? "expense" : "settlement")) return false;
       if (filters.status !== "all" && item.status !== filters.status) return false;
@@ -1803,9 +1812,8 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
       if (filters.paidBy === "friend" && item.paidById !== friend.user_id) return false;
       return filterByDate(item.created_at, filters.date as DateFilter, filters.dateStart, filters.dateEnd);
     }),
-    filters.sort as AmountSort,
     (item) => item.created_at,
-    (item) => Math.abs(item.impact || item.amount || 0),
+    filters.sort === "oldest" ? "oldest" : "newest",
   );
   const openActivity = (item: FriendActivityItem) => {
     navigate(item.kind === "settlement" ? `/split/settlement/${item.id}` : `/split/expense/${item.id}`);
@@ -2448,7 +2456,8 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const defaultFilters = { status: "all", paidBy: "anyone", date: "all", dateStart: "", dateEnd: "", sort: "newest", splitType: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
-  const groupExpenses = data.expenses.filter((expense) => expense.group_id === group.id).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+  const groupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), (expense) => expense.created_at);
+  const groupSettlements = data.settlements.filter((settlement) => settlement.group_id === group.id);
   const totalSpent = groupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const balances = computeGroupBalances(data.expenses, data.settlements, group, currentUserId);
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
@@ -2530,8 +2539,20 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   };
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
   const clearFilters = () => setFilters(defaultFilters);
-  const filteredGroupExpenses = sortByDateOrAmount(
-    groupExpenses.filter((expense) => {
+  const groupActivity: GroupActivityItem[] = [
+    ...groupExpenses.map((expense) => ({ kind: "expense" as const, expense, created_at: expense.created_at, amount: Number(expense.amount || 0) })),
+    ...groupSettlements.map((settlement) => ({ kind: "settlement" as const, settlement, created_at: settlement.created_at, amount: Number(settlement.amount || 0) })),
+  ];
+  const filteredGroupActivity = sortTimelineByCreatedAt(
+    groupActivity.filter((item) => {
+      if (item.kind === "settlement") {
+        if (filters.status !== "all" && filters.status !== "settled") return false;
+        if (filters.paidBy === "me" && item.settlement.from_user_id !== currentUserId) return false;
+        if (filters.paidBy !== "anyone" && filters.paidBy !== "me" && item.settlement.from_user_id !== filters.paidBy) return false;
+        if (filters.splitType !== "all") return false;
+        return filterByDate(item.created_at, filters.date as DateFilter, filters.dateStart, filters.dateEnd);
+      }
+      const expense = item.expense;
       const status = getExpenseStatus(expense);
       if (filters.status !== "all" && status !== filters.status) return false;
       if (filters.paidBy === "me" && expense.paid_by !== currentUserId) return false;
@@ -2539,9 +2560,8 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
       if (filters.splitType !== "all" && (expense.split_type || "equal") !== filters.splitType) return false;
       return filterByDate(expense.created_at, filters.date as DateFilter, filters.dateStart, filters.dateEnd);
     }),
-    filters.sort as AmountSort,
-    (expense) => expense.created_at,
-    (expense) => Number(expense.amount || 0),
+    (item) => item.created_at,
+    filters.sort === "oldest" ? "oldest" : "newest",
   );
 
   return (
@@ -2628,7 +2648,29 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
             <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
           </div>
           <div className="space-y-3">
-            {groupExpenses.length === 0 ? <EmptyCard text="No group expenses yet. Add your first expense" /> : filteredGroupExpenses.length === 0 ? <FilterEmptyState onClear={clearFilters} /> : filteredGroupExpenses.map((expense) => {
+            {groupActivity.length === 0 ? <EmptyCard text="No group expenses yet. Add your first expense" /> : filteredGroupActivity.length === 0 ? <FilterEmptyState onClear={clearFilters} /> : filteredGroupActivity.map((item) => {
+              if (item.kind === "settlement") {
+                const settlement = item.settlement;
+                const fromName = settlement.from_user_id === currentUserId ? "You" : displayName(settlement.from_profile || memberMap[settlement.from_user_id]?.profiles);
+                const toName = settlement.to_user_id === currentUserId ? "you" : displayName(settlement.to_profile || memberMap[settlement.to_user_id]?.profiles);
+                return (
+                  <article key={`settlement-${settlement.id}`} className="overflow-hidden rounded-[20px] border border-border/70 bg-card transition-colors">
+                    <button type="button" onClick={() => navigate(`/split/settlement/${settlement.id}`)} className="flex w-full items-center gap-3 p-3 text-left hover:bg-elevated/60">
+                      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-success/15 text-success"><Check className="size-4" /></span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold text-foreground">Settlement</span>
+                        <span className="mt-1 block truncate text-xs font-medium text-muted-foreground">{fromName} paid {toName} · {dateLabel(settlement.created_at)}</span>
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className="block text-sm font-black text-success">{money(settlement.amount)}</span>
+                        <span className="mt-1 inline-flex rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-bold text-success">Paid</span>
+                      </span>
+                      <ChevronRight className="size-4 shrink-0 text-primary" />
+                    </button>
+                  </article>
+                );
+              }
+              const expense = item.expense;
               const status = getExpenseStatus(expense);
               const expanded = expandedExpenseId === expense.id;
               const payerName = expense.paid_by === currentUserId ? "You" : displayName(expense.payer_profile || memberMap[expense.paid_by]?.profiles);
