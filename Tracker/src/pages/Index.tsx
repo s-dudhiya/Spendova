@@ -2064,7 +2064,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
 
       <PaymentProofPrompt
         open={Boolean(quickSettleItem)}
-        description={quickSettleItem ? `This will mark ${money(Math.abs(quickSettleItem.remainingImpact))} as paid for "${quickSettleItem.title}". Payment proof is optional.` : ""}
+        description={quickSettleItem ? `${money(Math.abs(quickSettleItem.remainingImpact))} for ${quickSettleItem.title}` : ""}
         submitting={quickSettling}
         onCancel={() => setQuickSettleItem(null)}
         onContinue={confirmQuickSettle}
@@ -2082,8 +2082,8 @@ const DetailRow = ({ label, value }: { label: string; value: React.ReactNode }) 
 
 const PaymentProofPrompt = ({
   open,
-  title = "Do you want to upload payment proof?",
-  description = "You can attach a UPI/payment screenshot for reference. This is optional.",
+  title = "Upload payment proof?",
+  description = "",
   submitting = false,
   onCancel,
   onContinue,
@@ -2144,10 +2144,10 @@ const PaymentProofPrompt = ({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && !busy && onCancel()}>
-      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-sm rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:p-6">
-        <DialogHeader>
-          <DialogTitle className="text-foreground">{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[22rem] rounded-[1.25rem] border-border bg-card p-4 pr-11 shadow-panel sm:p-5 sm:pr-12">
+        <DialogHeader className="space-y-1 text-left">
+          <DialogTitle className="pr-2 text-lg leading-6 text-foreground">{mode === "upload" ? "Select proof" : title}</DialogTitle>
+          {description ? <DialogDescription className="pr-1 text-sm leading-5">{description}</DialogDescription> : null}
         </DialogHeader>
         {mode === "choice" ? (
           <div className="space-y-2 pt-2">
@@ -2155,21 +2155,20 @@ const PaymentProofPrompt = ({
               <Upload className="size-4" />Yes, upload proof
             </Button>
             <Button type="button" variant="outline" className="h-11 w-full rounded-2xl" onClick={continueWithoutProof} disabled={busy}>
-              {busy ? "Saving..." : "No, continue without proof"}
+              {busy ? "Saving..." : "Continue without proof"}
             </Button>
             <Button type="button" variant="quiet" className="h-10 w-full rounded-2xl" onClick={onCancel} disabled={busy}>Cancel</Button>
           </div>
         ) : (
-          <div className="space-y-3 pt-2">
-            <label className="block rounded-2xl border border-dashed border-primary/40 bg-primary/5 p-4 text-center text-sm font-bold text-primary">
-              <Upload className="mx-auto mb-2 size-5" />
-              {proofFile ? proofFile.name : "Choose payment screenshot"}
+          <div className="space-y-2 pt-2">
+            <label className="block rounded-2xl border border-dashed border-primary/40 bg-primary/5 px-3 py-4 text-center text-sm font-bold text-primary">
+              <Upload className="mx-auto mb-1.5 size-5" />
+              <span className="block truncate">{proofFile ? proofFile.name : "Choose image"}</span>
               <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => selectProof(event.target.files?.[0])} disabled={busy} />
             </label>
-            <p className="text-xs font-medium text-muted-foreground">JPEG, PNG, or WebP only. Large images are compressed to WebP before upload.</p>
             <div className="flex gap-2 pt-1">
               <Button type="button" variant="quiet" className="flex-1" onClick={() => setMode("choice")} disabled={busy}>Back</Button>
-              <Button type="button" className="flex-1" onClick={() => runContinue(proofFile)} disabled={!proofFile || busy}>{busy ? "Uploading..." : "Upload & settle"}</Button>
+              <Button type="button" className="flex-1" onClick={() => runContinue(proofFile)} disabled={!proofFile || busy}>{busy ? "Uploading..." : "Continue"}</Button>
             </div>
             <Button type="button" variant="outline" className="h-10 w-full rounded-2xl" onClick={continueWithoutProof} disabled={busy}>Continue without proof</Button>
           </div>
@@ -2749,7 +2748,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
 
       <PaymentProofPrompt
         open={Boolean(proofExpense)}
-        description={proofExpense ? `This will settle "${proofExpense.category || "expense"}". Payment proof is optional.` : ""}
+        description={proofExpense?.category || "Group expense"}
         submitting={Boolean(proofExpense && settlingExpenseId === proofExpense.id)}
         onCancel={() => setProofExpense(null)}
         onContinue={async (file) => {
@@ -3511,7 +3510,7 @@ const SettleForm = ({ group, settlement, balances, onSubmit, onCancel }: { group
     </form>
     <PaymentProofPrompt
       open={Boolean(pendingPayload)}
-      description="This will record the settlement. Payment proof is optional."
+      description="Optional screenshot"
       submitting={submitting}
       onCancel={() => setPendingPayload(null)}
       onContinue={async (file) => {
