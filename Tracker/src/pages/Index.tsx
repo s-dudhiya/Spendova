@@ -3425,17 +3425,27 @@ const PickerList = ({ items, emptyText, onPick }: { items: Array<{ id: string; t
   </div>
 );
 
-const SettleForm = ({ group, settlement, balances, onSubmit, onCancel }: { group?: GroupRow; settlement?: SplitSettlementRow; balances: DebtBalance[]; onSubmit: (payload: SettlementPayload, proofFile?: File | null) => Promise<void>; onCancel: () => void }) => {
+const SettleForm = ({ group, settlement, balances, currentUserId, onSubmit, onCancel }: { group?: GroupRow; settlement?: SplitSettlementRow; balances: DebtBalance[]; currentUserId: string; onSubmit: (payload: SettlementPayload, proofFile?: File | null) => Promise<void>; onCancel: () => void }) => {
   const [selectedSuggestionKey, setSelectedSuggestionKey] = useState<string | null>(null);
   const [date, setDate] = useState(settlement?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
   const [note, setNote] = useState(settlement?.note || "");
   const [submitting, setSubmitting] = useState(false);
   const [pendingPayload, setPendingPayload] = useState<SettlementPayload | null>(null);
-  const selectedSuggestion = balances.find((balance) => `${balance.fromUserId}-${balance.toUserId}` === selectedSuggestionKey);
+  const visibleBalances = useMemo(
+    () => balances.filter((balance) => balance.fromUserId === currentUserId || balance.toUserId === currentUserId),
+    [balances, currentUserId],
+  );
+  const selectedSuggestion = visibleBalances.find((balance) => `${balance.fromUserId}-${balance.toUserId}` === selectedSuggestionKey);
   const canSubmit = Boolean(selectedSuggestion) && !submitting;
   const pickSuggestion = (balance: DebtBalance) => {
     setSelectedSuggestionKey(`${balance.fromUserId}-${balance.toUserId}`);
   };
+
+  useEffect(() => {
+    if (!selectedSuggestionKey) return;
+    if (visibleBalances.some((balance) => `${balance.fromUserId}-${balance.toUserId}` === selectedSuggestionKey)) return;
+    setSelectedSuggestionKey(null);
+  }, [selectedSuggestionKey, visibleBalances]);
 
   const buildPayload = () => selectedSuggestion ? {
     settlementId: settlement?.id,
@@ -3458,14 +3468,14 @@ const SettleForm = ({ group, settlement, balances, onSubmit, onCancel }: { group
       <p className="text-sm font-semibold text-muted-foreground">
         {selectedSuggestion ? "Review settlement details and confirm." : "Choose a settlement below to continue."}
       </p>
-      {balances.length > 0 && (
+      {visibleBalances.length > 0 && (
         <div className="space-y-3 rounded-2xl border border-primary/15 bg-elevated p-3 shadow-soft">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-bold uppercase tracking-wide text-foreground">Recommended settlement</p>
             <span className="text-[11px] font-bold text-primary">Tap to select</span>
           </div>
           <div className="space-y-2">
-            {balances.map((balance) => {
+            {visibleBalances.map((balance) => {
               const suggestionKey = `${balance.fromUserId}-${balance.toUserId}`;
               const selected = selectedSuggestionKey === suggestionKey;
               return (
@@ -4104,7 +4114,7 @@ const ActionModal = ({
           )}
 
           {type === "settle-up" && (group || friend) && (
-            <SettleForm group={group} balances={group ? balances : friendBalances} onSubmit={saveSettlement} onCancel={onClose} />
+            <SettleForm group={group} balances={group ? balances : friendBalances} currentUserId={currentUserId} onSubmit={saveSettlement} onCancel={onClose} />
           )}
 
           {type === "delete-expense" && <ConfirmBox title="Delete expense?" text="This will update balances for everyone involved." action="Delete" destructive onCancel={onClose} onConfirm={deleteExpense} />}
