@@ -112,6 +112,7 @@ type ExpenseSplitRow = {
   amount_owed: number;
   amount_paid?: number | null;
   has_paid: boolean | null;
+  created_at?: string | null;
   profiles?: Profile | null;
 };
 
@@ -584,6 +585,16 @@ const sortTimelineByCreatedAt = <T,>(items: T[], getDate: (item: T) => string | 
   });
 };
 
+const getExpenseTimelineCreatedAt = (expense: ExpenseRow) => {
+  const splitTimes = (expense.expense_splits || [])
+    .map((split) => split.created_at)
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter((value) => Number.isFinite(value));
+  if (splitTimes.length) return new Date(Math.min(...splitTimes)).toISOString();
+  return expense.created_at;
+};
+
 const FilterTrigger = ({ count, onClick }: { count: number; onClick: () => void }) => (
   <button type="button" onClick={onClick} className="inline-flex items-center gap-1 text-xs font-bold text-primary">
     <Filter className="size-3.5" />Filter{count > 0 ? ` (${count})` : ""}
@@ -754,7 +765,7 @@ function useSpendovaData(userId?: string) {
             id, user_id, paid_by, amount, category, note, status, split_type, group_id, created_at,
             profiles!expenses_user_id_fkey(user_id, full_name, username),
             payer_profile:profiles!expenses_paid_by_fkey(user_id, full_name, username),
-            expense_splits(id, user_id, amount_owed, amount_paid, has_paid, profiles!expense_splits_user_id_fkey(user_id, full_name, username))
+            expense_splits(id, user_id, amount_owed, amount_paid, has_paid, created_at, profiles!expense_splits_user_id_fkey(user_id, full_name, username))
           `)
           .order("created_at", { ascending: false }), 8000, "expenses fetch"),
         withTimeout(supabase
@@ -1774,7 +1785,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
       const status: FriendActivityStatus = remaining <= 0.009 ? "paid" : paidAmount > 0 ? "partial" : "pending";
       const item = {
         id: expense.id,
-        created_at: expense.created_at,
+        created_at: getExpenseTimelineCreatedAt(expense),
         kind: "expense" as const,
         title: expense.category || "Expense",
         detail: `${expense.paid_by === currentUserId ? "You" : displayName(friend)} paid ${money(expense.amount)}${expense.split_type ? ` • ${expense.split_type} split` : ""}`,
@@ -2455,7 +2466,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const defaultFilters = { status: "all", paidBy: "anyone", date: "all", dateStart: "", dateEnd: "", sort: "newest", splitType: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
-  const groupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), (expense) => expense.created_at);
+  const groupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), getExpenseTimelineCreatedAt);
   const groupSettlements = data.settlements.filter((settlement) => settlement.group_id === group.id);
   const totalSpent = groupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const balances = computeGroupBalances(data.expenses, data.settlements, group, currentUserId);
@@ -2539,7 +2550,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
   const clearFilters = () => setFilters(defaultFilters);
   const groupActivity: GroupActivityItem[] = [
-    ...groupExpenses.map((expense) => ({ kind: "expense" as const, expense, created_at: expense.created_at, amount: Number(expense.amount || 0) })),
+    ...groupExpenses.map((expense) => ({ kind: "expense" as const, expense, created_at: getExpenseTimelineCreatedAt(expense), amount: Number(expense.amount || 0) })),
     ...groupSettlements.map((settlement) => ({ kind: "settlement" as const, settlement, created_at: settlement.created_at, amount: Number(settlement.amount || 0) })),
   ];
   const filteredGroupActivity = sortTimelineByCreatedAt(
