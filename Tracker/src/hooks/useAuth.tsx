@@ -208,6 +208,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       bootLog("auth state change", event, Boolean(session?.user));
+      if (event === "SIGNED_IN" && session?.user) {
+        safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
+      }
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) fetchProfile(session.user.id);
@@ -298,6 +301,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: loginError };
     }
 
+    safeStorage.setItem(getLastActivityKey(data.user.id), String(Date.now()));
     registeringRef.current = true;
     registerDeviceSession()
       .then(() => {
