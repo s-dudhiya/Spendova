@@ -59,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const registeringRef = useRef(false);
   const lastRegisteredUserRef = useRef<string | null>(null);
   const currentUserIdRef = useRef<string | null>(null);
+  const signingInRef = useRef(false);
 
   // Auto-logout due to inactivity
   const clearLocalAuthState = useCallback(() => {
@@ -72,7 +73,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
   }, []);
 
-  const handleAutoLogout = useCallback(async () => {
+  const handleAutoLogout = useCallback(async (targetUserId?: string, expiredLastActivity?: number) => {
+    if (signingInRef.current) return;
+    if (targetUserId) {
+      const storedLastActivity = getStoredLastActivity(targetUserId);
+      if (storedLastActivity && expiredLastActivity && storedLastActivity > expiredLastActivity) return;
+
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (currentSession?.user?.id !== targetUserId) return;
+    }
+
     await revokeCurrentDeviceSession().catch(() => undefined);
     const { error } = await supabase.auth.signOut();
     if (!error) {
@@ -89,10 +99,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     const remainingTime = INACTIVITY_TIMEOUT - (Date.now() - lastActivity);
     if (remainingTime <= 0) {
-      void handleAutoLogout();
+      void handleAutoLogout(targetUser.id, lastActivity);
       return;
     }
-    timeoutRef.current = setTimeout(handleAutoLogout, remainingTime);
+    timeoutRef.current = setTimeout(() => handleAutoLogout(targetUser.id, lastActivity), remainingTime);
     currentUserIdRef.current = targetUser.id;
   }, [handleAutoLogout]);
 
@@ -111,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (document.visibilityState === "hidden") return;
       const lastActivity = getStoredLastActivity(user.id) ?? Date.now();
       if (Date.now() - lastActivity >= INACTIVITY_TIMEOUT) {
-        void handleAutoLogout();
+        void handleAutoLogout(user.id, lastActivity);
         return;
       }
       armInactivityTimer(user, lastActivity);
@@ -123,7 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       safeStorage.setItem(getLastActivityKey(user.id), String(lastActivity));
     }
     if (Date.now() - lastActivity >= INACTIVITY_TIMEOUT) {
-      void handleAutoLogout();
+      void handleAutoLogout(user.id, lastActivity);
       return;
     }
 
@@ -210,6 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       bootLog("auth state change", event, Boolean(session?.user));
       if (event === "SIGNED_IN" && session?.user) {
         safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
       }
       setSession(session);
       setUser(session?.user ?? null);
@@ -267,87 +278,92 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (identifier: string, password: string) => {
+    signingInRef.current = true;
     const cleanIdentifier = identifier.trim().toLowerCase();
-    const loginResult = EMAIL_PATTERN.test(cleanIdentifier)
-      ? await supabase.auth.signInWithPassword({ email: cleanIdentifier, password })
-      : await supabase.functions.invoke("sign-in-with-identifier", {
-          body: { identifier: cleanIdentifier, password },
-        });
-
-    let data = loginResult.data as { user: User; session?: Session | null };
-    const error = loginResult.error;
-    if (error) {
-      console.error("Supabase sign-in error", error);
-      toast({ title: getFriendlyErrorTitle(error, "auth"), description: getFriendlyErrorMessage(error, "auth"), variant: "destructive" });
-      return { error };
-    }
-
-    if (!EMAIL_PATTERN.test(cleanIdentifier) && data?.session?.access_token && data.session.refresh_token) {
-      const { data: sessionData, error: setSessionError } = await supabase.auth.setSession({
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-      });
-      if (setSessionError) {
-        console.error("Username sign-in session error", setSessionError);
-        toast({ title: getFriendlyErrorTitle(setSessionError, "auth"), description: getFriendlyErrorMessage(setSessionError, "auth"), variant: "destructive" });
-        return { error: setSessionError };
-      }
-      data = { user: sessionData.user!, session: sessionData.session };
-    }
-
-    if (!data?.user) {
-      const loginError = new Error("Invalid login credentials");
-      toast({ title: getFriendlyErrorTitle(loginError, "auth"), description: getFriendlyErrorMessage(loginError, "auth"), variant: "destructive" });
-      return { error: loginError };
-    }
-
-    safeStorage.setItem(getLastActivityKey(data.user.id), String(Date.now()));
-    registeringRef.current = true;
-    registerDeviceSession()
-      .then(() => {
-        lastRegisteredUserRef.current = data.user.id;
-        safeStorage.setItem(getLastActivityKey(data.user.id), String(Date.now()));
-        bootLog("sign-in device session registered");
-      })
-      .catch((deviceError) => {
-        console.warn("Device session registration unavailable; continuing without blocking sign-in.", deviceError);
-        lastRegisteredUserRef.current = data.user.id;
-      })
-      .finally(() => {
-        registeringRef.current = false;
-      });
-    markFreshLoginUnlocked(data.user.id);
-
-    let profileData: { email_verified?: boolean | null } | null = null;
-    let profileError: { message?: string } | null = null;
     try {
-      const profileResult = await withTimeout(supabase
-        .from('profiles')
-        .select('email_verified')
-        .eq('user_id', data.user.id)
-        .maybeSingle(), 5000, "profile verification lookup");
-      profileData = profileResult.data;
-      profileError = profileResult.error;
-    } catch (error) {
-      console.error("Profile verification lookup failed", error);
+      const loginResult = EMAIL_PATTERN.test(cleanIdentifier)
+        ? await supabase.auth.signInWithPassword({ email: cleanIdentifier, password })
+        : await supabase.functions.invoke("sign-in-with-identifier", {
+            body: { identifier: cleanIdentifier, password },
+          });
+
+      let data = loginResult.data as { user: User; session?: Session | null };
+      const error = loginResult.error;
+      if (error) {
+        console.error("Supabase sign-in error", error);
+        toast({ title: getFriendlyErrorTitle(error, "auth"), description: getFriendlyErrorMessage(error, "auth"), variant: "destructive" });
+        return { error };
+      }
+
+      if (!EMAIL_PATTERN.test(cleanIdentifier) && data?.session?.access_token && data.session.refresh_token) {
+        const { data: sessionData, error: setSessionError } = await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        });
+        if (setSessionError) {
+          console.error("Username sign-in session error", setSessionError);
+          toast({ title: getFriendlyErrorTitle(setSessionError, "auth"), description: getFriendlyErrorMessage(setSessionError, "auth"), variant: "destructive" });
+          return { error: setSessionError };
+        }
+        data = { user: sessionData.user!, session: sessionData.session };
+      }
+
+      if (!data?.user) {
+        const loginError = new Error("Invalid login credentials");
+        toast({ title: getFriendlyErrorTitle(loginError, "auth"), description: getFriendlyErrorMessage(loginError, "auth"), variant: "destructive" });
+        return { error: loginError };
+      }
+
+      safeStorage.setItem(getLastActivityKey(data.user.id), String(Date.now()));
+      registeringRef.current = true;
+      registerDeviceSession()
+        .then(() => {
+          lastRegisteredUserRef.current = data.user.id;
+          safeStorage.setItem(getLastActivityKey(data.user.id), String(Date.now()));
+          bootLog("sign-in device session registered");
+        })
+        .catch((deviceError) => {
+          console.warn("Device session registration unavailable; continuing without blocking sign-in.", deviceError);
+          lastRegisteredUserRef.current = data.user.id;
+        })
+        .finally(() => {
+          registeringRef.current = false;
+        });
+      markFreshLoginUnlocked(data.user.id);
+
+      let profileData: { email_verified?: boolean | null } | null = null;
+      let profileError: { message?: string } | null = null;
+      try {
+        const profileResult = await withTimeout(supabase
+          .from('profiles')
+          .select('email_verified')
+          .eq('user_id', data.user.id)
+          .maybeSingle(), 5000, "profile verification lookup");
+        profileData = profileResult.data;
+        profileError = profileResult.error;
+      } catch (error) {
+        console.error("Profile verification lookup failed", error);
+      }
+      if (profileError) console.error("Profile verification lookup failed", profileError);
+      const customSignupPending = data.user.user_metadata?.spendova_custom_pending === true;
+      if (profileData && profileData.email_verified === false && customSignupPending) {
+        await revokeCurrentDeviceSession().catch(() => undefined);
+        await supabase.auth.signOut();
+        const verifyError = new Error("Please verify your email with the 6-digit code before logging in.");
+        toast({ title: "Verification Required", description: getFriendlyErrorMessage(verifyError, "auth"), variant: "destructive" });
+        return { error: verifyError };
+      }
+      if (profileData && profileData.email_verified === false && !customSignupPending) {
+        const { error: repairError } = await supabase
+          .from('profiles')
+          .update({ email_verified: true })
+          .eq('user_id', data.user.id);
+        if (repairError) console.error("Profile verification repair failed", repairError);
+      }
+      return { error: null };
+    } finally {
+      signingInRef.current = false;
     }
-    if (profileError) console.error("Profile verification lookup failed", profileError);
-    const customSignupPending = data.user.user_metadata?.spendova_custom_pending === true;
-    if (profileData && profileData.email_verified === false && customSignupPending) {
-      await revokeCurrentDeviceSession().catch(() => undefined);
-      await supabase.auth.signOut();
-      const verifyError = new Error("Please verify your email with the 6-digit code before logging in.");
-      toast({ title: "Verification Required", description: getFriendlyErrorMessage(verifyError, "auth"), variant: "destructive" });
-      return { error: verifyError };
-    }
-    if (profileData && profileData.email_verified === false && !customSignupPending) {
-      const { error: repairError } = await supabase
-        .from('profiles')
-        .update({ email_verified: true })
-        .eq('user_id', data.user.id);
-      if (repairError) console.error("Profile verification repair failed", repairError);
-    }
-    return { error: null };
   };
 
   const signOut = async () => {
