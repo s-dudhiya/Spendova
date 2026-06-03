@@ -4415,15 +4415,29 @@ const Index = () => {
   const expenseDetail = expenseDetailId ? data.expenses.find((expense) => expense.id === expenseDetailId) : undefined;
   const settlementDetail = settlementDetailId ? data.settlements.find((settlement) => settlement.id === settlementDetailId) : undefined;
   const backToSplit = () => navigate("/split");
+  const getExpenseParentPath = (expense: ExpenseRow) => {
+    if (expense.group_id) return `/split/group/${expense.group_id}`;
+    const friendId = expense.paid_by === user.id
+      ? expense.expense_splits?.find((split) => split.user_id !== user.id)?.user_id
+      : expense.paid_by;
+    return friendId ? `/split/friend/${friendId}` : "/split";
+  };
+  const getSettlementParentPath = (settlement: SplitSettlementRow) => {
+    if (settlement.group_id) return `/split/group/${settlement.group_id}`;
+    const friendId = settlement.from_user_id === user.id ? settlement.to_user_id : settlement.from_user_id;
+    return friendId ? `/split/friend/${friendId}` : "/split";
+  };
   const deleteSettlement = async (settlementId: string) => {
+    const settlementToDelete = data.settlements.find((settlement) => settlement.id === settlementId);
+    const redirectPath = settlementToDelete ? getSettlementParentPath(settlementToDelete) : "/split";
     const { error } = await supabase.rpc("delete_split_settlement" as never, { p_settlement_id: settlementId } as never);
     if (error) {
       toast({ title: "Delete failed", description: getFriendlyErrorMessage(error, "delete"), variant: "destructive" });
       return;
     }
     toast({ title: "Settlement deleted", description: "Balances were restored." });
+    navigate(redirectPath, { replace: true });
     await refresh();
-    navigate("/split", { replace: true });
   };
   const showingDetailPage = Boolean(friendDetail || groupDetail || expenseDetail || settlementDetail);
 
@@ -4436,8 +4450,8 @@ const Index = () => {
         {expenseDetailId && !expenseDetail && <Navigate to="/split" replace />}
         {settlementDetailId && !settlementDetail && <Navigate to="/split" replace />}
         {friendDetail && <FriendDetailView friend={friendDetail} data={data} currentUserId={user.id} theme={theme} unreadCount={unreadNotifications} onThemeToggle={toggleTheme} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
-        {expenseDetail && <ExpenseDetailView expense={expenseDetail} settlements={data.settlements} currentUserId={user.id} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
-        {settlementDetail && <SettlementDetailView settlement={settlementDetail} currentUserId={user.id} onBack={backToSplit} onDelete={deleteSettlement} />}
+        {expenseDetail && <ExpenseDetailView expense={expenseDetail} settlements={data.settlements} currentUserId={user.id} openModal={openModal} onBack={() => navigate(getExpenseParentPath(expenseDetail))} refresh={refresh} />}
+        {settlementDetail && <SettlementDetailView settlement={settlementDetail} currentUserId={user.id} onBack={() => navigate(getSettlementParentPath(settlementDetail))} onDelete={deleteSettlement} />}
         {groupDetail && <GroupDetailView group={groupDetail} data={data} currentUserId={user.id} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} settlements={data.settlements} summary={summary} currentUserId={user.id} groups={data.groups} friends={data.friends} openModal={openModal} />}
