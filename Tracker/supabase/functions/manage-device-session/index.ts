@@ -79,6 +79,7 @@ serve(async (req) => {
     if (!deviceId) return json({ error: 'Device identity required' }, 400)
 
     if (action === 'register') {
+      const now = new Date().toISOString()
       const deviceName = normalizeText(body.deviceName, 'Unknown device')
       const deviceType = normalizeText(body.deviceType, 'web', 32)
       const fingerprintHash = normalizeText(body.fingerprintHash, 'unknown', 128)
@@ -106,7 +107,8 @@ serve(async (req) => {
           active: true,
           revoked_at: null,
           revoked_reason: null,
-          last_seen_at: new Date().toISOString(),
+          created_at: now,
+          last_seen_at: now,
         }, { onConflict: 'user_id,device_id' })
         .select('id, device_id, device_name, device_type, platform, active, created_at, last_seen_at')
         .single()
