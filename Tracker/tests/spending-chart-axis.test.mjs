@@ -27,7 +27,8 @@ const cases = [
 
 for (const [name, data] of cases) {
   const labels = getSpendingChartAxisLabels(data);
-  assert.ok(labels.length <= MAX_SPENDING_CHART_AXIS_LABELS, `${name}: label count is bounded`);
+  const expectedMaxLabels = data.length <= 7 ? data.length : MAX_SPENDING_CHART_AXIS_LABELS;
+  assert.ok(labels.length <= expectedMaxLabels, `${name}: label count is bounded`);
   assert.equal(new Set(labels.map((item) => item.index)).size, labels.length, `${name}: label positions are unique`);
   if (data.length > 0) {
     assert.equal(labels[0].index, 0, `${name}: first label remains visible`);
@@ -35,6 +36,11 @@ for (const [name, data] of cases) {
   }
   console.log(`ok - ${name}`);
 }
+
+assert.deepEqual(
+  getSpendingChartAxisLabels(timeline(7, (index) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][index])).map((item) => item.label),
+  ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+);
 
 const summary = getSpendingChartSummary([{ value: 25 }, { value: 75 }, { value: 50 }, { value: 50 }]);
 assert.deepEqual(summary, { total: 200, average: 50 });
