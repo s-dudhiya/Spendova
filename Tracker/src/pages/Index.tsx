@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -175,6 +175,9 @@ type SplitSettlementRow = {
   amount: number;
   note: string | null;
   created_at: string;
+  payment_proof_path?: string | null;
+  payment_proof_uploaded_at?: string | null;
+  payment_proof_deleted_at?: string | null;
   from_profile?: Profile | null;
   to_profile?: Profile | null;
 };
@@ -303,11 +306,14 @@ const toPaise = (amount: number) => Math.round((Number.isFinite(amount) ? amount
 const fromPaise = (paise: number) => Number((paise / 100).toFixed(2));
 const APP_VERSION = "2.1";
 const MAX_FEEDBACK_IMAGE_SIZE = 1024 * 1024;
+const MAX_PAYMENT_PROOF_SOURCE_SIZE = 10 * 1024 * 1024;
+const MAX_PAYMENT_PROOF_UPLOAD_SIZE = 2 * 1024 * 1024;
 const FEEDBACK_IMAGE_EXTENSIONS: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
 };
+const PAYMENT_PROOF_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const feedbackTypeOptions: Array<{ value: FeedbackReportRow["type"]; label: string }> = [
   { value: "bug_report", label: "Bug Report" },
@@ -397,6 +403,75 @@ const compressFeedbackImage = async (file: File): Promise<Blob> => {
 };
 
 const getFeedbackImageExtension = (blob: Blob) => FEEDBACK_IMAGE_EXTENSIONS[blob.type];
+
+const preparePaymentProofImage = async (file: File): Promise<Blob> => {
+  if (!PAYMENT_PROOF_MIME_TYPES.has(file.type)) throw new Error("Please upload a JPEG, PNG, or WebP proof image.");
+  if (file.size > MAX_PAYMENT_PROOF_SOURCE_SIZE) throw new Error("Proof image is too large. Please choose an image under 10 MB.");
+
+  const bitmap = await loadFeedbackImage(file);
+  const canvas = document.createElement("canvas");
+  const maxSide = 1200;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not prepare the proof image.");
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  if ("close" in bitmap && typeof bitmap.close === "function") bitmap.close();
+
+  const toBlob = (quality: number) => new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", quality));
+  for (const quality of [0.78, 0.72, 0.66, 0.6]) {
+    const blob = await toBlob(quality);
+    if (blob && blob.size <= MAX_PAYMENT_PROOF_UPLOAD_SIZE) return blob;
+  }
+  throw new Error("Proof image is still too large after compression. Please choose a smaller screenshot.");
+};
+
+const uploadPaymentProof = async (userId: string, entityId: string, file: File) => {
+  const blob = await preparePaymentProofImage(file);
+  const path = `${userId}/${entityId}/${Date.now()}.webp`;
+  const { error } = await supabase.storage.from("payment-proofs").upload(path, blob, {
+    contentType: "image/webp",
+    upsert: false,
+  });
+  if (error) throw new Error(error.message || "Could not upload payment proof.");
+  return path;
+};
+
+const attachPaymentProofToSettlement = async (settlementId: unknown, proofPath?: string | null) => {
+  if (!proofPath || typeof settlementId !== "string") return;
+  const { error } = await supabase.from("split_settlements" as never).update({
+    payment_proof_path: proofPath,
+    payment_proof_uploaded_at: new Date().toISOString(),
+    payment_proof_deleted_at: null,
+  } as never).eq("id", settlementId);
+  if (error) throw error;
+};
+
+const removeUploadedPaymentProof = async (proofPath?: string | null) => {
+  if (!proofPath) return;
+  const { error } = await supabase.storage.from("payment-proofs").remove([proofPath]);
+  if (error) console.warn("Could not clean up uploaded payment proof", error);
+};
+
+const getPaymentProofErrorMessage = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const lower = message.toLowerCase();
+  if (lower.includes("proof image") || lower.includes("jpeg") || lower.includes("png") || lower.includes("webp")) return message;
+  if (lower.includes("payload too large") || lower.includes("entity too large") || lower.includes("file size")) {
+    return "The proof image is too large to upload. Please choose a smaller screenshot.";
+  }
+  if (lower.includes("mime") || lower.includes("content type") || lower.includes("not supported")) {
+    return "This proof format is not supported. Please upload a JPEG, PNG, or WebP image.";
+  }
+  if (lower.includes("permission") || lower.includes("not authorized") || lower.includes("unauthorized") || lower.includes("row-level security")) {
+    return "Payment proof upload was denied by storage permissions. Please sign in again and retry.";
+  }
+  if (lower.includes("failed to fetch") || lower.includes("network") || lower.includes("offline") || lower.includes("timeout")) {
+    return "Payment proof could not be uploaded. Please check your connection and try again.";
+  }
+  return message || "Payment proof could not be uploaded. Please try again.";
+};
 
 class FeedbackScreenshotUploadError extends Error {
   constructor(message: string) {
@@ -688,7 +763,7 @@ function useSpendovaData(userId?: string) {
           .order("created_at", { ascending: false }), 8000, "groups fetch"),
         withTimeout(supabase
           .from("split_settlements" as never)
-          .select("id, group_id, expense_id, from_user_id, to_user_id, amount, note, created_at, from_profile:profiles!split_settlements_from_user_id_fkey(user_id, full_name, username), to_profile:profiles!split_settlements_to_user_id_fkey(user_id, full_name, username)")
+          .select("id, group_id, expense_id, from_user_id, to_user_id, amount, note, created_at, payment_proof_path, payment_proof_uploaded_at, payment_proof_deleted_at, from_profile:profiles!split_settlements_from_user_id_fkey(user_id, full_name, username), to_profile:profiles!split_settlements_to_user_id_fkey(user_id, full_name, username)")
           .order("created_at", { ascending: false }), 8000, "settlements fetch"),
         withTimeout(supabase
           .from("notifications" as never)
@@ -1752,7 +1827,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
     closeActions();
     action();
   };
-  const confirmQuickSettle = async () => {
+  const confirmQuickSettle = async (proofFile?: File | null) => {
     if (!quickSettleItem || quickSettling) return;
     const amount = Number(Math.abs(quickSettleItem.remainingImpact).toFixed(2));
     if (amount <= 0) return;
@@ -1764,21 +1839,45 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
       toast({ title: "Could not settle expense", description: "No unpaid split was found for this activity.", variant: "destructive" });
       return;
     }
+    let proofPath: string | null = null;
+    let proofUploaded = false;
     setQuickSettling(true);
-    const fromUserId = quickSettleItem.impact > 0 ? friend.user_id : currentUserId;
-    const toUserId = quickSettleItem.impact > 0 ? currentUserId : friend.user_id;
-    const { error } = await supabase.rpc("record_split_settlement" as never, {
-      p_from_user_id: fromUserId,
-      p_to_user_id: toUserId,
-      p_amount: amount,
-      p_group_id: null,
-      p_expense_id: expense.id,
-      p_note: `Settled ${quickSettleItem.title}`,
-    } as never);
-    setQuickSettling(false);
-    if (error) {
-      toast({ title: "Settlement failed", description: getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
-      return;
+    try {
+      if (proofFile) {
+        proofPath = await uploadPaymentProof(currentUserId, expense.id, proofFile);
+        proofUploaded = true;
+      }
+      const fromUserId = quickSettleItem.impact > 0 ? friend.user_id : currentUserId;
+      const toUserId = quickSettleItem.impact > 0 ? currentUserId : friend.user_id;
+      const { data: settlementId, error } = await supabase.rpc("record_split_settlement" as never, {
+        p_from_user_id: fromUserId,
+        p_to_user_id: toUserId,
+        p_amount: amount,
+        p_group_id: null,
+        p_expense_id: expense.id,
+        p_note: `Settled ${quickSettleItem.title}`,
+      } as never);
+      if (error) {
+        await removeUploadedPaymentProof(proofPath);
+        proofPath = null;
+        throw error;
+      }
+      if (proofPath) {
+        try {
+          await attachPaymentProofToSettlement(settlementId, proofPath);
+        } catch (proofError) {
+          await removeUploadedPaymentProof(proofPath);
+          proofPath = null;
+          toast({ title: "Proof was not saved", description: getPaymentProofErrorMessage(proofError), variant: "destructive" });
+        }
+      }
+    } catch (error) {
+      if (proofPath) await removeUploadedPaymentProof(proofPath);
+      const isProofError = proofFile && !proofUploaded;
+      toast({ title: isProofError ? "Proof upload failed" : "Settlement failed", description: isProofError ? getPaymentProofErrorMessage(error) : getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
+      throw error;
+    } finally {
+      setQuickSettling(false);
     }
     notifySharedAction({
       type: "split_expense_paid",
@@ -1955,20 +2054,13 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
         </DrawerContent>
       </Drawer>
 
-      <Dialog open={Boolean(quickSettleItem)} onOpenChange={(open) => !open && setQuickSettleItem(null)}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-sm rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="text-foreground">Mark expense as settled?</DialogTitle>
-            <DialogDescription>
-              {quickSettleItem ? `This will mark ${money(Math.abs(quickSettleItem.remainingImpact))} as paid for "${quickSettleItem.title}".` : ""}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex gap-2 pt-2">
-            <Button type="button" variant="quiet" className="flex-1" onClick={() => setQuickSettleItem(null)}>Cancel</Button>
-            <Button type="button" className="flex-1" onClick={confirmQuickSettle} disabled={quickSettling}>{quickSettling ? "Saving..." : "Mark Settled"}</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PaymentProofPrompt
+        open={Boolean(quickSettleItem)}
+        description={quickSettleItem ? `This will mark ${money(Math.abs(quickSettleItem.remainingImpact))} as paid for "${quickSettleItem.title}". Payment proof is optional.` : ""}
+        submitting={quickSettling}
+        onCancel={() => setQuickSettleItem(null)}
+        onContinue={confirmQuickSettle}
+      />
     </>
   );
 };
@@ -1980,9 +2072,134 @@ const DetailRow = ({ label, value }: { label: string; value: React.ReactNode }) 
   </div>
 );
 
+const PaymentProofPrompt = ({
+  open,
+  title = "Do you want to upload payment proof?",
+  description = "You can attach a UPI/payment screenshot for reference. This is optional.",
+  submitting = false,
+  onCancel,
+  onContinue,
+}: {
+  open: boolean;
+  title?: string;
+  description?: string;
+  submitting?: boolean;
+  onCancel: () => void;
+  onContinue: (file: File | null) => Promise<void>;
+}) => {
+  const { toast } = useToast();
+  const [mode, setMode] = useState<"choice" | "upload">("choice");
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [internalSubmitting, setInternalSubmitting] = useState(false);
+  const busy = submitting || internalSubmitting;
+
+  useEffect(() => {
+    if (!open) {
+      setMode("choice");
+      setProofFile(null);
+      setInternalSubmitting(false);
+    }
+  }, [open]);
+
+  const runContinue = async (file: File | null) => {
+    if (busy) return;
+    setInternalSubmitting(true);
+    try {
+      await onContinue(file);
+    } catch {
+      setInternalSubmitting(false);
+    }
+  };
+
+  const selectProof = (file?: File) => {
+    if (!file) {
+      setProofFile(null);
+      return;
+    }
+    if (!PAYMENT_PROOF_MIME_TYPES.has(file.type)) {
+      toast({ title: "Invalid proof file", description: "Please upload a JPEG, PNG, or WebP image.", variant: "destructive" });
+      setProofFile(null);
+      return;
+    }
+    if (file.size > MAX_PAYMENT_PROOF_SOURCE_SIZE) {
+      toast({ title: "Proof image too large", description: "Please choose an image under 10 MB.", variant: "destructive" });
+      setProofFile(null);
+      return;
+    }
+    setProofFile(file);
+  };
+
+  const continueWithoutProof = async () => {
+    if (mode === "upload" && !window.confirm("Continue without payment proof?")) return;
+    await runContinue(null);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && !busy && onCancel()}>
+      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-sm rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:p-6">
+        <DialogHeader>
+          <DialogTitle className="text-foreground">{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        {mode === "choice" ? (
+          <div className="space-y-2 pt-2">
+            <Button type="button" className="h-11 w-full rounded-2xl shadow-primary-action" onClick={() => setMode("upload")} disabled={busy}>
+              <Upload className="size-4" />Yes, upload proof
+            </Button>
+            <Button type="button" variant="outline" className="h-11 w-full rounded-2xl" onClick={continueWithoutProof} disabled={busy}>
+              {busy ? "Saving..." : "No, continue without proof"}
+            </Button>
+            <Button type="button" variant="quiet" className="h-10 w-full rounded-2xl" onClick={onCancel} disabled={busy}>Cancel</Button>
+          </div>
+        ) : (
+          <div className="space-y-3 pt-2">
+            <label className="block rounded-2xl border border-dashed border-primary/40 bg-primary/5 p-4 text-center text-sm font-bold text-primary">
+              <Upload className="mx-auto mb-2 size-5" />
+              {proofFile ? proofFile.name : "Choose payment screenshot"}
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => selectProof(event.target.files?.[0])} disabled={busy} />
+            </label>
+            <p className="text-xs font-medium text-muted-foreground">JPEG, PNG, or WebP only. Large images are compressed to WebP before upload.</p>
+            <div className="flex gap-2 pt-1">
+              <Button type="button" variant="quiet" className="flex-1" onClick={() => setMode("choice")} disabled={busy}>Back</Button>
+              <Button type="button" className="flex-1" onClick={() => runContinue(proofFile)} disabled={!proofFile || busy}>{busy ? "Uploading..." : "Upload & settle"}</Button>
+            </div>
+            <Button type="button" variant="outline" className="h-10 w-full rounded-2xl" onClick={continueWithoutProof} disabled={busy}>Continue without proof</Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const PaymentProofLink = ({ path }: { path?: string | null }) => {
+  const { toast } = useToast();
+  const [opening, setOpening] = useState(false);
+  const openProof = async (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (!path) return;
+    if (opening) return;
+    setOpening(true);
+    const { data: signedProof, error: signedProofError } = await supabase.storage.from("payment-proofs").createSignedUrl(path, 60 * 5);
+    setOpening(false);
+    const signedUrl = signedProof?.signedUrl;
+    if (signedProofError || !signedUrl) {
+      toast({ title: "Could not open proof", description: getPaymentProofErrorMessage(signedProofError), variant: "destructive" });
+      return;
+    }
+    window.open(signedUrl, "_blank", "noopener,noreferrer");
+  };
+  if (!path) return null;
+  return (
+    <button type="button" onClick={openProof} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-[11px] font-bold text-primary hover:bg-primary/15">
+      <Upload className="size-3" />{opening ? "Opening..." : "View proof"}
+    </button>
+  );
+};
+
 const ExpenseDetailView = ({ expense, settlements, currentUserId, openModal, onBack, refresh }: { expense: ExpenseRow; settlements: SplitSettlementRow[]; currentUserId: string; openModal: (type: ModalType, item?: string) => void; onBack: () => void; refresh: () => Promise<void> }) => {
   const { toast } = useToast();
   const [settling, setSettling] = useState(false);
+  const [proofPromptOpen, setProofPromptOpen] = useState(false);
   const isPayer = expense.paid_by === currentUserId;
   const mySplit = expense.expense_splits?.find((split) => split.user_id === currentUserId);
   const expenseSettlements = settlements.filter((settlement) => settlement.expense_id === expense.id);
@@ -2004,21 +2221,45 @@ const ExpenseDetailView = ({ expense, settlements, currentUserId, openModal, onB
       role: Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0) >= Number(split.amount_owed || 0) ? "Settled share" : "Share",
     })),
   ];
-  const settleMyShare = async () => {
+  const settleMyShare = async (proofFile?: File | null) => {
     if (!mySplit || myRemaining <= 0 || settling) return;
+    let proofPath: string | null = null;
+    let proofUploaded = false;
     setSettling(true);
-    const { error } = await supabase.rpc("record_split_settlement" as never, {
-      p_from_user_id: currentUserId,
-      p_to_user_id: expense.paid_by,
-      p_amount: myRemaining,
-      p_group_id: expense.group_id,
-      p_expense_id: expense.id,
-      p_note: `Settled ${expense.category || "expense"}`,
-    } as never);
-    setSettling(false);
-    if (error) {
-      toast({ title: "Settlement failed", description: getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
-      return;
+    try {
+      if (proofFile) {
+        proofPath = await uploadPaymentProof(currentUserId, expense.id, proofFile);
+        proofUploaded = true;
+      }
+      const { data: settlementId, error } = await supabase.rpc("record_split_settlement" as never, {
+        p_from_user_id: currentUserId,
+        p_to_user_id: expense.paid_by,
+        p_amount: myRemaining,
+        p_group_id: expense.group_id,
+        p_expense_id: expense.id,
+        p_note: `Settled ${expense.category || "expense"}`,
+      } as never);
+      if (error) {
+        await removeUploadedPaymentProof(proofPath);
+        proofPath = null;
+        throw error;
+      }
+      if (proofPath) {
+        try {
+          await attachPaymentProofToSettlement(settlementId, proofPath);
+        } catch (proofError) {
+          await removeUploadedPaymentProof(proofPath);
+          proofPath = null;
+          toast({ title: "Proof was not saved", description: getPaymentProofErrorMessage(proofError), variant: "destructive" });
+        }
+      }
+    } catch (error) {
+      if (proofPath) await removeUploadedPaymentProof(proofPath);
+      const isProofError = proofFile && !proofUploaded;
+      toast({ title: isProofError ? "Proof upload failed" : "Settlement failed", description: isProofError ? getPaymentProofErrorMessage(error) : getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
+      throw error;
+    } finally {
+      setSettling(false);
     }
     notifySharedAction({
       type: expense.group_id ? "group_expense_paid" : "split_expense_paid",
@@ -2031,10 +2272,12 @@ const ExpenseDetailView = ({ expense, settlements, currentUserId, openModal, onB
       expense_name: expense.category || "Expense",
     });
     toast({ title: "Expense settled", description: "Your share and balances were updated." });
+    setProofPromptOpen(false);
     await refresh();
   };
 
   return (
+    <>
     <main className="space-y-5 pt-4">
       <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-bold text-primary"><ArrowLeft className="size-4" />Back to Split</button>
       <section className="rounded-2xl bg-card p-4 shadow-soft">
@@ -2085,18 +2328,28 @@ const ExpenseDetailView = ({ expense, settlements, currentUserId, openModal, onB
                 <p className="truncate text-sm font-bold text-foreground">{settlement.from_user_id === currentUserId ? "You" : displayName(settlement.from_profile)} paid {settlement.to_user_id === currentUserId ? "you" : displayName(settlement.to_profile)}</p>
                 <p className="text-xs font-medium text-muted-foreground">{dateLabel(settlement.created_at)}{settlement.note ? ` - ${settlement.note}` : ""}</p>
               </div>
-              <p className="text-sm font-bold text-success">{money(settlement.amount)}</p>
+              <div className="shrink-0 text-right">
+                <p className="text-sm font-bold text-success">{money(settlement.amount)}</p>
+                <div className="mt-1"><PaymentProofLink path={settlement.payment_proof_path} /></div>
+              </div>
             </div>
           ))}
         </div>
       </section>
 
       <section className="grid grid-cols-2 gap-3">
-        {myRemaining > 0 ? <Button onClick={settleMyShare} className="col-span-2 h-11 rounded-2xl shadow-primary-action" disabled={settling}><Check />{settling ? "Saving..." : `Settle this expense (${money(myRemaining)})`}</Button> : null}
+        {myRemaining > 0 ? <Button onClick={() => setProofPromptOpen(true)} className="col-span-2 h-11 rounded-2xl shadow-primary-action" disabled={settling}><Check />{settling ? "Saving..." : `Settle this expense (${money(myRemaining)})`}</Button> : null}
         <Button onClick={() => openModal("edit-expense", expense.id)} className="h-11 rounded-2xl shadow-primary-action"><Pencil />Edit expense</Button>
         <Button onClick={() => openModal("delete-expense", expense.id)} variant="destructive" className="h-11 rounded-2xl"><Trash2 />Delete expense</Button>
       </section>
     </main>
+    <PaymentProofPrompt
+      open={proofPromptOpen}
+      submitting={settling}
+      onCancel={() => setProofPromptOpen(false)}
+      onContinue={settleMyShare}
+    />
+    </>
   );
 };
 
@@ -2117,6 +2370,7 @@ const SettlementDetailView = ({ settlement, currentUserId, onBack, onDelete }: {
         <DetailRow label="Paid to" value={paidTo} />
         <DetailRow label="Date" value={dateLabel(settlement.created_at)} />
         <DetailRow label="Linked expense" value={settlement.expense_id ? "Specific expense" : "Balance settlement"} />
+        {settlement.payment_proof_path ? <DetailRow label="Payment proof" value={<PaymentProofLink path={settlement.payment_proof_path} />} /> : null}
         {settlement.note ? <DetailRow label="Note" value={settlement.note} /> : null}
       </section>
       <Button onClick={() => onDelete(settlement.id)} variant="destructive" className="h-11 w-full rounded-2xl"><Trash2 />Delete settlement</Button>
@@ -2187,6 +2441,8 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const { toast } = useToast();
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
   const [actionExpense, setActionExpense] = useState<ExpenseRow | null>(null);
+  const [proofExpense, setProofExpense] = useState<ExpenseRow | null>(null);
+  const [settlingExpenseId, setSettlingExpenseId] = useState<string | null>(null);
   const [participantsExpense, setParticipantsExpense] = useState<ExpenseRow | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const defaultFilters = { status: "all", paidBy: "anyone", date: "all", dateStart: "", dateEnd: "", sort: "newest", splitType: "all" };
@@ -2210,26 +2466,53 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
     return "pending" as const;
   };
   const getRemaining = (expense: ExpenseRow) => (expense.expense_splits || []).reduce((sum, split) => sum + Math.max(Number(split.amount_owed || 0) - Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0), 0), 0);
-  const settleExpense = async (expense: ExpenseRow) => {
+  const settleExpense = async (expense: ExpenseRow, proofFile?: File | null) => {
     const unpaidSplits = (expense.expense_splits || [])
       .map((split) => ({ ...split, remaining: Math.max(Number(split.amount_owed || 0) - Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0), 0) }))
       .filter((split) => split.remaining > 0 && (currentUserId === expense.paid_by || split.user_id === currentUserId));
     if (!unpaidSplits.length) return;
-    const results = await Promise.all(unpaidSplits.map((split) => supabase.rpc("record_split_settlement" as never, {
-      p_from_user_id: split.user_id,
-      p_to_user_id: expense.paid_by,
-      p_amount: split.remaining,
-      p_group_id: group.id,
-      p_expense_id: expense.id,
-      p_note: `Settled ${expense.category || "expense"}`,
-    } as never)));
-    const error = results.find((result) => result.error)?.error;
-    if (error) {
-      toast({ title: "Settlement failed", description: getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
-      return;
+    let proofPath: string | null = null;
+    let proofUploaded = false;
+    setSettlingExpenseId(expense.id);
+    try {
+      if (proofFile) {
+        proofPath = await uploadPaymentProof(currentUserId, expense.id, proofFile);
+        proofUploaded = true;
+      }
+      const results = await Promise.all(unpaidSplits.map((split) => supabase.rpc("record_split_settlement" as never, {
+        p_from_user_id: split.user_id,
+        p_to_user_id: expense.paid_by,
+        p_amount: split.remaining,
+        p_group_id: group.id,
+        p_expense_id: expense.id,
+        p_note: `Settled ${expense.category || "expense"}`,
+      } as never)));
+      const error = results.find((result) => result.error)?.error;
+      if (error) {
+        await removeUploadedPaymentProof(proofPath);
+        proofPath = null;
+        throw error;
+      }
+      if (proofPath) {
+        try {
+          await Promise.all(results.map((result) => attachPaymentProofToSettlement(result.data, proofPath)));
+        } catch (proofError) {
+          await removeUploadedPaymentProof(proofPath);
+          proofPath = null;
+          toast({ title: "Proof was not saved", description: getPaymentProofErrorMessage(proofError), variant: "destructive" });
+        }
+      }
+    } catch (error) {
+      if (proofPath) await removeUploadedPaymentProof(proofPath);
+      const isProofError = proofFile && !proofUploaded;
+      toast({ title: isProofError ? "Proof upload failed" : "Settlement failed", description: isProofError ? getPaymentProofErrorMessage(error) : getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
+      throw error;
+    } finally {
+      setSettlingExpenseId(null);
     }
     toast({ title: "Expense settled", description: "Group balances were updated." });
     setActionExpense(null);
+    setProofExpense(null);
     await refresh();
   };
   const actionStatus = actionExpense ? getExpenseStatus(actionExpense) : "pending";
@@ -2416,11 +2699,21 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
           <div className="overflow-hidden rounded-2xl bg-elevated/70">
             <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => actionExpense && navigate(`/split/expense/${actionExpense.id}`)}>View details<ArrowRight className="size-4 text-muted-foreground" /></button>
             <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => actionExpense && openModal("edit-expense", actionExpense.id)}>Edit expense<Pencil className="size-4 text-muted-foreground" /></button>
-            {actionExpense && actionStatus !== "settled" && actionRemaining > 0 ? <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => actionExpense && settleExpense(actionExpense)}>{actionStatus === "partial" ? `Settle remaining ${money(actionRemaining)}` : "Mark as settled"}<Check className="size-4 text-muted-foreground" /></button> : null}
+            {actionExpense && actionStatus !== "settled" && actionRemaining > 0 ? <button type="button" className="flex w-full items-center justify-between border-b border-border/60 px-4 py-3 text-left text-sm font-bold text-foreground hover:bg-background/70" onClick={() => { if (actionExpense) { setProofExpense(actionExpense); setActionExpense(null); } }}>{actionStatus === "partial" ? `Settle remaining ${money(actionRemaining)}` : "Mark as settled"}<Check className="size-4 text-muted-foreground" /></button> : null}
             <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-bold text-destructive hover:bg-destructive/10" onClick={() => actionExpense && openModal("delete-expense", actionExpense.id)}>Delete expense<Trash2 className="size-4" /></button>
           </div>
         </DrawerContent>
       </Drawer>
+
+      <PaymentProofPrompt
+        open={Boolean(proofExpense)}
+        description={proofExpense ? `This will settle "${proofExpense.category || "expense"}". Payment proof is optional.` : ""}
+        submitting={Boolean(proofExpense && settlingExpenseId === proofExpense.id)}
+        onCancel={() => setProofExpense(null)}
+        onContinue={async (file) => {
+          if (proofExpense) await settleExpense(proofExpense, file);
+        }}
+      />
 
       <Drawer open={Boolean(participantsExpense)} onOpenChange={(open) => !open && setParticipantsExpense(null)}>
         <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-y-auto rounded-t-3xl border-border bg-card px-4 pb-6">
@@ -3080,27 +3373,35 @@ const PickerList = ({ items, emptyText, onPick }: { items: Array<{ id: string; t
   </div>
 );
 
-const SettleForm = ({ group, settlement, balances, onSubmit, onCancel }: { group?: GroupRow; settlement?: SplitSettlementRow; balances: DebtBalance[]; onSubmit: (payload: SettlementPayload) => Promise<void>; onCancel: () => void }) => {
+const SettleForm = ({ group, settlement, balances, onSubmit, onCancel }: { group?: GroupRow; settlement?: SplitSettlementRow; balances: DebtBalance[]; onSubmit: (payload: SettlementPayload, proofFile?: File | null) => Promise<void>; onCancel: () => void }) => {
   const [selectedSuggestionKey, setSelectedSuggestionKey] = useState<string | null>(null);
   const [date, setDate] = useState(settlement?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
   const [note, setNote] = useState(settlement?.note || "");
   const [submitting, setSubmitting] = useState(false);
+  const [pendingPayload, setPendingPayload] = useState<SettlementPayload | null>(null);
   const selectedSuggestion = balances.find((balance) => `${balance.fromUserId}-${balance.toUserId}` === selectedSuggestionKey);
   const canSubmit = Boolean(selectedSuggestion) && !submitting;
   const pickSuggestion = (balance: DebtBalance) => {
     setSelectedSuggestionKey(`${balance.fromUserId}-${balance.toUserId}`);
   };
 
+  const buildPayload = () => selectedSuggestion ? {
+    settlementId: settlement?.id,
+    from_user_id: selectedSuggestion.fromUserId,
+    to_user_id: selectedSuggestion.toUserId,
+    amount: selectedSuggestion.amount,
+    group_id: group?.id || settlement?.group_id || null,
+    note: note.trim() || null,
+    created_at: new Date(date).toISOString(),
+  } : null;
+
   return (
+    <>
     <form className="space-y-4" onSubmit={async (event) => {
       event.preventDefault();
       if (!selectedSuggestion || submitting) return;
-      setSubmitting(true);
-      try {
-        await onSubmit({ settlementId: settlement?.id, from_user_id: selectedSuggestion.fromUserId, to_user_id: selectedSuggestion.toUserId, amount: selectedSuggestion.amount, group_id: group?.id || settlement?.group_id || null, note: note.trim() || null, created_at: new Date(date).toISOString() });
-      } finally {
-        setSubmitting(false);
-      }
+      const payload = buildPayload();
+      if (payload) setPendingPayload(payload);
     }}>
       <p className="text-sm font-semibold text-muted-foreground">
         {selectedSuggestion ? "Review settlement details and confirm." : "Choose a settlement below to continue."}
@@ -3166,6 +3467,23 @@ const SettleForm = ({ group, settlement, balances, onSubmit, onCancel }: { group
       <Textarea label="Note (optional)" placeholder="Paid by UPI, cash..." value={note} onChange={setNote} />
       <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button type="submit" className="flex-1" disabled={!canSubmit}>{submitting ? "Saving..." : selectedSuggestion ? "Confirm Settlement" : "Select settlement first"}</Button></div>
     </form>
+    <PaymentProofPrompt
+      open={Boolean(pendingPayload)}
+      description="This will record the settlement. Payment proof is optional."
+      submitting={submitting}
+      onCancel={() => setPendingPayload(null)}
+      onContinue={async (file) => {
+        if (!pendingPayload || submitting) return;
+        setSubmitting(true);
+        try {
+          await onSubmit(pendingPayload, file);
+          setPendingPayload(null);
+        } finally {
+          setSubmitting(false);
+        }
+      }}
+    />
+    </>
   );
 };
 
@@ -3426,18 +3744,41 @@ const ActionModal = ({
     }
   };
 
-  const saveSettlement = async (payload: SettlementPayload) => {
-    const { error } = await supabase.rpc("record_split_settlement" as never, {
-      p_from_user_id: payload.from_user_id,
-      p_to_user_id: payload.to_user_id,
-      p_amount: payload.amount,
-      p_group_id: payload.group_id || null,
-      p_expense_id: null,
-      p_note: payload.note || null,
-    } as never);
-    if (error) {
-      toast({ title: "Settlement failed", description: getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
-      return;
+  const saveSettlement = async (payload: SettlementPayload, proofFile?: File | null) => {
+    let proofPath: string | null = null;
+    let proofUploaded = false;
+    try {
+      if (proofFile) {
+        proofPath = await uploadPaymentProof(currentUserId, payload.group_id || "friend-settlement", proofFile);
+        proofUploaded = true;
+      }
+      const { data: settlementId, error } = await supabase.rpc("record_split_settlement" as never, {
+        p_from_user_id: payload.from_user_id,
+        p_to_user_id: payload.to_user_id,
+        p_amount: payload.amount,
+        p_group_id: payload.group_id || null,
+        p_expense_id: null,
+        p_note: payload.note || null,
+      } as never);
+      if (error) {
+        await removeUploadedPaymentProof(proofPath);
+        proofPath = null;
+        throw error;
+      }
+      if (proofPath) {
+        try {
+          await attachPaymentProofToSettlement(settlementId, proofPath);
+        } catch (proofError) {
+          await removeUploadedPaymentProof(proofPath);
+          proofPath = null;
+          toast({ title: "Proof was not saved", description: getPaymentProofErrorMessage(proofError), variant: "destructive" });
+        }
+      }
+    } catch (error) {
+      if (proofPath) await removeUploadedPaymentProof(proofPath);
+      const isProofError = proofFile && !proofUploaded;
+      toast({ title: isProofError ? "Proof upload failed" : "Settlement failed", description: isProofError ? getPaymentProofErrorMessage(error) : getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
+      throw error;
     }
     notifySharedAction({
       type: payload.group_id ? "group_settled" : "split_settled",
