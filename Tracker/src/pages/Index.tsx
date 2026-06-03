@@ -2214,6 +2214,16 @@ const PaymentProofLink = ({ path }: { path?: string | null }) => {
   );
 };
 
+const PaymentProofDisplay = ({ path, deletedAt }: { path?: string | null; deletedAt?: string | null }) => {
+  if (path) return <PaymentProofLink path={path} />;
+  if (!deletedAt) return null;
+  return (
+    <span className="block max-w-[12rem] text-xs font-medium leading-5 text-muted-foreground">
+      Payment proof was deleted because it was older than 90 days.
+    </span>
+  );
+};
+
 const ExpenseDetailView = ({ expense, settlements, currentUserId, openModal, onBack, refresh }: { expense: ExpenseRow; settlements: SplitSettlementRow[]; currentUserId: string; openModal: (type: ModalType, item?: string) => void; onBack: () => void; refresh: () => Promise<void> }) => {
   const { toast } = useToast();
   const [settling, setSettling] = useState(false);
@@ -2348,7 +2358,7 @@ const ExpenseDetailView = ({ expense, settlements, currentUserId, openModal, onB
               </div>
               <div className="shrink-0 text-right">
                 <p className="text-sm font-bold text-success">{money(settlement.amount)}</p>
-                <div className="mt-1"><PaymentProofLink path={settlement.payment_proof_path} /></div>
+                <div className="mt-1"><PaymentProofDisplay path={settlement.payment_proof_path} deletedAt={settlement.payment_proof_deleted_at} /></div>
               </div>
             </div>
           ))}
@@ -2388,7 +2398,7 @@ const SettlementDetailView = ({ settlement, currentUserId, onBack, onDelete }: {
         <DetailRow label="Paid to" value={paidTo} />
         <DetailRow label="Date" value={dateLabel(settlement.created_at)} />
         <DetailRow label="Linked expense" value={settlement.expense_id ? "Specific expense" : "Balance settlement"} />
-        {settlement.payment_proof_path ? <DetailRow label="Payment proof" value={<PaymentProofLink path={settlement.payment_proof_path} />} /> : null}
+        {settlement.payment_proof_path || settlement.payment_proof_deleted_at ? <DetailRow label="Payment proof" value={<PaymentProofDisplay path={settlement.payment_proof_path} deletedAt={settlement.payment_proof_deleted_at} />} /> : null}
         {settlement.note ? <DetailRow label="Note" value={settlement.note} /> : null}
       </section>
       <Button onClick={() => onDelete(settlement.id)} variant="destructive" className="h-11 w-full rounded-2xl"><Trash2 />Delete settlement</Button>
