@@ -146,11 +146,11 @@ export function getFriendlyErrorMessage(error: unknown, context: ErrorContext = 
   }
 
   if (text.includes("invalid login") || text.includes("invalid credentials")) {
-    return "Invalid email or password.";
+    return "Invalid email/username or password.";
   }
 
   if (status === 400 && isAuthContext(context) && text.includes("non-2xx")) {
-    return context === "signup" ? "Please check your signup details and try again." : "Invalid email or password.";
+    return context === "signup" ? "Please check your signup details and try again." : "Invalid email/username or password.";
   }
 
   if (
@@ -164,7 +164,7 @@ export function getFriendlyErrorMessage(error: unknown, context: ErrorContext = 
   }
 
   if (status === 401 || status === 403) {
-    if (isAuthContext(context)) return "Invalid email or password.";
+    if (isAuthContext(context)) return "Invalid email/username or password.";
     return "You do not have permission to complete this action.";
   }
 

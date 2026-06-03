@@ -122,10 +122,16 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
     event.preventDefault();
     setFormError("");
 
-    if (!EMAIL_PATTERN.test(email.trim())) {
+    if (!isLogin && !EMAIL_PATTERN.test(email.trim())) {
       const message = getFriendlyErrorMessage("invalid email", "auth");
       setFormError(message);
       toast({ title: getFriendlyErrorTitle(message, "auth"), description: message, variant: "destructive" });
+      return;
+    }
+    if (isLogin && !email.trim()) {
+      const message = "Please enter your email or username.";
+      setFormError(message);
+      toast({ title: "Check your login", description: message, variant: "destructive" });
       return;
     }
     if (isRegister && password !== confirmPassword) {
@@ -226,7 +232,7 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
                 {username && <p className={`mt-2 text-xs font-semibold ${usernameStatus === "available" ? "text-success" : usernameStatus === "checking" ? "text-muted-foreground" : "text-destructive"}`}>{usernameStatus === "available" ? "Username is available" : usernameStatus === "checking" ? "Checking username..." : "Username must be unique and at least 3 characters"}</p>}
               </div>
             )}
-            {!isReset && <TextField label="Email" value={email} onChange={setEmail} placeholder="Enter email address" type="email" icon={Mail} />}
+            {!isReset && <TextField label={isLogin ? "Email or username" : "Email"} value={email} onChange={setEmail} placeholder={isLogin ? "Enter email or username" : "Enter email address"} type={isLogin ? "text" : "email"} icon={isLogin ? User : Mail} />}
             {isReset && <TextField label="Email" value={email} onChange={setEmail} placeholder="Enter email address" type="email" icon={Mail} />}
             {!isForgot && !isReset && <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Enter password" />}
             {isRegister && <PasswordField label="Confirm password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Confirm password" />}

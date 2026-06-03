@@ -21,22 +21,31 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
+  signIn: (identifier: string, password: string) => Promise<{ error: unknown }>;
   signOut: () => Promise<void>;
   loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const INACTIVITY_TIMEOUT = 7 * 24 * 60 * 60 * 1000; // 7 days
+const INACTIVITY_TIMEOUT = 30 * 24 * 60 * 60 * 1000; // 30 days
 const DEVICE_SESSION_CHECK_INTERVAL = 60 * 1000;
 const STARTUP_TIMEOUT = 5000;
 const LAST_ACTIVITY_PREFIX = "spendova_last_activity_at";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const getLastActivityKey = (userId: string) => `${LAST_ACTIVITY_PREFIX}_${userId}`;
 
 const getStoredLastActivity = (userId: string) => {
   const value = Number(safeStorage.getItem(getLastActivityKey(userId)) || "0");
   return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+const getDeviceSessionMessage = (reason?: string) => {
+  if (reason === "new_device_login") return "Your account was opened on another device.";
+  if (reason === "device_session_missing") return "This session is no longer active. Please sign in again.";
+  if (reason === "inactivity_timeout") return "You've been signed out after 30 days of inactivity.";
+  if (reason === "security_rotation") return "For security, please sign in again. Sessions are refreshed every 6 months.";
+  return "This device session is no longer active.";
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -141,11 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearLocalAuthState();
         toast({
           title: "Signed Out",
-          description: result.reason === "new_device_login"
-            ? "Your account was opened on another device."
-            : result.reason === "device_session_missing"
-              ? "This session is no longer active. Please sign in again."
-            : "This device session is no longer active.",
+          description: getDeviceSessionMessage(result.reason),
           variant: "destructive",
         });
         return;
@@ -174,11 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           clearLocalAuthState();
           toast({
             title: "Signed Out",
-            description: result.reason === "new_device_login"
-              ? "Your account was opened on another device."
-              : result.reason === "device_session_missing"
-                ? "This session is no longer active. Please sign in again."
-                : "This device session is no longer active.",
+            description: getDeviceSessionMessage(result.reason),
             variant: "destructive",
           });
         }
@@ -262,12 +263,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signIn = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const signIn = async (identifier: string, password: string) => {
+    const cleanIdentifier = identifier.trim().toLowerCase();
+    const loginResult = EMAIL_PATTERN.test(cleanIdentifier)
+      ? await supabase.auth.signInWithPassword({ email: cleanIdentifier, password })
+      : await supabase.functions.invoke("sign-in-with-identifier", {
+          body: { identifier: cleanIdentifier, password },
+        });
+
+    let data = loginResult.data as { user: User; session?: Session | null };
+    const error = loginResult.error;
     if (error) {
       console.error("Supabase sign-in error", error);
       toast({ title: getFriendlyErrorTitle(error, "auth"), description: getFriendlyErrorMessage(error, "auth"), variant: "destructive" });
       return { error };
+    }
+
+    if (!EMAIL_PATTERN.test(cleanIdentifier) && data?.session?.access_token && data.session.refresh_token) {
+      const { data: sessionData, error: setSessionError } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      });
+      if (setSessionError) {
+        console.error("Username sign-in session error", setSessionError);
+        toast({ title: getFriendlyErrorTitle(setSessionError, "auth"), description: getFriendlyErrorMessage(setSessionError, "auth"), variant: "destructive" });
+        return { error: setSessionError };
+      }
+      data = { user: sessionData.user!, session: sessionData.session };
+    }
+
+    if (!data?.user) {
+      const loginError = new Error("Invalid login credentials");
+      toast({ title: getFriendlyErrorTitle(loginError, "auth"), description: getFriendlyErrorMessage(loginError, "auth"), variant: "destructive" });
+      return { error: loginError };
     }
 
     registeringRef.current = true;

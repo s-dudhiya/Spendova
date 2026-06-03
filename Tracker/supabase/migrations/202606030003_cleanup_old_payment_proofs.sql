@@ -72,7 +72,8 @@ BEGIN
   DELETE FROM public.auth_device_sessions
   WHERE active = false
      OR revoked_at IS NOT NULL
-     OR last_seen_at <= now() - interval '7 days';
+     OR last_seen_at <= now() - interval '30 days'
+     OR created_at <= now() - interval '6 months';
 
   GET DIAGNOSTICS v_session_deleted = ROW_COUNT;
 

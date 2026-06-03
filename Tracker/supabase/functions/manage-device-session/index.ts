@@ -7,6 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const INACTIVITY_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000
+
 function json(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -27,6 +29,18 @@ function clientIp(req: Request) {
   return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || req.headers.get('cf-connecting-ip')
     || null
+}
+
+function getSessionExpiryReason(session: { created_at?: string | null; last_seen_at?: string | null }) {
+  const now = Date.now()
+  const lastSeenAt = session.last_seen_at ? Date.parse(session.last_seen_at) : NaN
+  const createdAt = session.created_at ? Date.parse(session.created_at) : NaN
+  const securityRotationCutoff = new Date()
+  securityRotationCutoff.setMonth(securityRotationCutoff.getMonth() - 6)
+
+  if (Number.isFinite(createdAt) && createdAt <= securityRotationCutoff.getTime()) return 'security_rotation'
+  if (Number.isFinite(lastSeenAt) && now - lastSeenAt >= INACTIVITY_TIMEOUT_MS) return 'inactivity_timeout'
+  return null
 }
 
 serve(async (req) => {
@@ -103,13 +117,25 @@ serve(async (req) => {
     if (action === 'check') {
       const { data, error } = await supabaseAdmin
         .from('auth_device_sessions')
-        .select('id, active, revoked_at, revoked_reason')
+        .select('id, active, revoked_at, revoked_reason, created_at, last_seen_at')
         .eq('user_id', userId)
         .eq('device_id', deviceId)
         .maybeSingle()
       if (error) throw error
       if (!data || !data.active || data.revoked_at) {
         return json({ valid: false, reason: data?.revoked_reason || 'device_session_missing' }, 200)
+      }
+      const expiryReason = getSessionExpiryReason(data)
+      if (expiryReason) {
+        await supabaseAdmin
+          .from('auth_device_sessions')
+          .update({
+            active: false,
+            revoked_at: new Date().toISOString(),
+            revoked_reason: expiryReason,
+          })
+          .eq('id', data.id)
+        return json({ valid: false, reason: expiryReason }, 200)
       }
       await supabaseAdmin
         .from('auth_device_sessions')
