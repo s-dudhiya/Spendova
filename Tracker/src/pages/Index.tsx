@@ -1214,6 +1214,12 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
   const chartLabels = getSpendingChartAxisLabels(chartData);
   const chartAverageLabel = getSpendingChartAverageLabel(chartData[0]?.unit);
   const chartRanges = ["7d", "30d", "3m", "6m", "this_year", "all"] as const;
+  const chartPointCount = chartData.length;
+  const chartColumnMinWidth = chartPointCount <= 4 ? 48 : chartPointCount <= 7 ? 40 : chartPointCount <= 12 ? 36 : 32;
+  const chartInnerMinWidth = chartPointCount > 0 ? `${chartPointCount * chartColumnMinWidth}px` : "0px";
+  const rotateChartLabels = chartPointCount > 12;
+  const chartLabelHeight = rotateChartLabels ? "h-9" : chartPointCount > 7 ? "h-6" : "h-5";
+  const chartLabelText = chartPointCount <= 7 ? "text-[10px] sm:text-[11px]" : "text-[9px] sm:text-[10px]";
   const openChartFilters = () => {
     setDraftChartRange(chartRange);
     setChartFiltersOpen(true);
@@ -1273,24 +1279,27 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
                     <span key={`${tick}-${index}`} className="absolute right-0 -translate-y-1/2 text-[8.5px] font-bold leading-none text-muted-foreground/80 sm:text-[10px]" style={{ top: `${(index / (chartTicks.length - 1)) * 100}%` }}>{compactRupee(tick)}</span>
                   ))}
                 </div>
-                <div className="relative h-40 min-w-0 sm:h-36">
-                  <div className="pointer-events-none absolute inset-0">
-                    {chartTicks.map((tick, index) => (
-                      <span key={`${tick}-${index}`} className="absolute left-0 h-px w-full bg-border/60" style={{ top: `${(index / (chartTicks.length - 1)) * 100}%` }} />
-                    ))}
-                  </div>
-                  <div className="relative m-0 grid h-full w-full max-w-full items-end gap-1 sm:gap-2" style={{ gridTemplateColumns: `repeat(${chartData.length}, minmax(0, 1fr))` }}>
-                    {chartData.map((item) => {
-                      const key = `${item.label}-${item.date.toISOString()}`;
-                      const selected = activeBar === key;
-                      return <button key={key} type="button" onClick={() => setActiveBar(selected ? null : key)} className="group flex h-full min-w-0 items-end justify-center" aria-label={`${item.label}: ${money(item.value)}`}><span className={`block w-full max-w-10 rounded-t-full transition-all sm:max-w-8 ${selected ? "bg-primary" : item.value > 0 ? "bg-primary/75 group-hover:bg-primary" : "bg-primary/15"}`} style={{ height: item.value > 0 ? `${Math.max(12, (Number(item.value) / chartMax) * 100)}%` : "4px" }} />{selected ? <span className="absolute left-1/2 top-3 max-w-[calc(100%-0.5rem)] -translate-x-1/2 whitespace-nowrap rounded-xl bg-foreground px-2.5 py-1 text-center text-[11px] font-bold leading-tight text-background shadow-panel sm:text-xs"><span className="block">{item.date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span><span className="mt-0.5 block">{money(item.value)}</span></span> : null}</button>;
-                    })}
+                <div className="min-w-0 overflow-x-auto overflow-y-visible pb-1">
+                  <div className="min-w-full" style={{ minWidth: chartInnerMinWidth }}>
+                    <div className="relative h-40 sm:h-36">
+                      <div className="pointer-events-none absolute inset-0">
+                        {chartTicks.map((tick, index) => (
+                          <span key={`${tick}-${index}`} className="absolute left-0 h-px w-full bg-border/60" style={{ top: `${(index / (chartTicks.length - 1)) * 100}%` }} />
+                        ))}
+                      </div>
+                      <div className="relative m-0 grid h-full w-full max-w-full items-end gap-1 sm:gap-2" style={{ gridTemplateColumns: `repeat(${chartData.length}, minmax(0, 1fr))` }}>
+                        {chartData.map((item) => {
+                          const key = `${item.label}-${item.date.toISOString()}`;
+                          const selected = activeBar === key;
+                          return <button key={key} type="button" onClick={() => setActiveBar(selected ? null : key)} className="group flex h-full min-w-0 items-end justify-center" aria-label={`${item.label}: ${money(item.value)}`}><span className={`block w-full max-w-10 rounded-t-full transition-all sm:max-w-8 ${selected ? "bg-primary" : item.value > 0 ? "bg-primary/75 group-hover:bg-primary" : "bg-primary/15"}`} style={{ height: item.value > 0 ? `${Math.max(12, (Number(item.value) / chartMax) * 100)}%` : "4px" }} />{selected ? <span className="absolute left-1/2 top-3 max-w-[calc(100%-0.5rem)] -translate-x-1/2 whitespace-nowrap rounded-xl bg-foreground px-2.5 py-1 text-center text-[11px] font-bold leading-tight text-background shadow-panel sm:text-xs"><span className="block">{item.date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span><span className="mt-0.5 block">{money(item.value)}</span></span> : null}</button>;
+                        })}
+                      </div>
+                    </div>
+                    <div className={`mt-3 grid w-full max-w-full items-start gap-1 font-bold text-muted-foreground sm:gap-2 ${chartLabelHeight} ${chartLabelText}`} style={{ gridTemplateColumns: `repeat(${chartData.length}, minmax(0, 1fr))` }}>
+                      {chartLabels.map((item) => <span key={`${item.index}-${item.label}`} className="flex min-w-0 justify-center overflow-visible"><span className={`block max-w-full leading-tight ${rotateChartLabels ? "origin-top -rotate-45 whitespace-nowrap" : "truncate text-center"}`}>{item.label}</span></span>)}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="mt-3 grid w-full max-w-full grid-cols-[1.55rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2.4rem_minmax(0,1fr)] sm:gap-2">
-                <span />
-                <div className="relative h-4 min-w-0 text-[10px] font-bold text-muted-foreground sm:text-[11px]">{chartLabels.map((item, index) => <span key={`${item.index}-${item.label}`} className="absolute top-0 whitespace-nowrap" style={{ left: `${item.position}%`, transform: index === 0 ? undefined : index === chartLabels.length - 1 ? "translateX(-100%)" : "translateX(-50%)" }}>{item.label}</span>)}</div>
               </div>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total Spending</p><p className="mt-2 text-lg font-black text-foreground">{money(chartTotal)}</p></div><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{chartAverageLabel}</p><p className="mt-2 text-lg font-black text-foreground">{money(chartAverage)}</p></div></div>

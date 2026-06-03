@@ -12,7 +12,7 @@ export function getSpendingChartAxisLabels(
   maxLabels = MAX_SPENDING_CHART_AXIS_LABELS,
 ) {
   if (chartData.length === 0 || maxLabels <= 0) return [];
-  const labelCount = chartData.length <= 7 ? chartData.length : Math.min(chartData.length, maxLabels);
+  const labelCount = chartData.length;
   if (labelCount === 1) return [{ index: 0, label: chartData[0].label, position: 0 }];
 
   return Array.from({ length: labelCount }, (_, slot) => {
