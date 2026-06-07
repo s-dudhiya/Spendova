@@ -1933,6 +1933,7 @@ type FriendActivityStatus = "pending" | "partial" | "paid";
 type FriendActivityItem = HistoryItem & { impact: number; remainingImpact: number; status: FriendActivityStatus; paidById: string; icon: typeof CircleDollarSign };
 type GroupActivityItem = { kind: "expense"; expense: ExpenseRow; created_at: string | null; amount: number } | { kind: "settlement"; settlement: SplitSettlementRow; created_at: string | null; amount: number };
 type SettlementPayload = { from_user_id: string; to_user_id: string; amount: number; group_id?: string | null; note?: string | null; created_at?: string; settlementId?: string };
+const isSettlementParticipant = (settlement: SplitSettlementRow, userId: string) => settlement.from_user_id === userId || settlement.to_user_id === userId;
 
 const BalanceLabel = ({ amount }: { amount: number }) => (
   <p className={`text-sm font-bold ${amount > 0 ? "text-success" : amount < 0 ? "text-warning" : "text-muted-foreground"}`}>
@@ -2438,7 +2439,7 @@ const ExpenseDetailView = ({ expense, settlements, categories, currentUserId, op
   const [proofPromptOpen, setProofPromptOpen] = useState(false);
   const isPayer = expense.paid_by === currentUserId;
   const mySplit = expense.expense_splits?.find((split) => split.user_id === currentUserId);
-  const expenseSettlements = settlements.filter((settlement) => settlement.expense_id === expense.id);
+  const expenseSettlements = settlements.filter((settlement) => settlement.expense_id === expense.id && isSettlementParticipant(settlement, currentUserId));
   const paidBy = isPayer ? "You" : displayName(expense.payer_profile || expense.profiles);
   const totalOwed = expense.expense_splits?.reduce((sum, split) => sum + Number(split.amount_owed || 0), 0) || 0;
   const totalPaid = expense.expense_splits?.reduce((sum, split) => sum + Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0), 0) || 0;
@@ -2686,7 +2687,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const [filters, setFilters] = useState(defaultFilters);
   const groupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), getExpenseTimelineCreatedAt);
   const groupCategories = scopedCategories(data.categories, "group", currentUserId, group.id);
-  const groupSettlements = data.settlements.filter((settlement) => settlement.group_id === group.id);
+  const groupSettlements = data.settlements.filter((settlement) => settlement.group_id === group.id && isSettlementParticipant(settlement, currentUserId));
   const totalSpent = groupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const balances = computeGroupBalances(data.expenses, data.settlements, group, currentUserId);
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
@@ -4688,7 +4689,7 @@ const Index = () => {
   const friendDetail = friendDetailId ? data.friends.find((friend) => friend.user_id === friendDetailId) : undefined;
   const groupDetail = groupDetailId ? data.groups.find((group) => group.id === groupDetailId) : undefined;
   const expenseDetail = expenseDetailId ? data.expenses.find((expense) => expense.id === expenseDetailId) : undefined;
-  const settlementDetail = settlementDetailId ? data.settlements.find((settlement) => settlement.id === settlementDetailId) : undefined;
+  const settlementDetail = settlementDetailId ? data.settlements.find((settlement) => settlement.id === settlementDetailId && isSettlementParticipant(settlement, user.id)) : undefined;
   const backToSplit = () => navigate("/split");
   const getExpenseParentPath = (expense: ExpenseRow) => {
     if (expense.group_id) return `/split/group/${expense.group_id}`;
