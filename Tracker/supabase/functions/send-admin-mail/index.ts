@@ -2,7 +2,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import nodemailer from 'npm:nodemailer'
-import { cleanMailHeader, emailTemplate, escapeHtml, fromAddress, stripHtml } from '../_shared/email-template.ts'
+import { cleanMailHeader, emailTemplate, escapeHtml, fromAddress, stripHtml, withAutomatedFooterText } from '../_shared/email-template.ts'
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -152,7 +152,7 @@ serve(async (req) => {
             from: fromAddress(SMTP_USER),
             ...(mode === 'single' ? { to: requestedEmail } : { to: SMTP_USER, bcc: emails }),
             subject: cleanMailHeader(subject),
-            text: stripHtml(htmlBody),
+            text: withAutomatedFooterText(stripHtml(htmlBody)),
             html: adminEmailHtml(subject, htmlBody),
         };
 

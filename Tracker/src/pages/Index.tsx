@@ -58,6 +58,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -324,6 +325,8 @@ const timeAgo = (value?: string | null) => {
 };
 const displayName = (profile?: Profile | null) => profile?.full_name || profile?.username || profile?.email || "User";
 const UNCATEGORIZED_CATEGORY = "__uncategorized";
+const CREATE_CATEGORY_ACTION = "__create_category";
+const MANAGE_CATEGORIES_ACTION = "__manage_categories";
 const categoryScope = (group?: GroupRow | null) => group ? "group" as const : "personal" as const;
 const categoryLabel = (expense: ExpenseRow, categories: ExpenseCategoryRow[]) => (
   expense.category_id ? categories.find((category) => category.id === expense.category_id && !category.is_deleted)?.name || "Uncategorized" : "Uncategorized"
@@ -782,10 +785,13 @@ const CategoryPicker = ({
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
-  const [showManage, setShowManage] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => setLocalCategories(categories), [categories]);
+  const filteredCategories = localCategories.filter((category) => category.name.toLowerCase().includes(search.trim().toLowerCase()));
 
   const createCategory = async () => {
     const name = newName.trim();
@@ -796,7 +802,7 @@ const CategoryPicker = ({
       setLocalCategories((current) => [...current.filter((category) => category.id !== created.id), created].sort((a, b) => a.name.localeCompare(b.name)));
       onChange(created.id);
       setNewName("");
-      setShowManage(true);
+      setCreateOpen(false);
       toast({ title: "Category created" });
     } catch (error) {
       toast({ title: "Could not save category", description: getFriendlyErrorMessage(error, "expense"), variant: "destructive" });
@@ -837,44 +843,84 @@ const CategoryPicker = ({
       setSaving(false);
     }
   };
+  const handleSelectChange = (nextValue: string) => {
+    if (nextValue === CREATE_CATEGORY_ACTION) {
+      setCreateOpen(true);
+      return;
+    }
+    if (nextValue === MANAGE_CATEGORIES_ACTION) {
+      setManageOpen(true);
+      return;
+    }
+    onChange(nextValue === UNCATEGORIZED_CATEGORY ? "" : nextValue);
+  };
 
   return (
-    <div className="space-y-2">
+    <div>
       <label className="block text-sm font-semibold text-foreground">
         Category
         <div className="mt-2">
-          <AppSelect value={value || UNCATEGORIZED_CATEGORY} onChange={(nextValue) => onChange(nextValue === UNCATEGORIZED_CATEGORY ? "" : nextValue)} options={[{ value: UNCATEGORIZED_CATEGORY, label: "Uncategorized" }, ...localCategories.map((category) => ({ value: category.id, label: category.name }))]} />
+          <Select value={value || UNCATEGORIZED_CATEGORY} onValueChange={handleSelectChange}>
+            <SelectTrigger className="min-h-11 rounded-full border-input bg-background px-4 py-3 text-sm font-normal focus:ring-2 focus:ring-inset focus:ring-ring focus:ring-offset-0">
+              <SelectValue placeholder="Select category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={UNCATEGORIZED_CATEGORY}>Uncategorized</SelectItem>
+              {localCategories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}
+              <SelectSeparator />
+              <SelectItem value={CREATE_CATEGORY_ACTION} className="pl-3 font-bold text-primary focus:text-primary">
+                <span className="flex items-center gap-2"><Plus className="size-4" />Create Category</span>
+              </SelectItem>
+              <SelectItem value={MANAGE_CATEGORIES_ACTION} className="pl-3 font-bold text-primary focus:text-primary">Manage Categories</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </label>
-      <div className="flex gap-2">
-        <input value={newName} onChange={(event) => setNewName(event.target.value)} className="min-w-0 flex-1 rounded-full border border-input bg-background px-4 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder="New category" />
-        <Button type="button" size="sm" onClick={createCategory} disabled={saving || !newName.trim()}><Plus />Create</Button>
-      </div>
-      {localCategories.length > 0 ? (
-        <button type="button" onClick={() => setShowManage((current) => !current)} className="text-xs font-bold text-primary">
-          {showManage ? "Hide categories" : "Manage categories"}
-        </button>
-      ) : null}
-      {showManage ? (
-        <div className="space-y-2 pt-1">
-          {localCategories.map((category) => (
-            <div key={category.id} className="flex items-center gap-2 rounded-xl bg-background p-2 text-sm">
-              {editingId === category.id ? (
-                <>
-                  <input value={editingName} onChange={(event) => setEditingName(event.target.value)} className="min-w-0 flex-1 rounded-full border border-input bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring" />
-                  <Button type="button" size="sm" onClick={() => renameCategory(category.id)} disabled={saving || !editingName.trim()}><Check />Save</Button>
-                </>
-              ) : (
-                <>
-                  <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{category.name}</span>
-                  <Button type="button" size="icon" variant="quiet" onClick={() => { setEditingId(category.id); setEditingName(category.name); }}><Pencil /></Button>
-                  <Button type="button" size="icon" variant="quiet" onClick={() => deleteCategory(category.id)}><Trash2 /></Button>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <Dialog open={createOpen} onOpenChange={(open) => { setCreateOpen(open); if (!open) setNewName(""); }}>
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-sm rounded-[1.25rem] border-border bg-card p-5 shadow-panel sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Create Category</DialogTitle>
+            <DialogDescription>Add a category for future expenses.</DialogDescription>
+          </DialogHeader>
+          <label className="block text-sm font-semibold text-foreground">
+            Category name
+            <input value={newName} onChange={(event) => setNewName(event.target.value)} className="mt-2 block min-h-11 w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder="Groceries" />
+          </label>
+          <div className="flex gap-2 pt-2">
+            <Button type="button" variant="quiet" className="flex-1" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button type="button" className="flex-1" onClick={createCategory} disabled={saving || !newName.trim()}>{saving ? "Creating..." : "Create"}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={manageOpen} onOpenChange={(open) => { setManageOpen(open); if (!open) { setSearch(""); setEditingId(null); setEditingName(""); } }}>
+        <DialogContent className="grid max-h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] max-w-md grid-rows-[auto_auto_minmax(0,1fr)] gap-4 overflow-hidden rounded-[1.25rem] border-border bg-card p-5 shadow-panel sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Manage Categories</DialogTitle>
+            <DialogDescription>Edit or delete expense categories.</DialogDescription>
+          </DialogHeader>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} className="min-h-11 w-full rounded-full border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder="Search categories" />
+          <div className="min-h-0 space-y-2 overflow-y-auto overscroll-contain pr-1">
+            {filteredCategories.length === 0 ? (
+              <div className="rounded-2xl bg-elevated p-4 text-sm font-medium text-muted-foreground">No categories found.</div>
+            ) : filteredCategories.map((category) => (
+              <div key={category.id} className="flex min-h-12 items-center gap-2 rounded-xl bg-background p-2 text-sm">
+                {editingId === category.id ? (
+                  <>
+                    <input value={editingName} onChange={(event) => setEditingName(event.target.value)} className="min-w-0 flex-1 rounded-full border border-input bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring" />
+                    <Button type="button" size="sm" onClick={() => renameCategory(category.id)} disabled={saving || !editingName.trim()}><Check />Save</Button>
+                  </>
+                ) : (
+                  <>
+                    <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{category.name}</span>
+                    <Button type="button" size="icon" variant="quiet" onClick={() => { setEditingId(category.id); setEditingName(category.name); }}><Pencil /></Button>
+                    <Button type="button" size="icon" variant="quiet" onClick={() => deleteCategory(category.id)}><Trash2 /></Button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
@@ -3298,7 +3344,38 @@ const ExpenseForm = ({
   onCancel: () => void;
 }) => {
   const isEdit = Boolean(expense);
-  const members = group ? group.group_members.map((member) => ({ user_id: member.user_id, name: member.user_id === userId ? "You" : displayName(member.profiles) })) : friend ? [{ user_id: userId, name: "You" }, { user_id: friend.user_id, name: displayName(friend) }] : [{ user_id: userId, name: "You" }, ...friends.map((item) => ({ user_id: item.user_id, name: displayName(item) }))];
+  const baseMembers = group ? group.group_members.map((member) => ({ user_id: member.user_id, name: member.user_id === userId ? "You" : displayName(member.profiles) })) : friend ? [{ user_id: userId, name: "You" }, { user_id: friend.user_id, name: displayName(friend) }] : [{ user_id: userId, name: "You" }, ...friends.map((item) => ({ user_id: item.user_id, name: displayName(item) }))];
+  const members = [...baseMembers];
+  if (expense) {
+    const existingProfiles = [
+      expense.paid_by ? { user_id: expense.paid_by, name: expense.paid_by === userId ? "You" : displayName(expense.payer_profile) } : null,
+      ...(expense.expense_splits || []).map((split) => ({ user_id: split.user_id, name: split.user_id === userId ? "You" : displayName(split.profiles) })),
+    ].filter((member): member is { user_id: string; name: string } => Boolean(member?.user_id));
+    existingProfiles.forEach((member) => {
+      if (!members.some((item) => item.user_id === member.user_id)) members.push(member);
+    });
+  }
+  const initialParticipantIds = (() => {
+    if (expense && (expense.expense_splits?.length || expense.group_id)) {
+      return [...new Set([expense.paid_by, ...(expense.expense_splits || []).map((split) => split.user_id)].filter(Boolean))];
+    }
+    if (group || friend) return members.map((member) => member.user_id);
+    return [userId];
+  })();
+  const initialSplitValues = (() => {
+    if (!expense || !["exact", "percentage"].includes(expense.split_type || "")) return {};
+    const values: Record<string, string> = {};
+    const totalOwed = (expense.expense_splits || []).reduce((sum, split) => sum + Number(split.amount_owed || 0), 0);
+    (expense.expense_splits || []).forEach((split) => {
+      const owed = Number(split.amount_owed || 0);
+      values[split.user_id] = expense.split_type === "percentage" && expense.amount ? String(Number(((owed / expense.amount) * 100).toFixed(2))) : String(owed);
+    });
+    if (expense.paid_by && initialParticipantIds.includes(expense.paid_by)) {
+      const payerShare = Math.max(Number(expense.amount || 0) - totalOwed, 0);
+      values[expense.paid_by] = expense.split_type === "percentage" && expense.amount ? String(Number(((payerShare / expense.amount) * 100).toFixed(2))) : String(payerShare);
+    }
+    return values;
+  })();
   const [name, setName] = useState(expense?.category || "");
   const [categoryId, setCategoryId] = useState(expense?.category_id || "");
   const [date, setDate] = useState(expense?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
@@ -3308,9 +3385,9 @@ const ExpenseForm = ({
   const [status, setStatus] = useState<"pending" | "cleared">(initialSplitOn ? "cleared" : expense?.status === "cleared" ? "cleared" : "pending");
   const [splitOn, setSplitOn] = useState(initialSplitOn);
   const [strategy, setStrategy] = useState<SplitStrategy>((expense?.split_type as SplitStrategy) || "equal");
-  const [participants, setParticipants] = useState<string[]>(group || friend ? members.map((member) => member.user_id) : [userId]);
+  const [participants, setParticipants] = useState<string[]>(initialParticipantIds);
   const [payer, setPayer] = useState(expense?.paid_by || userId);
-  const [splitValues, setSplitValues] = useState<Record<string, string>>({});
+  const [splitValues, setSplitValues] = useState<Record<string, string>>(initialSplitValues);
   const [submitting, setSubmitting] = useState(false);
   const [autoNameCategoryId, setAutoNameCategoryId] = useState<string | null>(null);
 
@@ -3324,7 +3401,17 @@ const ExpenseForm = ({
   const selectedCategory = availableCategories.find((category) => category.id === categoryId);
 
   const toggleParticipant = (id: string) => {
-    setParticipants((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
+    setParticipants((prev) => {
+      if (!prev.includes(id)) return [...prev, id];
+      const next = prev.filter((item) => item !== id);
+      if (!next.length) return prev;
+      if (id === payer && next.length) setPayer(next[0]);
+      return next;
+    });
+  };
+  const handlePayerChange = (value: string) => {
+    setPayer(value);
+    setParticipants((prev) => prev.includes(value) ? prev : [...prev, value]);
   };
   const toggleSplit = () => {
     setSplitOn((value) => {
@@ -3414,13 +3501,21 @@ const ExpenseForm = ({
       <Field label="Expense name" placeholder="Dinner, groceries..." value={name} onChange={handleNameChange} hint="Selecting a category can fill this if you leave it blank." />
       <Field label="Amount" type="number" placeholder="0" value={amount} onChange={setAmount} />
       <Field label="Date" type="date" value={date} onChange={setDate} />
+      {splitOn && (
+        <label className="block text-sm font-semibold text-foreground">
+          Who paid
+          <div className="mt-2">
+            <AppSelect value={payer} onChange={handlePayerChange} options={members.map((member) => ({ value: member.user_id, label: member.name }))} />
+          </div>
+        </label>
+      )}
       {isEdit && hasSettlementState ? (
         <div className="rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs font-semibold text-warning">
           This expense has settlements. Editing split details is blocked until those settlements are reversed.
         </div>
       ) : null}
       {!group && !friend && (
-        <label className="flex items-center justify-between rounded-2xl bg-elevated p-4 text-sm font-semibold text-foreground">
+        <label className="flex min-h-11 items-center justify-between gap-3 py-3 text-sm font-semibold text-foreground">
           <span>Split with friends</span>
           <button type="button" onClick={toggleSplit} className={`relative h-6 w-11 rounded-full transition-colors ${splitOn ? "bg-primary" : "bg-muted"}`}>
             <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all ${splitOn ? "left-5" : "left-0.5"}`} />
@@ -3437,10 +3532,6 @@ const ExpenseForm = ({
                 return <button key={member.user_id} type="button" onClick={() => toggleParticipant(member.user_id)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${active ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground border border-input"}`}>{active && <Check className="mr-1 inline size-3" />}{member.name}</button>;
               })}
             </div>
-          </div>
-          <div>
-            <p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Who paid</p>
-            <AppSelect value={payer} onChange={setPayer} options={selectedMembers.map((member) => ({ value: member.user_id, label: member.name }))} />
           </div>
           <div>
             <p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Strategy</p>
@@ -3464,24 +3555,24 @@ const ExpenseForm = ({
         </div>
       )}
       {!splitOn && (
-  <label className="flex items-start justify-between gap-3 rounded-2xl p-4 text-sm font-semibold text-foreground bg-elevated">
-    <span>
-      <span className="block">Mark as cleared</span>
-      <span className="mt-1 block text-xs font-medium text-muted-foreground">
-        Unchecked expenses remain pending.
-      </span>
-    </span>
+        <label className="flex min-h-11 items-start justify-between gap-3 py-3 text-sm font-semibold text-foreground">
+          <span>
+            <span className="block">Mark as cleared</span>
+            <span className="mt-1 block text-xs font-medium text-muted-foreground">
+              Unchecked expenses remain pending.
+            </span>
+          </span>
 
-    <input
-      type="checkbox"
-      checked={status === "cleared"}
-      onChange={(event) =>
-        setStatus(event.target.checked ? "cleared" : "pending")
-      }
-      className="mt-1 size-4 shrink-0 accent-primary"
-    />
-  </label>
-)}
+          <input
+            type="checkbox"
+            checked={status === "cleared"}
+            onChange={(event) =>
+              setStatus(event.target.checked ? "cleared" : "pending")
+            }
+            className="mt-1 size-4 shrink-0 accent-primary"
+          />
+        </label>
+      )}
       <Textarea label="Note (optional)" placeholder="Add a note" value={note} onChange={setNote} />
       <div className="flex gap-2 pt-2">
         <Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button>

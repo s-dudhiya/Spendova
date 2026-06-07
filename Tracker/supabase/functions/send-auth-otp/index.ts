@@ -2,7 +2,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import nodemailer from 'npm:nodemailer'
-import { emailTemplate, escapeHtml, fromAddress } from '../_shared/email-template.ts'
+import { emailTemplate, escapeHtml, fromAddress, withAutomatedFooterText } from '../_shared/email-template.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -66,7 +66,7 @@ async function sendEmail(to: string, otp: string) {
     from: fromAddress(SMTP_USER),
     to,
     subject: 'Your Spendova verification code',
-    text: `Your verification code is:\n\n${otp}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, you can ignore this email.`,
+    text: withAutomatedFooterText(`Your verification code is:\n\n${otp}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, you can ignore this email.`),
     html: otpEmailHtml(otp),
   })
 }

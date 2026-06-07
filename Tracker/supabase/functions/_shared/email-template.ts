@@ -1,4 +1,10 @@
 export const MAIL_FROM_NAME = 'Spendova'
+export const AUTOMATED_EMAIL_FOOTER_LINES = [
+  'This is an automated email from Spendova.',
+  'Please do not reply to this message.',
+  'For assistance, contact support through the app.',
+]
+export const AUTOMATED_EMAIL_FOOTER_TEXT = AUTOMATED_EMAIL_FOOTER_LINES.join('\n')
 
 type EmailButton = {
   label: string
@@ -57,10 +63,17 @@ export function cleanMailHeader(value: unknown) {
     .trim()
 }
 
+export function withAutomatedFooterText(value: string) {
+  return `${String(value || '').trim()}\n\n${AUTOMATED_EMAIL_FOOTER_TEXT}`.trim()
+}
+
 export function emailTemplate(options: EmailTemplateOptions) {
   const preview = escapeHtml(options.preview)
   const title = escapeHtml(options.title)
   const footer = escapeHtml(options.footer || 'Spendova')
+  const automatedFooterHtml = AUTOMATED_EMAIL_FOOTER_LINES
+    .map((line) => escapeHtml(line))
+    .join('<br>')
   const bodyHtml = options.body
     .filter(Boolean)
     .map((paragraph) => `<p style="margin:0 0 16px;color:#3f4254;font-size:15px;line-height:1.65;">${paragraph}</p>`)
@@ -133,7 +146,8 @@ export function emailTemplate(options: EmailTemplateOptions) {
           </tr>
           <tr>
             <td style="padding:18px 24px;background:#fbfbfd;border-top:1px solid #eceef4;text-align:center;">
-              <p style="margin:0;color:#85899b;font-size:12px;line-height:1.5;">${footer}</p>
+              <p style="margin:0 0 10px;color:#85899b;font-size:12px;line-height:1.55;">${automatedFooterHtml}</p>
+              <p style="margin:0;color:#a0a3b2;font-size:11px;line-height:1.45;">${footer}</p>
             </td>
           </tr>
         </table>
