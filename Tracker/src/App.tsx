@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Fingerprint, LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { consumeFreshLoginUnlocked, isBiometricLockEnabled, unlockWithBiometric } from "@/lib/biometric-lock";
 import { getFriendlyErrorMessage } from "@/lib/friendly-error";
@@ -58,21 +59,29 @@ const ProtectedIndex = () => {
 
 const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {
   const { user, loading, signOut } = useAuth();
+  const { toast } = useToast();
   const [unlocked, setUnlocked] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
   const [error, setError] = useState("");
+  const hasAutoPromptedRef = useRef(false);
+  const freshLoginUnlockedRef = useRef(false);
   const needsUnlock = Boolean(user && isBiometricLockEnabled(user.id) && !unlocked);
 
   useEffect(() => {
     setUnlocked(false);
     setError("");
+    hasAutoPromptedRef.current = false;
+    freshLoginUnlockedRef.current = false;
   }, [user?.id]);
 
   useEffect(() => {
-    if (user && consumeFreshLoginUnlocked(user.id)) setUnlocked(true);
+    if (user && consumeFreshLoginUnlocked(user.id)) {
+      freshLoginUnlockedRef.current = true;
+      setUnlocked(true);
+    }
   }, [user]);
 
-  const unlock = async () => {
+  const unlock = useCallback(async () => {
     if (!user) return;
     setUnlocking(true);
     setError("");
@@ -82,11 +91,19 @@ const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {
       setUnlocked(true);
     } catch (unlockError) {
       console.error("Biometric unlock failed", unlockError);
-      setError(getFriendlyErrorMessage(unlockError, "device"));
+      const message = getFriendlyErrorMessage(unlockError, "device");
+      setError(message);
+      toast({ title: "Unlock failed", description: message });
     } finally {
       setUnlocking(false);
     }
-  };
+  }, [toast, user]);
+
+  useEffect(() => {
+    if (loading || !needsUnlock || !user || unlocking || hasAutoPromptedRef.current || freshLoginUnlockedRef.current) return;
+    hasAutoPromptedRef.current = true;
+    void unlock();
+  }, [loading, needsUnlock, unlock, unlocking, user]);
 
   if (loading || !needsUnlock) return <>{children}</>;
 

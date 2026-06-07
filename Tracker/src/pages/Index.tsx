@@ -1544,13 +1544,13 @@ const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal
         <div className="mt-7 flex w-full items-start justify-between gap-4">
           <button onClick={() => openModal("chart-details")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
             <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
-              <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">Total lent</span>
+              <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">You Get</span>
               <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-success sm:text-lg">{money(summary.totalLent)}</span>
             </span>
           </button>
           <button onClick={() => openModal("chart-details")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
             <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
-              <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">Total owed</span>
+              <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">You Owe</span>
               <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-warning sm:text-lg">{money(summary.totalOwed)}</span>
             </span>
           </button>
@@ -1657,8 +1657,10 @@ const DashboardLoadingFallback = () => {
 };
 
 const PersonalView = ({ expenses, settlements, summary, categories, currentUserId, groups, friends, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; summary: ReturnType<typeof getSummary>; categories: ExpenseCategoryRow[]; currentUserId: string; groups: GroupRow[]; friends: FriendProfile[]; openModal: (type: ModalType, item?: string) => void }) => {
+  const { toast } = useToast();
   const defaultFilters = { status: "all", date: "all", dateStart: "", dateEnd: "", sort: "newest", category: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [balanceDetail, setBalanceDetail] = useState<"owe" | "get" | null>(null);
   const [filters, setFilters] = useState(defaultFilters);
   const personalExpenses = expenses.filter((expense) => expense.paid_by === currentUserId || expense.expense_splits?.some((split) => split.user_id === currentUserId));
   const personalCategories = scopedCategories(categories, "personal", currentUserId);
@@ -1678,24 +1680,46 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
     (expense) => Number(getPersonalExpenseDisplay(expense, currentUserId, groups, friends, expenses, settlements).amount || 0),
   );
   const filteredPersonalSummary = getSummary(visibleExpenses, currentUserId, settlements);
+  const filteredPersonalBalances = buildDebtBalances(visibleExpenses, settlements, { currentUserId });
+  const youOweRows = filteredPersonalBalances.filter((balance) => balance.fromUserId === currentUserId).map((balance) => ({ name: balance.toName, amount: balance.amount }));
+  const youGetRows = filteredPersonalBalances.filter((balance) => balance.toUserId === currentUserId).map((balance) => ({ name: balance.fromName, amount: balance.amount }));
+  const youOweTotal = youOweRows.reduce((sum, row) => sum + row.amount, 0);
+  const youGetTotal = youGetRows.reduce((sum, row) => sum + row.amount, 0);
+  const youOweAmountClass = youOweTotal > 0.009 ? "text-warning" : "text-muted-foreground";
+  const youGetAmountClass = youGetTotal > 0.009 ? "text-success" : "text-muted-foreground";
+  const openBalanceDetail = (type: "owe" | "get") => {
+    const total = type === "owe" ? youOweTotal : youGetTotal;
+    if (total <= 0.009) {
+      toast({ title: type === "owe" ? "You currently don't owe anyone." : "Nobody owes you any money right now." });
+      return;
+    }
+    setBalanceDetail(type);
+  };
+  const detailRows = balanceDetail === "owe" ? youOweRows : youGetRows;
+  const detailTotal = balanceDetail === "owe" ? youOweTotal : youGetTotal;
   return (
+    <>
     <main className="space-y-6">
       <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
         <p className="text-sm font-medium text-muted-foreground">Personal spend</p>
         <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">{money(filteredPersonalSummary.personal)}</p>
-        <div className="mt-4 flex w-full items-start justify-between gap-4">
-          <div className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
-            <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
-              <span className="m-0 block h-4 max-w-full p-0 text-[10px] font-bold uppercase leading-4 tracking-wide text-muted-foreground sm:text-[11px]">Pending</span>
-              <span className="spendova-money-value mt-1.5 block min-h-5 max-w-full p-0 text-xs font-bold leading-5 text-warning min-[380px]:text-sm sm:text-base">{money(filteredPersonalSummary.personalPending)}</span>
+        <div className="mt-5 grid grid-cols-2 items-start gap-4">
+          <button type="button" onClick={() => openBalanceDetail("owe")} className="group flex min-h-[46px] min-w-0 cursor-pointer flex-col items-start justify-start gap-1 rounded-2xl px-2 py-1.5 text-left transition-colors hover:bg-elevated/60 active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <span className="flex max-w-full items-center gap-1 text-xs font-semibold leading-4 text-muted-foreground">
+              <span>You Owe</span>
+              <ChevronRight className="size-3 opacity-60 transition-transform group-hover:translate-x-0.5" />
             </span>
-          </div>
-          <div className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
-            <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
-              <span className="m-0 block h-4 max-w-full p-0 text-[10px] font-bold uppercase leading-4 tracking-wide text-muted-foreground sm:text-[11px]">Cleared</span>
-              <span className="spendova-money-value mt-1.5 block min-h-5 max-w-full p-0 text-xs font-bold leading-5 text-success min-[380px]:text-sm sm:text-base">{money(filteredPersonalSummary.personalCleared)}</span>
+            <span className={`spendova-money-value block max-w-full text-sm font-bold leading-5 min-[380px]:text-[15px] ${youOweAmountClass}`}>{money(youOweTotal)}</span>
+          </button>
+          <button type="button" onClick={() => openBalanceDetail("get")} className="group flex min-h-[46px] min-w-0 cursor-pointer flex-col items-end justify-start gap-1 rounded-2xl px-2 py-1.5 text-right transition-colors hover:bg-elevated/60 active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <span className="inline-flex max-w-full flex-col items-start gap-1 text-left">
+              <span className="flex max-w-full items-center gap-1 text-xs font-semibold leading-4 text-muted-foreground">
+                <span>You Get</span>
+                <ChevronRight className="size-3 opacity-60 transition-transform group-hover:translate-x-0.5" />
+              </span>
+              <span className={`spendova-money-value block max-w-full text-sm font-bold leading-5 min-[380px]:text-[15px] ${youGetAmountClass}`}>{money(youGetTotal)}</span>
             </span>
-          </div>
+          </button>
         </div>
       </section>
       <section className="pb-16">
@@ -1737,6 +1761,27 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
         <Plus className="size-4" />Add expense
       </button>
     </main>
+    <Drawer open={Boolean(balanceDetail)} onOpenChange={(open) => !open && setBalanceDetail(null)}>
+      <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-6">
+        <DrawerHeader className="px-0 pb-2 text-left">
+          <DrawerTitle>{balanceDetail === "owe" ? "You Owe" : "You Get"}</DrawerTitle>
+          <DrawerDescription>{balanceDetail === "owe" ? "People you need to pay." : "People who need to pay you."}</DrawerDescription>
+        </DrawerHeader>
+        <div className="max-h-[55dvh] overflow-y-auto overscroll-contain rounded-2xl bg-elevated/70">
+          {detailRows.map((row, index) => (
+            <div key={`${row.name}-${index}`} className={`flex items-center justify-between gap-3 px-4 py-3 text-sm ${index < detailRows.length - 1 ? "border-b border-border/60" : ""}`}>
+              <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
+              <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm">
+            <span className="font-black text-foreground">Total</span>
+            <span className={`spendova-money-value shrink-0 font-black ${balanceDetail === "owe" ? "text-warning" : "text-success"}`}>{money(detailTotal)}</span>
+          </div>
+        </div>
+      </DrawerContent>
+    </Drawer>
+    </>
   );
 };
 
