@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,6 +15,17 @@ import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 
 type AdminCheck = "loading" | "allowed" | "denied";
 const AUTH_BRAND_IMAGE = "/brand/login-branding-image.png";
+
+const AdminSelect = ({ value, onChange, options, disabled }: { value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; disabled?: boolean }) => (
+  <Select value={value} onValueChange={onChange} disabled={disabled}>
+    <SelectTrigger className="h-11 rounded-2xl border-input bg-background px-3 text-sm text-foreground focus:ring-2 focus:ring-ring/35 focus:ring-offset-0">
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent>
+      {options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+    </SelectContent>
+  </Select>
+);
 
 type FeedbackReport = {
   id: string;
@@ -551,15 +563,9 @@ const AdminDashboard = () => {
                   <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input value={feedbackFilters.search} onChange={(event) => setFeedbackFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Search tickets" className="h-11 rounded-2xl pl-9 focus-visible:ring-inset" />
                 </div>
-                <select value={feedbackFilters.type} onChange={(event) => setFeedbackFilters((current) => ({ ...current, type: event.target.value }))} className="h-11 rounded-2xl border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35">
-                  {feedbackTypes.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-                <select value={feedbackFilters.status} onChange={(event) => setFeedbackFilters((current) => ({ ...current, status: event.target.value }))} className="h-11 rounded-2xl border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35">
-                  {feedbackStatuses.map((status) => <option key={status} value={status}>{status === "all" ? "All statuses" : feedbackStatusLabel(status as FeedbackReport["status"])}</option>)}
-                </select>
-                <select value={feedbackFilters.priority} onChange={(event) => setFeedbackFilters((current) => ({ ...current, priority: event.target.value }))} className="h-11 rounded-2xl border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35">
-                  {feedbackPriorities.map((priority) => <option key={priority} value={priority}>{priority === "all" ? "All priorities" : feedbackPriorityLabel(priority as FeedbackReport["priority"])}</option>)}
-                </select>
+                <AdminSelect value={feedbackFilters.type} onChange={(type) => setFeedbackFilters((current) => ({ ...current, type }))} options={feedbackTypes.map((option) => ({ value: option.value, label: option.label }))} />
+                <AdminSelect value={feedbackFilters.status} onChange={(status) => setFeedbackFilters((current) => ({ ...current, status }))} options={feedbackStatuses.map((status) => ({ value: status, label: status === "all" ? "All statuses" : feedbackStatusLabel(status as FeedbackReport["status"]) }))} />
+                <AdminSelect value={feedbackFilters.priority} onChange={(priority) => setFeedbackFilters((current) => ({ ...current, priority }))} options={feedbackPriorities.map((priority) => ({ value: priority, label: priority === "all" ? "All priorities" : feedbackPriorityLabel(priority as FeedbackReport["priority"]) }))} />
                 <Input type="date" value={feedbackFilters.date} onChange={(event) => setFeedbackFilters((current) => ({ ...current, date: event.target.value }))} className="h-11 rounded-2xl focus-visible:ring-inset" />
               </div>
 
@@ -624,15 +630,11 @@ const AdminDashboard = () => {
                       <div className="grid gap-4 lg:grid-cols-2">
                         <div className="space-y-2">
                           <Label>Status</Label>
-                          <select value={ticketDraft.status} onChange={(event) => setTicketDraft((current) => ({ ...current, status: event.target.value as FeedbackReport["status"] }))} disabled={savingReport} className="h-11 w-full rounded-2xl border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35">
-                            {feedbackStatuses.filter((status) => status !== "all").map((status) => <option key={status} value={status}>{feedbackStatusLabel(status as FeedbackReport["status"])}</option>)}
-                          </select>
+                          <AdminSelect value={ticketDraft.status} onChange={(status) => setTicketDraft((current) => ({ ...current, status: status as FeedbackReport["status"] }))} disabled={savingReport} options={feedbackStatuses.filter((status) => status !== "all").map((status) => ({ value: status, label: feedbackStatusLabel(status as FeedbackReport["status"]) }))} />
                         </div>
                         <div className="space-y-2">
                           <Label>Priority</Label>
-                          <select value={ticketDraft.priority} onChange={(event) => setTicketDraft((current) => ({ ...current, priority: event.target.value as FeedbackReport["priority"] }))} disabled={savingReport} className="h-11 w-full rounded-2xl border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/35">
-                            {feedbackPriorities.filter((priority) => priority !== "all").map((priority) => <option key={priority} value={priority}>{feedbackPriorityLabel(priority as FeedbackReport["priority"])}</option>)}
-                          </select>
+                          <AdminSelect value={ticketDraft.priority} onChange={(priority) => setTicketDraft((current) => ({ ...current, priority: priority as FeedbackReport["priority"] }))} disabled={savingReport} options={feedbackPriorities.filter((priority) => priority !== "all").map((priority) => ({ value: priority, label: feedbackPriorityLabel(priority as FeedbackReport["priority"]) }))} />
                         </div>
                       </div>
 

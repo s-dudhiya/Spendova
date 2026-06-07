@@ -54,6 +54,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -121,6 +128,7 @@ type ExpenseRow = {
   paid_by: string;
   amount: number;
   category: string | null;
+  category_id?: string | null;
   note: string | null;
   status: string | null;
   split_type: string | null;
@@ -195,6 +203,18 @@ type NotificationRow = {
   created_at: string;
 };
 
+type ExpenseCategoryRow = {
+  id: string;
+  name: string;
+  type: "personal" | "group";
+  user_id: string | null;
+  group_id: string | null;
+  created_by: string;
+  is_deleted: boolean;
+  created_at: string;
+  updated_at?: string | null;
+};
+
 type FeedbackReportRow = {
   id: string;
   user_id: string;
@@ -215,6 +235,7 @@ type ExpensePayload = {
   user_id: string;
   paid_by: string;
   category: string;
+  category_id?: string | null;
   amount: number;
   note?: string | null;
   status: string;
@@ -241,6 +262,7 @@ type AppData = {
   groupInvites: Record<string, InviteRow[]>;
   settlements: SplitSettlementRow[];
   notifications: NotificationRow[];
+  categories: ExpenseCategoryRow[];
 };
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof Home }> = [
@@ -301,6 +323,16 @@ const timeAgo = (value?: string | null) => {
   return dateLabel(value);
 };
 const displayName = (profile?: Profile | null) => profile?.full_name || profile?.username || profile?.email || "User";
+const UNCATEGORIZED_CATEGORY = "__uncategorized";
+const categoryScope = (group?: GroupRow | null) => group ? "group" as const : "personal" as const;
+const categoryLabel = (expense: ExpenseRow, categories: ExpenseCategoryRow[]) => (
+  expense.category_id ? categories.find((category) => category.id === expense.category_id && !category.is_deleted)?.name || "Uncategorized" : "Uncategorized"
+);
+const scopedCategories = (categories: ExpenseCategoryRow[], scope: "personal" | "group", userId: string, groupId?: string | null) => (
+  categories
+    .filter((category) => !category.is_deleted && category.type === scope && (scope === "personal" ? category.user_id === userId : category.group_id === groupId))
+    .sort((a, b) => a.name.localeCompare(b.name))
+);
 const toPaise = (amount: number) => Math.round((Number.isFinite(amount) ? amount : 0) * 100);
 const fromPaise = (paise: number) => Number((paise / 100).toFixed(2));
 const APP_VERSION = "2.1";
@@ -633,12 +665,23 @@ const FilterSheet = ({ open, onOpenChange, title, onClear, children }: { open: b
   </Drawer>
 );
 
+const AppSelect = ({ value, onChange, options, disabled, placeholder = "Select" }: { value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; disabled?: boolean; placeholder?: string }) => (
+  <Select value={value} onValueChange={onChange} disabled={disabled}>
+    <SelectTrigger className="min-h-11 rounded-full border-input bg-background px-4 py-3 text-sm font-normal focus:ring-2 focus:ring-inset focus:ring-ring focus:ring-offset-0">
+      <SelectValue placeholder={placeholder} />
+    </SelectTrigger>
+    <SelectContent>
+      {options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+    </SelectContent>
+  </Select>
+);
+
 const FilterField = ({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) => (
   <label className="block text-sm font-semibold text-foreground">
     {label}
-    <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-inset focus:ring-ring">
-      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-    </select>
+    <div className="mt-2">
+      <AppSelect value={value} onChange={onChange} options={options} />
+    </div>
   </label>
 );
 
@@ -684,6 +727,12 @@ const FilterEmptyState = ({ onClear }: { onClear: () => void }) => (
   </div>
 );
 
+const CategoryBadge = ({ label }: { label: string }) => (
+  <span className="mt-1 block max-w-full text-xs font-medium leading-4 text-muted-foreground">
+    <span className="break-words">{label}</span>
+  </span>
+);
+
 const Field = ({
   label,
   placeholder,
@@ -712,6 +761,123 @@ const Textarea = ({ label, placeholder, value, onChange }: { label: string; plac
     <textarea value={value} onChange={(event) => onChange(event.target.value)} rows={2} className="mt-2 w-full resize-none rounded-2xl border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder={placeholder} />
   </label>
 );
+
+const CategoryPicker = ({
+  categories,
+  value,
+  onChange,
+  onCreate,
+  onRename,
+  onDelete,
+}: {
+  categories: ExpenseCategoryRow[];
+  value: string;
+  onChange: (value: string) => void;
+  onCreate: (name: string) => Promise<ExpenseCategoryRow>;
+  onRename: (categoryId: string, name: string) => Promise<void>;
+  onDelete: (categoryId: string) => Promise<void>;
+}) => {
+  const { toast } = useToast();
+  const [localCategories, setLocalCategories] = useState(categories);
+  const [newName, setNewName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [showManage, setShowManage] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setLocalCategories(categories), [categories]);
+
+  const createCategory = async () => {
+    const name = newName.trim();
+    if (!name || saving) return;
+    setSaving(true);
+    try {
+      const created = await onCreate(name);
+      setLocalCategories((current) => [...current.filter((category) => category.id !== created.id), created].sort((a, b) => a.name.localeCompare(b.name)));
+      onChange(created.id);
+      setNewName("");
+      setShowManage(true);
+      toast({ title: "Category created" });
+    } catch (error) {
+      toast({ title: "Could not save category", description: getFriendlyErrorMessage(error, "expense"), variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const renameCategory = async (categoryId: string) => {
+    const name = editingName.trim();
+    if (!name || saving) return;
+    setSaving(true);
+    try {
+      await onRename(categoryId, name);
+      setLocalCategories((current) => current.map((category) => category.id === categoryId ? { ...category, name } : category).sort((a, b) => a.name.localeCompare(b.name)));
+      setEditingId(null);
+      setEditingName("");
+      toast({ title: "Category renamed" });
+    } catch (error) {
+      toast({ title: "Could not rename category", description: getFriendlyErrorMessage(error, "expense"), variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteCategory = async (categoryId: string) => {
+    const confirmed = window.confirm("Deleting this category will not delete any expenses. Existing expenses will appear as Uncategorized.");
+    if (!confirmed || saving) return;
+    setSaving(true);
+    try {
+      await onDelete(categoryId);
+      setLocalCategories((current) => current.filter((category) => category.id !== categoryId));
+      if (value === categoryId) onChange("");
+      toast({ title: "Category deleted", description: "Expenses using it now appear as Uncategorized." });
+    } catch (error) {
+      toast({ title: "Could not delete category", description: getFriendlyErrorMessage(error, "expense"), variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-sm font-semibold text-foreground">
+        Category
+        <div className="mt-2">
+          <AppSelect value={value || UNCATEGORIZED_CATEGORY} onChange={(nextValue) => onChange(nextValue === UNCATEGORIZED_CATEGORY ? "" : nextValue)} options={[{ value: UNCATEGORIZED_CATEGORY, label: "Uncategorized" }, ...localCategories.map((category) => ({ value: category.id, label: category.name }))]} />
+        </div>
+      </label>
+      <div className="flex gap-2">
+        <input value={newName} onChange={(event) => setNewName(event.target.value)} className="min-w-0 flex-1 rounded-full border border-input bg-background px-4 py-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder="New category" />
+        <Button type="button" size="sm" onClick={createCategory} disabled={saving || !newName.trim()}><Plus />Create</Button>
+      </div>
+      {localCategories.length > 0 ? (
+        <button type="button" onClick={() => setShowManage((current) => !current)} className="text-xs font-bold text-primary">
+          {showManage ? "Hide categories" : "Manage categories"}
+        </button>
+      ) : null}
+      {showManage ? (
+        <div className="space-y-2 pt-1">
+          {localCategories.map((category) => (
+            <div key={category.id} className="flex items-center gap-2 rounded-xl bg-background p-2 text-sm">
+              {editingId === category.id ? (
+                <>
+                  <input value={editingName} onChange={(event) => setEditingName(event.target.value)} className="min-w-0 flex-1 rounded-full border border-input bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring" />
+                  <Button type="button" size="sm" onClick={() => renameCategory(category.id)} disabled={saving || !editingName.trim()}><Check />Save</Button>
+                </>
+              ) : (
+                <>
+                  <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{category.name}</span>
+                  <Button type="button" size="icon" variant="quiet" onClick={() => { setEditingId(category.id); setEditingName(category.name); }}><Pencil /></Button>
+                  <Button type="button" size="icon" variant="quiet" onClick={() => deleteCategory(category.id)}><Trash2 /></Button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+};
 
 const AppHeader = ({ title, theme, unreadCount, onThemeToggle, onProfile, openModal }: { title: string; theme: Theme; unreadCount: number; onThemeToggle: () => void; onProfile: () => void; openModal: (type: ModalType, item?: string) => void }) => (
   <header className="sticky top-0 z-20 -mx-4 mb-5 border-b border-border/70 bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
@@ -746,6 +912,7 @@ function useSpendovaData(userId?: string) {
     groupInvites: {},
     settlements: [],
     notifications: [],
+    categories: [],
   });
 
   const refresh = useCallback(async (options?: { silent?: boolean }) => {
@@ -756,11 +923,11 @@ function useSpendovaData(userId?: string) {
     if (!options?.silent) setLoading(true);
     try {
       bootLog("dashboard data fetch start");
-      const [expensesRes, reqRes, recRes, groupsRes, settlementsRes, notificationsRes] = await Promise.all([
+      const [expensesRes, reqRes, recRes, groupsRes, settlementsRes, notificationsRes, categoriesRes] = await Promise.all([
         withTimeout(supabase
           .from("expenses")
           .select(`
-            id, user_id, paid_by, amount, category, note, status, split_type, group_id, created_at,
+            id, user_id, paid_by, amount, category, category_id, note, status, split_type, group_id, created_at,
             profiles!expenses_user_id_fkey(user_id, full_name, username),
             payer_profile:profiles!expenses_paid_by_fkey(user_id, full_name, username),
             expense_splits(id, user_id, amount_owed, amount_paid, has_paid, created_at, profiles!expense_splits_user_id_fkey(user_id, full_name, username))
@@ -788,6 +955,11 @@ function useSpendovaData(userId?: string) {
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
           .limit(10), 8000, "notifications fetch"),
+        withTimeout(supabase
+          .from("expense_categories" as never)
+          .select("id, name, type, user_id, group_id, created_by, is_deleted, created_at, updated_at")
+          .eq("is_deleted", false)
+          .order("name", { ascending: true }), 8000, "expense categories fetch"),
       ]);
 
       if (expensesRes.error) console.error("Dashboard expenses fetch failed", expensesRes.error);
@@ -796,6 +968,7 @@ function useSpendovaData(userId?: string) {
       if (groupsRes.error) console.error("Dashboard groups fetch failed", groupsRes.error);
       if (settlementsRes.error) console.warn("Could not load settlement history", settlementsRes.error);
       if (notificationsRes.error) console.warn("Could not load notifications", notificationsRes.error);
+      if (categoriesRes.error) console.warn("Could not load expense categories", categoriesRes.error);
 
       const requested = ((reqRes.data || []) as unknown as ConnectionQueryRow[]).map((row) => ({ ...row, profiles: row.profiles || { user_id: "", full_name: null, username: null } })) as ConnectionRow[];
       const received = ((recRes.data || []) as unknown as ConnectionQueryRow[]).map((row) => ({ ...row, profiles: row.profiles || { user_id: "", full_name: null, username: null } })) as ConnectionRow[];
@@ -829,6 +1002,7 @@ function useSpendovaData(userId?: string) {
         groupInvites,
         settlements: settlementsRes.error ? [] : (settlementsRes.data || []) as unknown as SplitSettlementRow[],
         notifications: notificationsRes.error ? [] : (notificationsRes.data || []) as unknown as NotificationRow[],
+        categories: categoriesRes.error ? [] : (categoriesRes.data || []) as unknown as ExpenseCategoryRow[],
       });
       bootLog("dashboard data fetch end");
     } catch (error: unknown) {
@@ -1252,7 +1426,7 @@ function computeGroupBalances(expenses: ExpenseRow[], settlements: SplitSettleme
   return balances.map((balance) => ({ ...balance, fromName: memberNames[balance.fromUserId] || balance.fromName, toName: memberNames[balance.toUserId] || balance.toName }));
 }
 
-const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; userId: string; setTab: (tab: TabKey) => void; openModal: (type: ModalType, item?: string) => void }) => {
+const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; categories: ExpenseCategoryRow[]; userId: string; setTab: (tab: TabKey) => void; openModal: (type: ModalType, item?: string) => void }) => {
   const [range, setRange] = useState<DateFilter>("month");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
@@ -1390,7 +1564,7 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
 
       <section>
         <div className="mb-3 flex items-center justify-between gap-3"><div><h2 className="text-base font-black tracking-tight text-foreground">Recent activity</h2><p className="mt-0.5 text-xs font-medium text-muted-foreground">Latest spending and split updates</p></div><FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} /></div>
-        <div className="space-y-3">{recent.length === 0 ? (expenses.length === 0 ? <EmptyCard text="No activity yet." /> : <FilterEmptyState onClear={clear} />) : recent.map((expense) => { const share = getExpenseShare(expense, userId); return <div key={expense.id} className="flex items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-soft"><div className="min-w-0"><h3 className="truncate font-bold text-foreground">{expense.category || "Expense"}</h3><p className="mt-1 text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p></div><div className="shrink-0 text-right"><p className="font-black text-foreground">{money(share)}</p><StatusPill status={expense.status || "pending"} /></div></div>; })}</div>
+        <div className="space-y-3">{recent.length === 0 ? (expenses.length === 0 ? <EmptyCard text="No activity yet." /> : <FilterEmptyState onClear={clear} />) : recent.map((expense) => { const share = getExpenseShare(expense, userId); return <div key={expense.id} className="flex items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-soft"><div className="min-w-0"><h3 className="truncate font-bold text-foreground">{expense.category || "Expense"}</h3><CategoryBadge label={categoryLabel(expense, categories)} /><p className="mt-1 text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p></div><div className="shrink-0 text-right"><p className="font-black text-foreground">{money(share)}</p><StatusPill status={expense.status || "pending"} /></div></div>; })}</div>
       </section>
 
       <Drawer open={chartFiltersOpen} onOpenChange={setChartFiltersOpen}>
@@ -1436,12 +1610,12 @@ const DashboardLoadingFallback = () => {
   );
 };
 
-const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, friends, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; summary: ReturnType<typeof getSummary>; currentUserId: string; groups: GroupRow[]; friends: FriendProfile[]; openModal: (type: ModalType, item?: string) => void }) => {
+const PersonalView = ({ expenses, settlements, summary, categories, currentUserId, groups, friends, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; summary: ReturnType<typeof getSummary>; categories: ExpenseCategoryRow[]; currentUserId: string; groups: GroupRow[]; friends: FriendProfile[]; openModal: (type: ModalType, item?: string) => void }) => {
   const defaultFilters = { status: "all", date: "all", dateStart: "", dateEnd: "", sort: "newest", category: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
   const personalExpenses = expenses.filter((expense) => expense.paid_by === currentUserId || expense.expense_splits?.some((split) => split.user_id === currentUserId));
-  const categories = Array.from(new Set(personalExpenses.map((expense) => expense.category || "Other"))).sort();
+  const personalCategories = scopedCategories(categories, "personal", currentUserId);
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
   const clearFilters = () => setFilters(defaultFilters);
   const visibleExpenses = sortByDateOrAmount(
@@ -1449,7 +1623,8 @@ const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, f
       const display = getPersonalExpenseDisplay(expense, currentUserId, groups, friends, expenses, settlements);
       const expenseStatus = display.status;
       if (filters.status !== "all" && expenseStatus !== filters.status) return false;
-      if (filters.category !== "all" && (expense.category || "Other") !== filters.category) return false;
+      if (filters.category === UNCATEGORIZED_CATEGORY && categoryLabel(expense, categories) !== "Uncategorized") return false;
+      if (filters.category !== "all" && filters.category !== UNCATEGORIZED_CATEGORY && expense.category_id !== filters.category) return false;
       return filterByDate(expense.created_at, filters.date as DateFilter, filters.dateStart, filters.dateEnd);
     }),
     filters.sort as AmountSort,
@@ -1478,6 +1653,7 @@ const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, f
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h3 className="font-bold text-foreground">{expense.category || "Expense"}</h3>
+                    <CategoryBadge label={categoryLabel(expense, categories)} />
                     {display.context ? <p className="mt-1 text-sm font-medium text-muted-foreground">{display.context}</p> : null}
                     <p className="mt-1 text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p>
                   </div>
@@ -1497,7 +1673,7 @@ const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, f
         <FilterField label="Status" value={filters.status} onChange={(status) => setFilters((current) => ({ ...current, status }))} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "cleared", label: "Cleared" }]} />
         <DateFilterControls value={filters.date} start={filters.dateStart} end={filters.dateEnd} onDateChange={(date) => setFilters((current) => ({ ...current, date }))} onStartChange={(dateStart) => setFilters((current) => ({ ...current, dateStart }))} onEndChange={(dateEnd) => setFilters((current) => ({ ...current, dateEnd }))} />
         <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "amount-desc", label: "Amount high to low" }, { value: "amount-asc", label: "Amount low to high" }]} />
-        <FilterField label="Category" value={filters.category} onChange={(category) => setFilters((current) => ({ ...current, category }))} options={[{ value: "all", label: "All categories" }, ...categories.map((category) => ({ value: category, label: category }))]} />
+        <FilterField label="Category" value={filters.category} onChange={(category) => setFilters((current) => ({ ...current, category }))} options={[{ value: "all", label: "All categories" }, { value: UNCATEGORIZED_CATEGORY, label: "Uncategorized" }, ...personalCategories.map((category) => ({ value: category.id, label: category.name }))]} />
       </FilterSheet>
       <button onClick={() => openModal("add-expense")} className="fixed bottom-28 right-4 z-20 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-bold text-primary-foreground shadow-primary-action sm:right-8">
         <Plus className="size-4" />Add expense
@@ -2210,7 +2386,7 @@ const PaymentProofDisplay = ({ path, deletedAt }: { path?: string | null; delete
   );
 };
 
-const ExpenseDetailView = ({ expense, settlements, currentUserId, openModal, onBack, refresh }: { expense: ExpenseRow; settlements: SplitSettlementRow[]; currentUserId: string; openModal: (type: ModalType, item?: string) => void; onBack: () => void; refresh: () => Promise<void> }) => {
+const ExpenseDetailView = ({ expense, settlements, categories, currentUserId, openModal, onBack, refresh }: { expense: ExpenseRow; settlements: SplitSettlementRow[]; categories: ExpenseCategoryRow[]; currentUserId: string; openModal: (type: ModalType, item?: string) => void; onBack: () => void; refresh: () => Promise<void> }) => {
   const { toast } = useToast();
   const [settling, setSettling] = useState(false);
   const [proofPromptOpen, setProofPromptOpen] = useState(false);
@@ -2307,6 +2483,7 @@ const ExpenseDetailView = ({ expense, settlements, currentUserId, openModal, onB
 
       <section className="rounded-2xl bg-card px-4 shadow-soft">
         <DetailRow label="Description" value={expense.note || expense.category || "Expense"} />
+        <DetailRow label="Category" value={categoryLabel(expense, categories)} />
         <DetailRow label="Amount" value={money(expense.amount)} />
         <DetailRow label="Paid by" value={paidBy} />
         <DetailRow label="Split type" value={expense.split_type || "none"} />
@@ -2458,10 +2635,11 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const [settlingExpenseId, setSettlingExpenseId] = useState<string | null>(null);
   const [participantsExpense, setParticipantsExpense] = useState<ExpenseRow | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
-  const defaultFilters = { status: "all", paidBy: "anyone", date: "all", dateStart: "", dateEnd: "", sort: "newest", splitType: "all" };
+  const defaultFilters = { status: "all", paidBy: "anyone", date: "all", dateStart: "", dateEnd: "", sort: "newest", splitType: "all", category: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
   const groupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), getExpenseTimelineCreatedAt);
+  const groupCategories = scopedCategories(data.categories, "group", currentUserId, group.id);
   const groupSettlements = data.settlements.filter((settlement) => settlement.group_id === group.id);
   const totalSpent = groupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const balances = computeGroupBalances(data.expenses, data.settlements, group, currentUserId);
@@ -2551,6 +2729,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const filteredGroupActivity = sortTimelineByCreatedAt(
     groupActivity.filter((item) => {
       if (item.kind === "settlement") {
+        if (filters.category !== "all") return false;
         if (filters.status !== "all" && filters.status !== "settled") return false;
         if (filters.paidBy === "me" && item.settlement.from_user_id !== currentUserId) return false;
         if (filters.paidBy !== "anyone" && filters.paidBy !== "me" && item.settlement.from_user_id !== filters.paidBy) return false;
@@ -2563,6 +2742,8 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
       if (filters.paidBy === "me" && expense.paid_by !== currentUserId) return false;
       if (filters.paidBy !== "anyone" && filters.paidBy !== "me" && expense.paid_by !== filters.paidBy) return false;
       if (filters.splitType !== "all" && (expense.split_type || "equal") !== filters.splitType) return false;
+      if (filters.category === UNCATEGORIZED_CATEGORY && categoryLabel(expense, data.categories) !== "Uncategorized") return false;
+      if (filters.category !== "all" && filters.category !== UNCATEGORIZED_CATEGORY && expense.category_id !== filters.category) return false;
       return filterByDate(expense.created_at, filters.date as DateFilter, filters.dateStart, filters.dateEnd);
     }),
     (item) => item.created_at,
@@ -2689,6 +2870,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
                     <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-warning/15 text-warning"><CircleDollarSign className="size-4" /></span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-bold text-foreground">{expense.category || "Expense"}</span>
+                      <CategoryBadge label={categoryLabel(expense, data.categories)} />
                       <span className="mt-1 block truncate text-xs font-medium text-muted-foreground">Paid by {payerName} · {dateLabel(expense.created_at)}</span>
                     </span>
                     <span className="shrink-0 text-right">
@@ -2734,6 +2916,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
         <FilterField label="Paid by" value={filters.paidBy} onChange={(paidBy) => setFilters((current) => ({ ...current, paidBy }))} options={[{ value: "anyone", label: "Anyone" }, { value: "me", label: "Me" }, ...group.group_members.filter((member) => member.user_id !== currentUserId).map((member) => ({ value: member.user_id, label: displayName(member.profiles) }))]} />
         <DateFilterControls value={filters.date} start={filters.dateStart} end={filters.dateEnd} onDateChange={(date) => setFilters((current) => ({ ...current, date }))} onStartChange={(dateStart) => setFilters((current) => ({ ...current, dateStart }))} onEndChange={(dateEnd) => setFilters((current) => ({ ...current, dateEnd }))} />
         <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "amount-desc", label: "Amount high to low" }, { value: "amount-asc", label: "Amount low to high" }]} />
+        <FilterField label="Category" value={filters.category} onChange={(category) => setFilters((current) => ({ ...current, category }))} options={[{ value: "all", label: "All categories" }, { value: UNCATEGORIZED_CATEGORY, label: "Uncategorized" }, ...groupCategories.map((category) => ({ value: category.id, label: category.name }))]} />
         <FilterField label="Split type" value={filters.splitType} onChange={(splitType) => setFilters((current) => ({ ...current, splitType }))} options={[{ value: "all", label: "All" }, { value: "equal", label: "Equal split" }, { value: "exact", label: "Exact split" }, { value: "percentage", label: "Percentage" }]} />
       </FilterSheet>
 
@@ -3089,10 +3272,35 @@ const FeedbackForm = ({ userId, onSubmit, onCancel }: { userId: string; onSubmit
   );
 };
 
-const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCancel }: { userId: string; friends: FriendProfile[]; friend?: FriendProfile; group?: GroupRow; expense?: ExpenseRow; onSubmit: (payload: { expense: ExpensePayload; splits: Array<{ user_id: string; amount_owed: number }>; expenseId?: string }) => Promise<void>; onCancel: () => void }) => {
+const ExpenseForm = ({
+  userId,
+  friends,
+  friend,
+  group,
+  expense,
+  categories,
+  onCreateCategory,
+  onRenameCategory,
+  onDeleteCategory,
+  onSubmit,
+  onCancel,
+}: {
+  userId: string;
+  friends: FriendProfile[];
+  friend?: FriendProfile;
+  group?: GroupRow;
+  expense?: ExpenseRow;
+  categories: ExpenseCategoryRow[];
+  onCreateCategory: (scope: "personal" | "group", name: string, groupId?: string | null) => Promise<ExpenseCategoryRow>;
+  onRenameCategory: (categoryId: string, name: string) => Promise<void>;
+  onDeleteCategory: (categoryId: string) => Promise<void>;
+  onSubmit: (payload: { expense: ExpensePayload; splits: Array<{ user_id: string; amount_owed: number }>; expenseId?: string }) => Promise<void>;
+  onCancel: () => void;
+}) => {
   const isEdit = Boolean(expense);
   const members = group ? group.group_members.map((member) => ({ user_id: member.user_id, name: member.user_id === userId ? "You" : displayName(member.profiles) })) : friend ? [{ user_id: userId, name: "You" }, { user_id: friend.user_id, name: displayName(friend) }] : [{ user_id: userId, name: "You" }, ...friends.map((item) => ({ user_id: item.user_id, name: displayName(item) }))];
   const [name, setName] = useState(expense?.category || "");
+  const [categoryId, setCategoryId] = useState(expense?.category_id || "");
   const [date, setDate] = useState(expense?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
   const [amount, setAmount] = useState(expense ? String(expense.amount) : "");
   const [note, setNote] = useState(expense?.note || "");
@@ -3104,12 +3312,16 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
   const [payer, setPayer] = useState(expense?.paid_by || userId);
   const [splitValues, setSplitValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [autoNameCategoryId, setAutoNameCategoryId] = useState<string | null>(null);
 
   const parsedAmount = Number(amount);
   const hasSettlementState = Boolean(expense?.expense_splits?.some((split) => Number(split.amount_paid || 0) > 0 || split.has_paid));
   const selectedMembers = members.filter((member) => participants.includes(member.user_id));
   const debtors = selectedMembers.filter((member) => member.user_id !== payer);
   const equalShare = participants.length ? parsedAmount / participants.length : 0;
+  const scope = categoryScope(group);
+  const availableCategories = scopedCategories(categories, scope, userId, group?.id || null);
+  const selectedCategory = availableCategories.find((category) => category.id === categoryId);
 
   const toggleParticipant = (id: string) => {
     setParticipants((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
@@ -3121,10 +3333,28 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
       return next;
     });
   };
+  const handleNameChange = (value: string) => {
+    setName(value);
+    setAutoNameCategoryId(null);
+  };
+  const handleCategoryChange = (value: string) => {
+    const picked = availableCategories.find((category) => category.id === value);
+    const shouldAutoFillName = !name.trim() || Boolean(autoNameCategoryId);
+
+    setCategoryId(value);
+    if (picked && shouldAutoFillName) {
+      setName(picked.name);
+      setAutoNameCategoryId(picked.id);
+    } else if (!picked && autoNameCategoryId) {
+      setName("");
+      setAutoNameCategoryId(null);
+    }
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!name.trim() || !parsedAmount || parsedAmount <= 0 || submitting) return;
+    const expenseName = name.trim() || selectedCategory?.name || "";
+    if (!expenseName || !parsedAmount || parsedAmount <= 0 || submitting) return;
 
     const splits: Array<{ user_id: string; amount_owed: number }> = [];
     if (splitOn) {
@@ -3155,7 +3385,8 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
         expense: {
           user_id: expense?.user_id || userId,
           paid_by: splitOn ? payer : userId,
-          category: name.trim(),
+          category: expenseName,
+          category_id: categoryId || null,
           amount: parsedAmount,
           note: note.trim() || null,
           status: splitOn ? "cleared" : status,
@@ -3172,9 +3403,17 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <Field label="Expense name" placeholder="Dinner, groceries..." value={name} onChange={setName} />
-      <Field label="Date" type="date" value={date} onChange={setDate} />
+      <CategoryPicker
+        categories={availableCategories}
+        value={categoryId}
+        onChange={handleCategoryChange}
+        onCreate={(categoryName) => onCreateCategory(scope, categoryName, group?.id || null)}
+        onRename={onRenameCategory}
+        onDelete={onDeleteCategory}
+      />
+      <Field label="Expense name" placeholder="Dinner, groceries..." value={name} onChange={handleNameChange} hint="Selecting a category can fill this if you leave it blank." />
       <Field label="Amount" type="number" placeholder="0" value={amount} onChange={setAmount} />
+      <Field label="Date" type="date" value={date} onChange={setDate} />
       {isEdit && hasSettlementState ? (
         <div className="rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs font-semibold text-warning">
           This expense has settlements. Editing split details is blocked until those settlements are reversed.
@@ -3201,9 +3440,7 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
           </div>
           <div>
             <p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Who paid</p>
-            <select value={payer} onChange={(event) => setPayer(event.target.value)} className="w-full rounded-full border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring">
-              {selectedMembers.map((member) => <option key={member.user_id} value={member.user_id}>{member.name}</option>)}
-            </select>
+            <AppSelect value={payer} onChange={setPayer} options={selectedMembers.map((member) => ({ value: member.user_id, label: member.name }))} />
           </div>
           <div>
             <p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Strategy</p>
@@ -3538,6 +3775,35 @@ const ActionModal = ({
     await refresh();
     onClose();
     navigate("/split", { replace: true });
+  };
+  const createCategory = async (scope: "personal" | "group", name: string, groupId?: string | null) => {
+    const payload = scope === "personal"
+      ? { name: name.trim(), type: "personal", user_id: currentUserId, group_id: null, created_by: currentUserId }
+      : { name: name.trim(), type: "group", user_id: null, group_id: groupId, created_by: currentUserId };
+    const { data: created, error } = await supabase
+      .from("expense_categories" as never)
+      .insert(payload as never)
+      .select("id, name, type, user_id, group_id, created_by, is_deleted, created_at, updated_at")
+      .single();
+    if (error) throw error;
+    void refresh({ silent: true });
+    return created as unknown as ExpenseCategoryRow;
+  };
+  const renameCategory = async (categoryId: string, name: string) => {
+    const { error } = await supabase
+      .from("expense_categories" as never)
+      .update({ name: name.trim(), updated_at: new Date().toISOString() } as never)
+      .eq("id", categoryId);
+    if (error) throw error;
+    void refresh({ silent: true });
+  };
+  const deleteCategory = async (categoryId: string) => {
+    const { error } = await supabase
+      .from("expense_categories" as never)
+      .update({ is_deleted: true, updated_at: new Date().toISOString() } as never)
+      .eq("id", categoryId);
+    if (error) throw error;
+    void refresh({ silent: true });
   };
 
   useEffect(() => {
@@ -3976,7 +4242,7 @@ const ActionModal = ({
 
         <div className="spendova-modal-body min-h-0 overflow-y-auto overflow-x-visible overscroll-contain">
           {(type === "add-expense" || type === "group-expense" || type === "edit-expense") && (
-            <ExpenseForm userId={currentUserId} friends={data.friends} friend={type === "add-expense" ? friend : undefined} group={type === "group-expense" ? group : undefined} expense={type === "edit-expense" ? expense : undefined} onSubmit={saveExpense} onCancel={onClose} />
+            <ExpenseForm userId={currentUserId} friends={data.friends} friend={type === "add-expense" ? friend : undefined} group={type === "group-expense" || type === "edit-expense" ? group : undefined} expense={type === "edit-expense" ? expense : undefined} categories={data.categories} onCreateCategory={createCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} onSubmit={saveExpense} onCancel={onClose} />
           )}
           {type === "feedback-support" && <FeedbackForm userId={currentUserId} onSubmit={submitFeedback} onCancel={onClose} />}
 
@@ -4368,11 +4634,11 @@ const Index = () => {
         {expenseDetailId && !expenseDetail && <Navigate to="/split" replace />}
         {settlementDetailId && !settlementDetail && <Navigate to="/split" replace />}
         {friendDetail && <FriendDetailView friend={friendDetail} data={data} currentUserId={user.id} theme={theme} unreadCount={unreadNotifications} onThemeToggle={toggleTheme} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
-        {expenseDetail && <ExpenseDetailView expense={expenseDetail} settlements={data.settlements} currentUserId={user.id} openModal={openModal} onBack={() => navigate(getExpenseParentPath(expenseDetail))} refresh={refresh} />}
+        {expenseDetail && <ExpenseDetailView expense={expenseDetail} settlements={data.settlements} categories={data.categories} currentUserId={user.id} openModal={openModal} onBack={() => navigate(getExpenseParentPath(expenseDetail))} refresh={refresh} />}
         {settlementDetail && <SettlementDetailView settlement={settlementDetail} currentUserId={user.id} onBack={() => navigate(getSettlementParentPath(settlementDetail))} onDelete={deleteSettlement} />}
         {groupDetail && <GroupDetailView group={groupDetail} data={data} currentUserId={user.id} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} settlements={data.settlements} summary={summary} currentUserId={user.id} groups={data.groups} friends={data.friends} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} categories={data.categories} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} settlements={data.settlements} summary={summary} categories={data.categories} currentUserId={user.id} groups={data.groups} friends={data.friends} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "profile" && <ProfileView userId={user.id} profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
         {/* <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p> */}
