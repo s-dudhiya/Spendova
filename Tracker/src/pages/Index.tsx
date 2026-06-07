@@ -64,7 +64,7 @@ import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-e
 import { getSpendingChartAverageLabel, getSpendingChartAxisLabels, getSpendingChartSummary, type SpendingChartBucketUnit } from "@/lib/spending-chart";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 
-type TabKey = "home" | "split" | "personal" | "tiffin";
+type TabKey = "home" | "split" | "personal";
 type ContentKey = TabKey | "profile";
 type Theme = "light" | "dark";
 type SplitStrategy = "equal" | "exact" | "percentage";
@@ -72,7 +72,6 @@ type ModalType =
   | "notifications"
   | "feedback-support"
   | "add-expense"
-  | "log-tiffin"
   | "chart-details"
   | "edit-expense"
   | "delete-expense"
@@ -248,7 +247,6 @@ const tabs: Array<{ key: TabKey; label: string; icon: typeof Home }> = [
   { key: "home", label: "Home", icon: Home },
   { key: "split", label: "Split", icon: Split },
   { key: "personal", label: "Personal", icon: WalletCards },
-  // { key: "tiffin", label: "Tiffin", icon: UtensilsCrossed },
 ];
 
 const emojiChoices = ["Home", "Trip", "Food", "Party", "Beach", "Movie", "Sports", "Books", "Work", "Cart"];
@@ -921,8 +919,6 @@ function getExpenseShare(expense: ExpenseRow, userId: string) {
 
 function isPersonalOnlyExpense(expense: ExpenseRow) {
   return !expense.group_id
-    && expense.category !== "tiffin"
-    && expense.category !== "delivery"
     && (!expense.expense_splits || expense.expense_splits.length === 0);
 }
 
@@ -1069,26 +1065,17 @@ function getSummary(expenses: ExpenseRow[], userId: string, settlements: SplitSe
   let personal = 0;
   let personalPending = 0;
   let personalCleared = 0;
-  let tiffinPending = 0;
-  let tiffinCleared = 0;
 
   expenses.forEach((expense) => {
-    const isFood = expense.category === "tiffin" || expense.category === "delivery";
     const personalOnly = isPersonalOnlyExpense(expense);
 
-    if (!isFood) {
-      const share = personalOnly
-        ? Number(expense.amount || 0)
-        : Number(getExpenseShare(expense, userId) || 0);
-      personal += share;
-      const status = getPersonalShareStatus(expense, userId);
-      if (status === "cleared") personalCleared += share;
-      else personalPending += share;
-    } else if (expense.status === "cleared") {
-      tiffinCleared += expense.amount;
-    } else {
-      tiffinPending += expense.amount;
-    }
+    const share = personalOnly
+      ? Number(expense.amount || 0)
+      : Number(getExpenseShare(expense, userId) || 0);
+    personal += share;
+    const status = getPersonalShareStatus(expense, userId);
+    if (status === "cleared") personalCleared += share;
+    else personalPending += share;
   });
 
   buildDebtBalances(expenses, settlements, { currentUserId: userId }).forEach((balance) => {
@@ -1096,7 +1083,7 @@ function getSummary(expenses: ExpenseRow[], userId: string, settlements: SplitSe
     if (balance.fromUserId === userId) totalOwed += balance.amount;
   });
 
-  return { totalLent, totalOwed, net: totalLent - totalOwed, personal, personalPending, personalCleared, tiffinPending, tiffinCleared };
+  return { totalLent, totalOwed, net: totalLent - totalOwed, personal, personalPending, personalCleared };
 }
 
 type ChartRange = "7d" | "30d" | "3m" | "6m" | "this_year" | "all";
@@ -1121,7 +1108,6 @@ const chartRangeHelpers: Record<ChartRange, string> = {
 
 const expenseImpactForUser = (expense: ExpenseRow, userId: string) => Math.max(Number(getExpenseShare(expense, userId) || 0), 0);
 const expenseSpendType = (expense: ExpenseRow) => {
-  if (expense.category === "tiffin" || expense.category === "delivery") return "tiffin";
   if (expense.group_id) return "group";
   if (expense.expense_splits?.length) return "split";
   return "personal";
@@ -1228,7 +1214,7 @@ function compactRupee(value: number) {
 }
 
 function getSpendingAnalytics(expenses: ExpenseRow[], userId: string) {
-  const totals = { personal: 0, split: 0, tiffin: 0, group: 0 };
+  const totals = { personal: 0, split: 0, group: 0 };
   const byCategory: Record<string, number> = {};
   const byDay: Record<string, number> = {};
   const byMonth: Record<string, number> = {};
@@ -1454,7 +1440,7 @@ const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, f
   const defaultFilters = { status: "all", date: "all", dateStart: "", dateEnd: "", sort: "newest", category: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
-  const personalExpenses = expenses.filter((expense) => expense.category !== "tiffin" && expense.category !== "delivery" && (expense.paid_by === currentUserId || expense.expense_splits?.some((split) => split.user_id === currentUserId)));
+  const personalExpenses = expenses.filter((expense) => expense.paid_by === currentUserId || expense.expense_splits?.some((split) => split.user_id === currentUserId));
   const categories = Array.from(new Set(personalExpenses.map((expense) => expense.category || "Other"))).sort();
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
   const clearFilters = () => setFilters(defaultFilters);
@@ -2439,7 +2425,6 @@ const SpendingDetails = ({ expenses, currentUserId }: { expenses: ExpenseRow[]; 
     ["Average monthly spend", money(analytics.averageMonthly)],
     ["Total personal", money(analytics.totals.personal)],
     ["Total split", money(analytics.totals.split)],
-    ["Total tiffin", money(analytics.totals.tiffin)],
     ["Total group", money(analytics.totals.group)],
     ["Top spending day", analytics.topDay ? `${analytics.topDay[0]} · ${money(analytics.topDay[1])}` : "None"],
     ["Top spending month", analytics.topMonth ? `${analytics.topMonth[0]} · ${money(analytics.topMonth[1])}` : "None"],
@@ -2804,54 +2789,6 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
         </DrawerContent>
       </Drawer>
     </>
-  );
-};
-
-const TiffinView = ({ expenses, openModal }: { expenses: ExpenseRow[]; openModal: (type: ModalType, item?: string) => void }) => {
-  const [category, setCategory] = useState<"tiffin" | "delivery">("tiffin");
-  const entries = expenses.filter((expense) => expense.category === category);
-  const total = entries.reduce((sum, expense) => sum + expense.amount, 0);
-  const pending = entries.filter((expense) => expense.status !== "cleared").reduce((sum, expense) => sum + expense.amount, 0);
-  const cleared = entries.filter((expense) => expense.status === "cleared").reduce((sum, expense) => sum + expense.amount, 0);
-  return (
-    <main className="space-y-6">
-      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
-        <div className="flex rounded-full bg-elevated p-1">
-          {(["tiffin", "delivery"] as const).map((item) => (
-            <button key={item} onClick={() => setCategory(item)} className={`flex-1 rounded-full px-4 py-2.5 text-sm font-bold capitalize transition-colors ${category === item ? "bg-primary text-primary-foreground shadow-primary-action" : "text-muted-foreground"}`}>{item}</button>
-          ))}
-        </div>
-      </section>
-      <section className="grid grid-cols-[repeat(auto-fit,minmax(6.75rem,1fr))] gap-3 text-center">
-        {[["Total", money(total)], ["Pending", money(pending)], ["Cleared", money(cleared)]].map(([label, value]) => (
-          <div key={label} className="min-w-0 rounded-2xl bg-card p-3 shadow-soft"><p className="text-xs text-muted-foreground">{label}</p><p className="spendova-money-value mt-1 text-sm font-bold text-foreground sm:text-base">{value}</p></div>
-        ))}
-      </section>
-      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
-        <p className="mb-2 text-sm font-semibold text-foreground">Quick add</p>
-        <div className="flex gap-2">
-          <input readOnly className="min-w-0 flex-1 rounded-full border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder={`Add ${category} amount`} />
-          <Button onClick={() => openModal("log-tiffin", category)} size="icon" className="shadow-primary-action"><Plus /></Button>
-        </div>
-      </section>
-      <section>
-        <SectionHeader title={`${category} log`} />
-        <div className="space-y-3">
-          {entries.length === 0 ? <EmptyCard text={`No ${category} entries yet.`} /> : entries.map((entry) => (
-            <article key={entry.id} className="flex items-center justify-between rounded-2xl bg-card p-4 shadow-soft">
-              <div className="flex items-center gap-3">
-                <span className="grid size-10 place-items-center rounded-full bg-elevated text-primary"><UtensilsCrossed className="size-4" /></span>
-                <div><h3 className="font-bold text-foreground">{entry.category}</h3><p className="text-sm text-muted-foreground">{dateLabel(entry.created_at)}</p></div>
-              </div>
-              <div className="text-right"><p className="font-bold text-foreground">{money(entry.amount)}</p><StatusPill status={entry.status || "pending"} /></div>
-            </article>
-          ))}
-        </div>
-      </section>
-      <button onClick={() => openModal("log-tiffin", category)} className="fixed bottom-28 right-4 z-20 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-bold text-primary-foreground shadow-primary-action sm:right-8">
-        <Plus className="size-4" />Add {category}
-      </button>
-    </main>
   );
 };
 
@@ -3317,33 +3254,6 @@ const ExpenseForm = ({ userId, friends, friend, group, expense, onSubmit, onCanc
   );
 };
 
-const TiffinForm = ({ userId, defaultCategory, onSubmit, onCancel }: { userId: string; defaultCategory?: string; onSubmit: (expense: ExpensePayload) => Promise<void>; onCancel: () => void }) => {
-  const [category, setCategory] = useState(defaultCategory === "delivery" ? "delivery" : "tiffin");
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [submitting, setSubmitting] = useState(false);
-  return (
-    <form className="space-y-3" onSubmit={async (event) => {
-      event.preventDefault();
-      const parsed = Number(amount);
-      if (!parsed || parsed <= 0 || submitting) return;
-      setSubmitting(true);
-      try {
-        await onSubmit({ user_id: userId, paid_by: userId, category, amount: parsed, status: "pending", split_type: "none", created_at: new Date(date).toISOString() });
-      } finally {
-        setSubmitting(false);
-      }
-    }}>
-      <div className="flex gap-1 rounded-full bg-elevated p-1">
-        {(["tiffin", "delivery"] as const).map((item) => <button key={item} type="button" onClick={() => setCategory(item)} className={`flex-1 rounded-full px-3 py-2 text-xs font-bold capitalize ${category === item ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{item}</button>)}
-      </div>
-      <Field label="Amount" placeholder="0" type="number" value={amount} onChange={setAmount} />
-      <Field label="Date" type="date" value={date} onChange={setDate} />
-      <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel} disabled={submitting}>Cancel</Button><Button type="submit" className="flex-1" disabled={submitting}>{submitting ? "Saving..." : "Log Expense"}</Button></div>
-    </form>
-  );
-};
-
 const CreateGroupForm = ({ friends, group, onSubmit, onCancel }: { friends: FriendProfile[]; group?: GroupRow; onSubmit: (payload: { name: string; emoji: string; description: string; memberIds: string[]; groupId?: string }) => Promise<void>; onCancel: () => void }) => {
   const [emoji, setEmoji] = useState(group?.emoji || "🏠");
   const [name, setName] = useState(group?.name || "");
@@ -3596,7 +3506,6 @@ const ActionModal = ({
   const title =
     type === "add-expense" ? "Add expense" :
     type === "group-expense" ? `Add expense - ${group?.name || ""}` :
-    type === "log-tiffin" ? "Log amount" :
     type === "chart-details" ? "Spending details" :
     type === "edit-expense" ? "Edit expense" :
     type === "delete-expense" ? "Delete expense" :
@@ -4074,7 +3983,6 @@ const ActionModal = ({
           {type === "choose-friend-expense" && <PickerList items={data.friends.map((item) => ({ id: item.user_id, title: displayName(item), subtitle: `@${item.username || "user"}` }))} emptyText="Add friends to start splitting expenses" onPick={(id) => openModal("add-expense", id)} />}
           {type === "choose-group-expense" && <PickerList items={data.groups.map((item) => ({ id: item.id, title: item.name, subtitle: `${item.group_members.length} members` }))} emptyText="Create a group to split shared expenses" onPick={(id) => openModal("group-expense", id)} />}
 
-          {type === "log-tiffin" && <TiffinForm userId={currentUserId} defaultCategory={modal.item} onSubmit={async (payload) => { const { error } = await supabase.from("expenses").insert(payload); if (error) throw error; await closeAndRefresh(); }} onCancel={onClose} />}
           {(type === "create-group" || type === "edit-group") && <CreateGroupForm friends={data.friends} group={type === "edit-group" ? group : undefined} onSubmit={saveGroup} onCancel={onClose} />}
 
           {type === "group-details" && group && (
@@ -4466,7 +4374,6 @@ const Index = () => {
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} settlements={data.settlements} summary={summary} currentUserId={user.id} groups={data.groups} friends={data.friends} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "tiffin" && <TiffinView expenses={data.expenses} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "profile" && <ProfileView userId={user.id} profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
         {/* <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p> */}
       </div>
