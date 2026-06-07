@@ -1677,13 +1677,25 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
     (expense) => expense.created_at,
     (expense) => Number(getPersonalExpenseDisplay(expense, currentUserId, groups, friends, expenses, settlements).amount || 0),
   );
+  const filteredPersonalSummary = getSummary(visibleExpenses, currentUserId, settlements);
   return (
     <main className="space-y-6">
       <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
         <p className="text-sm font-medium text-muted-foreground">Personal spend</p>
-        <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">{money(summary.personal)}</p>
-        <div className="mt-4 grid grid-cols-3 gap-1.5 text-center sm:gap-2">
-          {[["Total", money(summary.personal)], ["Pending", money(summary.personalPending)], ["Cleared", money(summary.personalCleared)]].map(([label, value]) => <div key={label} className="min-w-0 rounded-2xl bg-elevated px-1.5 py-2.5 shadow-soft sm:p-3"><p className="text-[11px] text-muted-foreground sm:text-xs">{label}</p><p className="spendova-money-value mt-1 text-[11px] font-bold leading-tight text-foreground min-[360px]:text-xs min-[430px]:text-sm sm:text-base">{value}</p></div>)}
+        <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">{money(filteredPersonalSummary.personal)}</p>
+        <div className="mt-4 flex w-full items-start justify-between gap-4">
+          <div className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
+            <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
+              <span className="m-0 block h-4 max-w-full p-0 text-[10px] font-bold uppercase leading-4 tracking-wide text-muted-foreground sm:text-[11px]">Pending</span>
+              <span className="spendova-money-value mt-1.5 block min-h-5 max-w-full p-0 text-xs font-bold leading-5 text-warning min-[380px]:text-sm sm:text-base">{money(filteredPersonalSummary.personalPending)}</span>
+            </span>
+          </div>
+          <div className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
+            <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
+              <span className="m-0 block h-4 max-w-full p-0 text-[10px] font-bold uppercase leading-4 tracking-wide text-muted-foreground sm:text-[11px]">Cleared</span>
+              <span className="spendova-money-value mt-1.5 block min-h-5 max-w-full p-0 text-xs font-bold leading-5 text-success min-[380px]:text-sm sm:text-base">{money(filteredPersonalSummary.personalCleared)}</span>
+            </span>
+          </div>
         </div>
       </section>
       <section className="pb-16">
@@ -1744,7 +1756,6 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
   const defaultFilters = { balance: "all", sort: "highest" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
-  const summary = getSummary(data.expenses, currentUserId, data.settlements);
   const pendingRequestIds = [...data.incomingRequests, ...data.outgoingRequests].map((request) => request.id);
   const requestCount = pendingRequestIds.filter((id) => !seenRequestIds.includes(id)).length;
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
@@ -1783,6 +1794,12 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
     groupItems.filter(({ group, net }) => group.name.toLowerCase().includes(query.toLowerCase()) && matchesBalanceFilter(net)),
     ({ group }) => group.name,
   );
+  const activeSplitItems = subTab === "friends" ? filteredFriends : filteredGroups;
+  const filteredSplitSummary = activeSplitItems.reduce((totals, item) => {
+    if (item.net > 0) totals.owed += item.net;
+    if (item.net < 0) totals.owe += Math.abs(item.net);
+    return totals;
+  }, { owed: 0, owe: 0 });
   const setSubTab = (value: "friends" | "groups") => {
     safeStorage.setItem("spendova-split-tab", value);
     setSubTabState(value);
@@ -1824,8 +1841,8 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
       </section>
 
       <section className="grid grid-cols-2 gap-3">
-        <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You are owed</p><p className="spendova-money-value mt-1 text-lg font-bold text-success sm:text-xl">{money(summary.totalLent)}</p></div>
-        <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You owe</p><p className="spendova-money-value mt-1 text-lg font-bold text-warning sm:text-xl">{money(summary.totalOwed)}</p></div>
+        <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You are owed</p><p className="spendova-money-value mt-1 text-lg font-bold text-success sm:text-xl">{money(filteredSplitSummary.owed)}</p></div>
+        <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You owe</p><p className="spendova-money-value mt-1 text-lg font-bold text-warning sm:text-xl">{money(filteredSplitSummary.owe)}</p></div>
       </section>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1976,8 +1993,6 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const net = owedToMe - iOwe;
-  const balanceText = net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled";
-  const balanceClass = net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground";
   const expenses = data.expenses.filter((expense) => !expense.group_id && (expense.paid_by === friend.user_id || expense.paid_by === currentUserId) && expense.expense_splits?.some((split) => split.user_id === friend.user_id || split.user_id === currentUserId));
   const settlements = data.settlements.filter((settlement) => !settlement.group_id && [settlement.from_user_id, settlement.to_user_id].includes(friend.user_id) && [settlement.from_user_id, settlement.to_user_id].includes(currentUserId));
   const activity: FriendActivityItem[] = [
@@ -2035,6 +2050,9 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
     (item) => item.created_at,
     filters.sort === "oldest" ? "oldest" : "newest",
   );
+  const filteredNet = filteredActivity.reduce((sum, item) => sum + item.impact, 0);
+  const filteredBalanceText = filteredNet > 0 ? `You are owed ${money(filteredNet)}` : filteredNet < 0 ? `You owe ${money(Math.abs(filteredNet))}` : "Settled";
+  const filteredBalanceClass = filteredNet > 0 ? "text-success" : filteredNet < 0 ? "text-warning" : "text-muted-foreground";
   const openActivity = (item: FriendActivityItem) => {
     navigate(item.kind === "settlement" ? `/split/settlement/${item.id}` : `/split/expense/${item.id}`);
   };
@@ -2142,7 +2160,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
         <div className="min-w-0">
           <h2 className="truncate text-xl font-bold tracking-tight text-foreground">{displayName(friend)}</h2>
           <p className="text-sm font-medium text-muted-foreground">@{friend.username || "user"}</p>
-          <p className={`mt-1 text-sm font-bold ${balanceClass}`}>{balanceText}</p>
+          <p className={`mt-1 text-sm font-bold ${filteredBalanceClass}`}>{filteredBalanceText}</p>
         </div>
       </section>
 
@@ -2688,7 +2706,6 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const groupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), getExpenseTimelineCreatedAt);
   const groupCategories = scopedCategories(data.categories, "group", currentUserId, group.id);
   const groupSettlements = data.settlements.filter((settlement) => settlement.group_id === group.id && isSettlementParticipant(settlement, currentUserId));
-  const totalSpent = groupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   const balances = computeGroupBalances(data.expenses, data.settlements, group, currentUserId);
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
@@ -2796,6 +2813,8 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
     (item) => item.created_at,
     filters.sort === "oldest" ? "oldest" : "newest",
   );
+  const filteredGroupExpenses = filteredGroupActivity.filter((item): item is Extract<GroupActivityItem, { kind: "expense" }> => item.kind === "expense").map((item) => item.expense);
+  const filteredTotalSpent = filteredGroupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
   return (
     <>
@@ -2822,11 +2841,11 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
         <section className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
           <div className="flex min-h-[104px] flex-col justify-between rounded-[20px] border border-border/70 bg-card p-4">
             <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Total spent</p>
-            <p className="spendova-money-value mt-2 text-xl font-black text-foreground sm:text-2xl">{money(totalSpent)}</p>
+            <p className="spendova-money-value mt-2 text-xl font-black text-foreground sm:text-2xl">{money(filteredTotalSpent)}</p>
           </div>
           <div className="flex min-h-[104px] flex-col justify-between rounded-[20px] border border-border/70 bg-card p-4">
             <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Expenses</p>
-            <p className="mt-2 text-2xl font-black text-foreground">{groupExpenses.length}</p>
+            <p className="mt-2 text-2xl font-black text-foreground">{filteredGroupExpenses.length}</p>
           </div>
         </section>
 
