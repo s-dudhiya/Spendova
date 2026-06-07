@@ -196,4 +196,16 @@ All colors MUST be HSL.
     --tw-ring-inset: inset;
   }
 
+  .spendova-money-value {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    hyphens: none;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+  }
+
 }

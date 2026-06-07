@@ -1336,16 +1336,16 @@ const HomeView = ({ expenses, settlements, userId, setTab, openModal }: { expens
           <p className="mt-1 max-w-[18rem] text-sm font-medium leading-5 text-muted-foreground sm:max-w-none">Across personal expenses and shared balances</p>
         </div>
         <div className="mt-7 flex w-full items-start justify-between gap-4">
-          <button onClick={() => openModal("chart-details")} className="m-0 flex h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
+          <button onClick={() => openModal("chart-details")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
             <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
               <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">Total lent</span>
-              <span className="mt-2 block h-6 max-w-full truncate p-0 text-lg font-bold leading-6 text-success">{money(summary.totalLent)}</span>
+              <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-success sm:text-lg">{money(summary.totalLent)}</span>
             </span>
           </button>
-          <button onClick={() => openModal("chart-details")} className="m-0 flex h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
+          <button onClick={() => openModal("chart-details")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
             <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
               <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">Total owed</span>
-              <span className="mt-2 block h-6 max-w-full truncate p-0 text-lg font-bold leading-6 text-warning">{money(summary.totalOwed)}</span>
+              <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-warning sm:text-lg">{money(summary.totalOwed)}</span>
             </span>
           </button>
         </div>
@@ -1475,8 +1475,8 @@ const PersonalView = ({ expenses, settlements, summary, currentUserId, groups, f
       <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
         <p className="text-sm font-medium text-muted-foreground">Personal spend</p>
         <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">{money(summary.personal)}</p>
-        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-          {[["Total", money(summary.personal)], ["Pending", money(summary.personalPending)], ["Cleared", money(summary.personalCleared)]].map(([label, value]) => <div key={label} className="min-w-0 rounded-2xl bg-elevated p-3 shadow-soft"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 truncate font-bold text-foreground">{value}</p></div>)}
+        <div className="mt-4 grid grid-cols-3 gap-1.5 text-center sm:gap-2">
+          {[["Total", money(summary.personal)], ["Pending", money(summary.personalPending)], ["Cleared", money(summary.personalCleared)]].map(([label, value]) => <div key={label} className="min-w-0 rounded-2xl bg-elevated px-1.5 py-2.5 shadow-soft sm:p-3"><p className="text-[11px] text-muted-foreground sm:text-xs">{label}</p><p className="spendova-money-value mt-1 text-[11px] font-bold leading-tight text-foreground min-[360px]:text-xs min-[430px]:text-sm sm:text-base">{value}</p></div>)}
         </div>
       </section>
       <section className="pb-16">
@@ -1616,8 +1616,8 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
       </section>
 
       <section className="grid grid-cols-2 gap-3">
-        <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You are owed</p><p className="mt-1 truncate text-xl font-bold text-success">{money(summary.totalLent)}</p></div>
-        <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You owe</p><p className="mt-1 truncate text-xl font-bold text-warning">{money(summary.totalOwed)}</p></div>
+        <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You are owed</p><p className="spendova-money-value mt-1 text-lg font-bold text-success sm:text-xl">{money(summary.totalLent)}</p></div>
+        <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You owe</p><p className="spendova-money-value mt-1 text-lg font-bold text-warning sm:text-xl">{money(summary.totalOwed)}</p></div>
       </section>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -2609,7 +2609,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
         <section className="grid grid-cols-1 gap-3 min-[380px]:grid-cols-2">
           <div className="flex min-h-[104px] flex-col justify-between rounded-[20px] border border-border/70 bg-card p-4">
             <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Total spent</p>
-            <p className="mt-2 truncate text-2xl font-black text-foreground">{money(totalSpent)}</p>
+            <p className="spendova-money-value mt-2 text-xl font-black text-foreground sm:text-2xl">{money(totalSpent)}</p>
           </div>
           <div className="flex min-h-[104px] flex-col justify-between rounded-[20px] border border-border/70 bg-card p-4">
             <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Expenses</p>
@@ -2822,9 +2822,9 @@ const TiffinView = ({ expenses, openModal }: { expenses: ExpenseRow[]; openModal
           ))}
         </div>
       </section>
-      <section className="grid grid-cols-3 gap-3 text-center">
+      <section className="grid grid-cols-[repeat(auto-fit,minmax(6.75rem,1fr))] gap-3 text-center">
         {[["Total", money(total)], ["Pending", money(pending)], ["Cleared", money(cleared)]].map(([label, value]) => (
-          <div key={label} className="rounded-2xl bg-card p-3 shadow-soft"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-bold text-foreground">{value}</p></div>
+          <div key={label} className="min-w-0 rounded-2xl bg-card p-3 shadow-soft"><p className="text-xs text-muted-foreground">{label}</p><p className="spendova-money-value mt-1 text-sm font-bold text-foreground sm:text-base">{value}</p></div>
         ))}
       </section>
       <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
