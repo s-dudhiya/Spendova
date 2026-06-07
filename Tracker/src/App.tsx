@@ -63,6 +63,7 @@ const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {
   const [unlocked, setUnlocked] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
   const [error, setError] = useState("");
+  const [showFallbackUnlock, setShowFallbackUnlock] = useState(false);
   const hasAutoPromptedRef = useRef(false);
   const freshLoginUnlockedRef = useRef(false);
   const needsUnlock = Boolean(user && isBiometricLockEnabled(user.id) && !unlocked);
@@ -70,6 +71,7 @@ const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     setUnlocked(false);
     setError("");
+    setShowFallbackUnlock(false);
     hasAutoPromptedRef.current = false;
     freshLoginUnlockedRef.current = false;
   }, [user?.id]);
@@ -89,10 +91,12 @@ const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {
       const success = await unlockWithBiometric(user.id);
       if (!success) throw new Error("Unlock was cancelled.");
       setUnlocked(true);
+      setShowFallbackUnlock(false);
     } catch (unlockError) {
       console.error("Biometric unlock failed", unlockError);
       const message = getFriendlyErrorMessage(unlockError, "device");
       setError(message);
+      setShowFallbackUnlock(true);
       toast({ title: "Unlock failed", description: message });
     } finally {
       setUnlocking(false);
@@ -106,6 +110,17 @@ const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {
   }, [loading, needsUnlock, unlock, unlocking, user]);
 
   if (loading || !needsUnlock) return <>{children}</>;
+
+  if (!showFallbackUnlock) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-background px-5 text-foreground">
+        <div className="grid place-items-center gap-3 text-center">
+          <div className="size-10 animate-spin rounded-full border-4 border-primary/20 border-t-primary" />
+          <p className="text-sm font-semibold text-muted-foreground">Preparing secure unlock...</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="grid min-h-screen place-items-center bg-background px-5 text-foreground">
