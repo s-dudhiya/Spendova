@@ -652,17 +652,19 @@ const BellButton = ({ count, onClick, size = "md" }: { count: number; onClick: (
 
 const FilterSheet = ({ open, onOpenChange, title, onClear, children }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; onClear: () => void; children: ReactNode }) => (
   <Drawer open={open} onOpenChange={onOpenChange}>
-    <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-y-auto rounded-t-3xl border-border bg-card px-4 pb-6">
+    <DrawerContent className="mx-auto grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
       <DrawerHeader className="px-0 pb-2 text-left">
         <DrawerTitle>{title}</DrawerTitle>
         <DrawerDescription>Filters update the list immediately.</DrawerDescription>
       </DrawerHeader>
-      <div className="space-y-4">
-        {children}
-        <div className="flex gap-2 pt-1">
-          <Button type="button" variant="quiet" className="flex-1" onClick={onClear}>Clear filters</Button>
-          <Button type="button" className="flex-1" onClick={() => onOpenChange(false)}>Apply</Button>
+      <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div className="space-y-3 pb-3">
+          {children}
         </div>
+      </div>
+      <div className="flex gap-2 border-t border-border/60 bg-card pt-3">
+        <Button type="button" variant="quiet" className="flex-1" onClick={onClear}>Clear filters</Button>
+        <Button type="button" className="flex-1" onClick={() => onOpenChange(false)}>Apply</Button>
       </div>
     </DrawerContent>
   </Drawer>
@@ -697,6 +699,25 @@ const dateFilterOptions = [
   { value: "custom", label: "Custom date" },
 ];
 
+const FilterDateField = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => (
+  <label className="block min-w-0 text-xs font-semibold text-muted-foreground">
+    <span className="mb-1.5 block">{label}</span>
+    <span className="relative block">
+      <input
+        type="date"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={`block h-11 w-full min-w-0 rounded-full border border-input bg-background px-3 text-left text-sm font-medium outline-none [color-scheme:light] focus:ring-2 focus:ring-inset focus:ring-ring dark:[color-scheme:dark] ${value ? "text-foreground" : "text-transparent"}`}
+      />
+      {!value ? (
+        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm font-medium text-muted-foreground">
+          Select date
+        </span>
+      ) : null}
+    </span>
+  </label>
+);
+
 const DateFilterControls = ({
   value,
   start,
@@ -712,12 +733,12 @@ const DateFilterControls = ({
   onStartChange: (value: string) => void;
   onEndChange: (value: string) => void;
 }) => (
-  <div className="space-y-3">
+  <div className="space-y-2.5">
     <FilterField label="Date" value={value} onChange={onDateChange} options={dateFilterOptions} />
     {value === "custom" ? (
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <Field label="From" type="date" value={start || ""} onChange={onStartChange} />
-        <Field label="To" type="date" value={end || ""} onChange={onEndChange} />
+      <div className="grid grid-cols-2 gap-2">
+        <FilterDateField label="From" value={start || ""} onChange={onStartChange} />
+        <FilterDateField label="To" value={end || ""} onChange={onEndChange} />
       </div>
     ) : null}
   </div>
@@ -893,7 +914,7 @@ const CategoryPicker = ({
         </DialogContent>
       </Dialog>
       <Dialog open={manageOpen} onOpenChange={(open) => { setManageOpen(open); if (!open) { setSearch(""); setEditingId(null); setEditingName(""); } }}>
-        <DialogContent className="grid max-h-[calc(100dvh-2rem)] w-[calc(100vw-1.5rem)] max-w-md grid-rows-[auto_auto_minmax(0,1fr)] gap-4 overflow-hidden rounded-[1.25rem] border-border bg-card p-5 shadow-panel sm:p-6">
+        <DialogContent className="grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] w-[calc(100vw-1.5rem)] max-w-md grid-rows-[auto_auto_minmax(0,1fr)] gap-4 overflow-hidden rounded-[1.25rem] border-border bg-card p-5 shadow-panel sm:p-6">
           <DialogHeader>
             <DialogTitle className="text-foreground">Manage Categories</DialogTitle>
             <DialogDescription>Edit or delete expense categories.</DialogDescription>
@@ -1614,12 +1635,12 @@ const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal
       </section>
 
       <Drawer open={chartFiltersOpen} onOpenChange={setChartFiltersOpen}>
-        <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-y-auto rounded-t-3xl border-border bg-card px-4 pb-8">
+        <DrawerContent className="mx-auto grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           <DrawerHeader className="px-0 pb-2 text-left"><DrawerTitle>Chart range</DrawerTitle><DrawerDescription>Choose how much spending history to show.</DrawerDescription></DrawerHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">{chartRanges.map((value) => <button key={value} type="button" onClick={() => setDraftChartRange(value)} className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition-colors ${draftChartRange === value ? "border-primary bg-primary/10 text-foreground shadow-soft" : "border-border bg-elevated text-foreground"}`}><span><span className="block text-sm font-black">{chartRangeLabels[value]}</span><span className="mt-0.5 block text-xs font-semibold text-muted-foreground">{chartRangeHelpers[value]}</span></span>{draftChartRange === value ? <Check className="size-4 text-primary" /> : null}</button>)}</div>
-            <div className="flex gap-2 pt-1"><Button type="button" variant="quiet" className="flex-1" onClick={() => setChartFiltersOpen(false)}>Cancel</Button><Button type="button" className="flex-1 shadow-primary-action" onClick={applyChartFilters}>Apply</Button></div>
+          <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
+            <div className="space-y-2 pb-3">{chartRanges.map((value) => <button key={value} type="button" onClick={() => setDraftChartRange(value)} className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition-colors ${draftChartRange === value ? "border-primary bg-primary/10 text-foreground shadow-soft" : "border-border bg-elevated text-foreground"}`}><span><span className="block text-sm font-black">{chartRangeLabels[value]}</span><span className="mt-0.5 block text-xs font-semibold text-muted-foreground">{chartRangeHelpers[value]}</span></span>{draftChartRange === value ? <Check className="size-4 text-primary" /> : null}</button>)}</div>
           </div>
+          <div className="flex gap-2 border-t border-border/60 bg-card pt-3"><Button type="button" variant="quiet" className="flex-1" onClick={() => setChartFiltersOpen(false)}>Cancel</Button><Button type="button" className="flex-1 shadow-primary-action" onClick={applyChartFilters}>Apply</Button></div>
         </DrawerContent>
       </Drawer>
 
@@ -1762,7 +1783,7 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
       </button>
     </main>
     <Drawer open={Boolean(balanceDetail)} onOpenChange={(open) => !open && setBalanceDetail(null)}>
-      <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-6">
+      <DrawerContent className="mx-auto max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] max-w-3xl overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
         <DrawerHeader className="px-0 pb-2 text-left">
           <DrawerTitle>{balanceDetail === "owe" ? "You Owe" : "You Get"}</DrawerTitle>
           <DrawerDescription>{balanceDetail === "owe" ? "People you need to pay." : "People who need to pay you."}</DrawerDescription>
@@ -2308,7 +2329,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
       </FilterSheet>
 
       <Drawer open={Boolean(actionItem)} onOpenChange={(open) => !open && closeActions()}>
-        <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-y-auto rounded-t-3xl border-border bg-card px-4 pb-6">
+        <DrawerContent className="mx-auto max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] max-w-3xl overflow-y-auto overscroll-contain rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           <DrawerHeader className="px-0 pb-2 text-left">
             <DrawerTitle>{actionItem?.kind === "settlement" ? "Settlement actions" : "Expense actions"}</DrawerTitle>
             <DrawerDescription>{actionItem?.title || "Activity"}</DrawerDescription>
@@ -3032,7 +3053,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
       </FilterSheet>
 
       <Drawer open={Boolean(actionExpense)} onOpenChange={(open) => !open && setActionExpense(null)}>
-        <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-y-auto rounded-t-3xl border-border bg-card px-4 pb-6">
+        <DrawerContent className="mx-auto max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] max-w-3xl overflow-y-auto overscroll-contain rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           <DrawerHeader className="px-0 pb-2 text-left">
             <DrawerTitle>Expense actions</DrawerTitle>
             <DrawerDescription>{actionExpense?.category || "Expense"}</DrawerDescription>
@@ -3057,7 +3078,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
       />
 
       <Drawer open={Boolean(participantsExpense)} onOpenChange={(open) => !open && setParticipantsExpense(null)}>
-        <DrawerContent className="mx-auto max-h-[calc(100dvh-1rem)] max-w-3xl overflow-y-auto rounded-t-3xl border-border bg-card px-4 pb-6">
+        <DrawerContent className="mx-auto max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] max-w-3xl overflow-y-auto overscroll-contain rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           <DrawerHeader className="px-0 pb-2 text-left">
             <DrawerTitle>Participants</DrawerTitle>
             <DrawerDescription>{participantsExpense?.category || "Expense"}</DrawerDescription>
