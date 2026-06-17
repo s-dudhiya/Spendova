@@ -658,7 +658,7 @@ const FilterSheet = ({ open, onOpenChange, title, onClear, children }: { open: b
         <DrawerDescription>Filters update the list immediately.</DrawerDescription>
       </DrawerHeader>
       <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
-        <div className="space-y-3 pb-[calc(5.5rem+env(safe-area-inset-bottom)+1rem)]">
+        <div className="space-y-3 pb-4">
           {children}
         </div>
       </div>
