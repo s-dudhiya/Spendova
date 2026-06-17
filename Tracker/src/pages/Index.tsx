@@ -652,17 +652,17 @@ const BellButton = ({ count, onClick, size = "md" }: { count: number; onClick: (
 
 const FilterSheet = ({ open, onOpenChange, title, onClear, children }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; onClear: () => void; children: ReactNode }) => (
   <Drawer open={open} onOpenChange={onOpenChange}>
-    <DrawerContent className="mx-auto grid h-[min(88svh,44rem)] h-[min(88dvh,44rem)] max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-0">
-      <DrawerHeader className="px-0 pb-3 pt-5 text-left">
+    <DrawerContent className="mx-auto grid h-[88dvh] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-0">
+      <DrawerHeader className="px-0 pb-3 pt-4 text-left">
         <DrawerTitle>{title}</DrawerTitle>
         <DrawerDescription>Filters update the list immediately.</DrawerDescription>
       </DrawerHeader>
       <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
-        <div className="space-y-3 pb-6">
+        <div className="space-y-3 pb-[calc(5.5rem+env(safe-area-inset-bottom)+1rem)]">
           {children}
         </div>
       </div>
-      <div className="sticky bottom-0 z-10 -mx-4 flex gap-2 border-t border-border/60 bg-card px-4 pb-[max(0.875rem,env(safe-area-inset-bottom))] pt-3">
+      <div className="-mx-4 flex gap-2 border-t border-border/60 bg-card px-4 pb-[max(0.875rem,env(safe-area-inset-bottom))] pt-3">
         <Button type="button" variant="quiet" className="flex-1" onClick={onClear}>Clear filters</Button>
         <Button type="button" className="flex-1" onClick={() => onOpenChange(false)}>Apply</Button>
       </div>
