@@ -652,17 +652,17 @@ const BellButton = ({ count, onClick, size = "md" }: { count: number; onClick: (
 
 const FilterSheet = ({ open, onOpenChange, title, onClear, children }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; onClear: () => void; children: ReactNode }) => (
   <Drawer open={open} onOpenChange={onOpenChange}>
-    <DrawerContent className="mx-auto grid max-h-[min(74svh,38rem)] max-h-[min(74dvh,38rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-      <DrawerHeader className="px-0 pb-2 text-left">
+    <DrawerContent className="mx-auto grid h-[min(88svh,44rem)] h-[min(88dvh,44rem)] max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-0">
+      <DrawerHeader className="px-0 pb-3 pt-5 text-left">
         <DrawerTitle>{title}</DrawerTitle>
         <DrawerDescription>Filters update the list immediately.</DrawerDescription>
       </DrawerHeader>
       <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
-        <div className="space-y-3 pb-3">
+        <div className="space-y-3 pb-6">
           {children}
         </div>
       </div>
-      <div className="flex gap-2 border-t border-border/60 bg-card pt-3">
+      <div className="sticky bottom-0 z-10 -mx-4 flex gap-2 border-t border-border/60 bg-card px-4 pb-[max(0.875rem,env(safe-area-inset-bottom))] pt-3">
         <Button type="button" variant="quiet" className="flex-1" onClick={onClear}>Clear filters</Button>
         <Button type="button" className="flex-1" onClick={() => onOpenChange(false)}>Apply</Button>
       </div>
@@ -701,16 +701,16 @@ const dateFilterOptions = [
 
 const FilterDateField = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => (
   <label className="block min-w-0 text-xs font-semibold text-muted-foreground">
-    <span className="mb-1.5 block">{label}</span>
+    <span className="mb-1 block">{label}</span>
     <span className="relative block">
       <input
         type="date"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className={`block h-11 w-full min-w-0 rounded-full border border-input bg-background px-3 text-left text-sm font-medium outline-none [color-scheme:light] focus:ring-2 focus:ring-inset focus:ring-ring dark:[color-scheme:dark] ${value ? "text-foreground" : "text-transparent"}`}
+        className={`block h-10 w-full min-w-0 rounded-full border border-input bg-background px-3 text-left text-xs font-medium outline-none [color-scheme:light] focus:ring-2 focus:ring-inset focus:ring-ring dark:[color-scheme:dark] ${value ? "text-foreground" : "text-transparent"}`}
       />
       {!value ? (
-        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm font-medium text-muted-foreground">
+        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs font-medium text-muted-foreground">
           Select date
         </span>
       ) : null}
