@@ -6,6 +6,7 @@ import {
   ArrowRight,
   AlertTriangle,
   Bell,
+  BookOpen,
   Car,
   Check,
   ChevronRight,
@@ -71,8 +72,9 @@ import { getDeviceId, listDeviceSessions, type DeviceSession } from "@/lib/devic
 import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-error";
 import { getSpendingChartAverageLabel, getSpendingChartAxisLabels, getSpendingChartSummary, type SpendingChartBucketUnit } from "@/lib/spending-chart";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
+import { BudgetLedgerView } from "./Ledger";
 
-type TabKey = "home" | "split" | "personal";
+type TabKey = "home" | "split" | "personal" | "ledger";
 type ContentKey = TabKey | "profile";
 type Theme = "light" | "dark";
 type SplitStrategy = "equal" | "exact" | "percentage";
@@ -232,6 +234,29 @@ type FeedbackReportRow = {
   updated_at: string;
 };
 
+// ── Budget Ledger types ──
+type LedgerMemberRow = {
+  id: string;
+  user_id: string;
+  role: "owner" | "admin" | "member";
+  joined_at: string | null;
+  profiles: Profile;
+};
+
+type LedgerRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  ledger_type: "personal" | "shared";
+  budget_type: "monthly" | "one_time";
+  total_savings: number;
+  owner_id: string;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string | null;
+  ledger_members: LedgerMemberRow[];
+};
+
 type ExpensePayload = {
   user_id: string;
   paid_by: string;
@@ -264,12 +289,14 @@ type AppData = {
   settlements: SplitSettlementRow[];
   notifications: NotificationRow[];
   categories: ExpenseCategoryRow[];
+  ledgers: LedgerRow[];
 };
 
 const tabs: Array<{ key: TabKey; label: string; icon: typeof Home }> = [
   { key: "home", label: "Home", icon: Home },
   { key: "split", label: "Split", icon: Split },
   { key: "personal", label: "Personal", icon: WalletCards },
+  { key: "ledger", label: "Ledger", icon: BookOpen },
 ];
 
 const emojiChoices = ["Home", "Trip", "Food", "Party", "Beach", "Movie", "Sports", "Books", "Work", "Cart"];
@@ -980,6 +1007,7 @@ function useSpendovaData(userId?: string) {
     settlements: [],
     notifications: [],
     categories: [],
+    ledgers: [],
   });
 
   const refresh = useCallback(async (options?: { silent?: boolean }) => {
@@ -990,7 +1018,7 @@ function useSpendovaData(userId?: string) {
     if (!options?.silent) setLoading(true);
     try {
       bootLog("dashboard data fetch start");
-      const [expensesRes, reqRes, recRes, groupsRes, settlementsRes, notificationsRes, categoriesRes] = await Promise.all([
+      const [expensesRes, reqRes, recRes, groupsRes, settlementsRes, notificationsRes, categoriesRes, ledgersRes] = await Promise.all([
         withTimeout(supabase
           .from("expenses")
           .select(`
@@ -1027,6 +1055,11 @@ function useSpendovaData(userId?: string) {
           .select("id, name, type, user_id, group_id, created_by, is_deleted, created_at, updated_at")
           .eq("is_deleted", false)
           .order("name", { ascending: true }), 8000, "expense categories fetch"),
+        withTimeout(supabase
+          .from("ledgers" as never)
+          .select("id, name, description, ledger_type, budget_type, total_savings, owner_id, is_archived, created_at, updated_at, ledger_members(id, user_id, role, joined_at, profiles!ledger_members_user_id_fkey(user_id, full_name, username))")
+          .eq("is_archived" as never, false as never)
+          .order("created_at", { ascending: false }), 8000, "ledgers fetch"),
       ]);
 
       if (expensesRes.error) console.error("Dashboard expenses fetch failed", expensesRes.error);
@@ -1070,6 +1103,7 @@ function useSpendovaData(userId?: string) {
         settlements: settlementsRes.error ? [] : (settlementsRes.data || []) as unknown as SplitSettlementRow[],
         notifications: notificationsRes.error ? [] : (notificationsRes.data || []) as unknown as NotificationRow[],
         categories: categoriesRes.error ? [] : (categoriesRes.data || []) as unknown as ExpenseCategoryRow[],
+        ledgers: ledgersRes.error ? [] : (ledgersRes.data || []) as unknown as LedgerRow[],
       });
       bootLog("dashboard data fetch end");
     } catch (error: unknown) {
@@ -1106,6 +1140,8 @@ function useSpendovaData(userId?: string) {
       .on("postgres_changes", { event: "*", schema: "public", table: "group_invites" }, scheduleRealtimeRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, scheduleRealtimeRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` }, scheduleRealtimeRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "ledgers" }, scheduleRealtimeRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "ledger_members" }, scheduleRealtimeRefresh)
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
           void refresh({ silent: true });
@@ -4747,6 +4783,7 @@ const Index = () => {
   const setActiveTab = (tab: TabKey) => {
     setActiveTabState(tab);
     if (tab === "split") navigate("/split");
+    else if (tab === "ledger" && (location.pathname.startsWith("/split") || isProfileRoute)) navigate("/dashboard");
     else if (location.pathname.startsWith("/split") || isProfileRoute) navigate("/dashboard");
   };
 
@@ -4817,11 +4854,12 @@ const Index = () => {
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} categories={data.categories} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} settlements={data.settlements} summary={summary} categories={data.categories} currentUserId={user.id} groups={data.groups} friends={data.friends} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "ledger" && <BudgetLedgerView ledgers={data.ledgers} currentUserId={user.id} profile={profile} refresh={refresh} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "profile" && <ProfileView userId={user.id} profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
         {/* <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p> */}
       </div>
       <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-3xl px-4 pb-4">
-        <div className="grid grid-cols-3 rounded-[1.4rem] border border-border/80 bg-card p-2 shadow-panel backdrop-blur">
+        <div className="grid grid-cols-4 rounded-[1.4rem] border border-border/80 bg-card p-2 shadow-panel backdrop-blur">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = activeContentTab === tab.key;
