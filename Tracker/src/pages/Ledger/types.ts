@@ -45,6 +45,7 @@ export interface LedgerBudgetAddition {
   added_by: string;
   month: number | null;
   year: number | null;
+  is_savings_rollover: boolean;
   created_at: string;
 }
 
@@ -56,6 +57,7 @@ export interface LedgerExpenseRow {
   amount: number;
   category: string | null;
   category_id: string | null;
+  linked_expense_id: string | null;
   notes: string | null;
   proof_path: string | null;
   proof_uploaded_at: string | null;
@@ -70,14 +72,13 @@ export interface LedgerExpenseRow {
   profiles?: LedgerMemberProfile | null;
 }
 
-export interface LedgerMonthlyBudget {
+export interface LedgerMonthlyClosure {
   id: string;
   ledger_id: string;
   month: number;
   year: number;
-  budget_amount: number;
-  paid_amount: number;
   saved_amount: number;
+  deficit: number;
   rolled_over_at: string | null;
   created_at: string;
 }

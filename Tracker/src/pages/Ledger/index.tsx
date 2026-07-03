@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 
 import type { LedgerRow, LedgerRole } from "./types";
 import { LedgerDetail } from "./LedgerDetail";
-import { CreateLedgerDrawer } from "./CreateLedgerDrawer";
+import { CreateLedgerDrawer } from "./drawers/CreateLedgerDrawer";
 import { money, displayName } from "./utils";
 import { computeBudgetSummary } from "./utils";
 

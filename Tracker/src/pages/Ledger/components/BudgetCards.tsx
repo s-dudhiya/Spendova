@@ -2,8 +2,8 @@
 // Budget Ledger – Budget Summary Cards
 // ============================================================
 
-import type { LedgerBudgetSummary, BudgetType } from "./types";
-import { money } from "./utils";
+import type { LedgerBudgetSummary, BudgetType } from "../types";
+import { money } from "../utils";
 
 interface SummaryCardProps {
   label: string;

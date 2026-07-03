@@ -1,5 +1,5 @@
 // ============================================================
-// Budget Ledger – Ledger Detail View
+// Budget Ledger â€“ Ledger Detail View
 // ============================================================
 
 import { useState, useEffect, useCallback } from "react";
@@ -39,11 +39,12 @@ import { supabase } from "@/integrations/supabase/client";
 
 import type { LedgerRow, LedgerExpenseRow, LedgerRole } from "./types";
 import { MONTH_NAMES } from "./types";
-import { BudgetCards } from "./BudgetCards";
-import { ExpenseCard } from "./ExpenseCard";
-import { AddExpenseDrawer } from "./AddExpenseDrawer";
-import { ApproveExpenseDrawer } from "./ApproveExpenseDrawer";
-import { MonthlyHistoryDrawer } from "./MonthlyHistory";
+import { BudgetCards } from "./components/BudgetCards";
+import { ExpenseCard } from "./components/ExpenseCard";
+import { AddExpenseDrawer } from "./drawers/AddExpenseDrawer";
+import { ApproveExpenseDrawer } from "./drawers/ApproveExpenseDrawer";
+import { MonthlyHistoryDrawer } from "./components/MonthlyHistory";
+
 import { useLedgerDetail, logLedgerActivity } from "./hooks";
 import {
   money,
@@ -52,7 +53,7 @@ import {
   detectRolloverNeeded,
 } from "./utils";
 
-// ── Rollover Confirmation Dialog ──────────────────────────────
+// â”€â”€ Rollover Confirmation Dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface RolloverDialogProps {
   open: boolean;
@@ -141,7 +142,7 @@ const RolloverDialog = ({
   );
 };
 
-// ── Add Budget Drawer ──────────────────────────────────────────
+// â”€â”€ Add Budget Drawer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface AddBudgetDrawerProps {
   open: boolean;
@@ -229,7 +230,7 @@ const AddBudgetDrawer = ({
           <div className="space-y-4 pb-3">
             <div className="space-y-1.5">
               <label htmlFor="ab-amount" className="text-sm font-bold text-foreground">
-                Amount (₹) *
+                Amount (â‚¹) *
               </label>
               <input
                 id="ab-amount"
@@ -267,7 +268,7 @@ const AddBudgetDrawer = ({
             onClick={handleAdd}
             disabled={submitting || !parsedAmount || parsedAmount <= 0}
           >
-            {submitting ? "Adding…" : "Add Budget"}
+            {submitting ? "Addingâ€¦" : "Add Budget"}
           </Button>
         </div>
       </DrawerContent>
@@ -275,7 +276,7 @@ const AddBudgetDrawer = ({
   );
 };
 
-// ── Invite Members Drawer ────────────────────────────────────
+// â”€â”€ Invite Members Drawer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface InviteMembersDrawerProps {
   open: boolean;
@@ -373,7 +374,7 @@ const InviteMembersDrawer = ({
                 </div>
                 <Button size="sm" variant="quiet" disabled={generating} onClick={shareLink ? copyLink : generateLink}>
                   {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
-                  {generating ? "Generating…" : shareLink ? (copied ? "Copied!" : "Copy") : "Generate"}
+                  {generating ? "Generatingâ€¦" : shareLink ? (copied ? "Copied!" : "Copy") : "Generate"}
                 </Button>
               </div>
             </div>
@@ -382,7 +383,7 @@ const InviteMembersDrawer = ({
               <div className="flex gap-2">
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@email.com" className={`${inputCls} flex-1`} />
                 <Button disabled={sending || !email.trim()} onClick={sendInvite}>
-                  {sending ? "…" : "Send"}
+                  {sending ? "â€¦" : "Send"}
                 </Button>
               </div>
             </div>
@@ -396,7 +397,7 @@ const InviteMembersDrawer = ({
   );
 };
 
-// ── Ledger Settings Drawer ────────────────────────────────────
+// â”€â”€ Ledger Settings Drawer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -522,7 +523,7 @@ const SettingsDrawer = ({
                         onClick={() => removeMember(m.user_id, displayName(m.profiles))}
                       >
                         <UserMinus className="size-4" />
-                        {deletingExpenseId === m.user_id ? "Removing…" : "Remove"}
+                        {deletingExpenseId === m.user_id ? "Removingâ€¦" : "Remove"}
                       </Button>
                     )}
                   </div>
@@ -548,7 +549,7 @@ const SettingsDrawer = ({
                         Cancel
                       </Button>
                       <Button variant="destructive" className="flex-1" onClick={archiveLedger} disabled={deletingLedger}>
-                        {deletingLedger ? "Processing…" : ledger.is_archived ? "Restore" : "Archive"}
+                        {deletingLedger ? "Processingâ€¦" : ledger.is_archived ? "Restore" : "Archive"}
                       </Button>
                     </div>
                   </div>
@@ -561,7 +562,7 @@ const SettingsDrawer = ({
               ) : (
                 <Button variant="quiet" className="w-full" onClick={leaveledger} disabled={deletingLedger}>
                   <UserMinus className="size-4" />
-                  {deletingLedger ? "Leaving…" : "Leave Ledger"}
+                  {deletingLedger ? "Leavingâ€¦" : "Leave Ledger"}
                 </Button>
               )}
             </div>
@@ -575,7 +576,7 @@ const SettingsDrawer = ({
   );
 };
 
-// ── Main LedgerDetail View ────────────────────────────────────
+// â”€â”€ Main LedgerDetail View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface LedgerDetailProps {
   ledger: LedgerRow;
@@ -593,7 +594,7 @@ export const LedgerDetail = ({
   onRefreshList,
 }: LedgerDetailProps) => {
   const { toast } = useToast();
-  const { expenses, budgetAdditions, monthlyBudgets, invites, loading, refresh } =
+  const { expenses, budgetAdditions, monthlyClosures, invites, loading, refresh } =
     useLedgerDetail(ledger.id);
 
   const userRole: LedgerRole =
@@ -756,7 +757,7 @@ export const LedgerDetail = ({
 
   return (
     <div className="space-y-6">
-      {/* ── Header ── */}
+      {/* â”€â”€ Header â”€â”€ */}
       <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
         <div className="flex items-start gap-3">
           <button
@@ -805,19 +806,19 @@ export const LedgerDetail = ({
         </div>
       </section>
 
-      {/* ── Budget Summary ── */}
+      {/* â”€â”€ Budget Summary â”€â”€ */}
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
           <h3 className="text-base font-bold tracking-tight text-foreground">
             Budget Overview
             {isMonthly && monthLabel && (
               <span className="ml-2 text-sm font-semibold text-muted-foreground">
-                · {monthLabel}
+                Â· {monthLabel}
               </span>
             )}
           </h3>
           <div className="flex items-center gap-2">
-            {isMonthly && monthlyBudgets.length > 0 && (
+            {isMonthly && monthlyClosures.length > 0 && (
               <button
                 type="button"
                 onClick={() => setHistoryOpen(true)}
@@ -837,7 +838,7 @@ export const LedgerDetail = ({
         />
       </section>
 
-      {/* ── Quick Actions ── */}
+      {/* â”€â”€ Quick Actions â”€â”€ */}
       {!ledger.is_archived && (
         <section className="flex flex-col gap-3">
           <div className={`grid gap-3 ${isOwnerOrAdmin ? "grid-cols-2" : "grid-cols-1"}`}>
@@ -874,7 +875,7 @@ export const LedgerDetail = ({
                   </span>
                 )}
               </Button>
-            ) : isMonthly && monthlyBudgets.length > 0 ? (
+            ) : isMonthly && monthlyClosures.length > 0 ? (
               <Button
                 variant="quiet"
                 className="h-11 w-full"
@@ -888,7 +889,7 @@ export const LedgerDetail = ({
         </section>
       )}
 
-      {/* ── Expense Timeline ── */}
+      {/* â”€â”€ Expense Timeline â”€â”€ */}
       <section className="pb-20">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-base font-bold tracking-tight text-foreground">
@@ -970,7 +971,7 @@ export const LedgerDetail = ({
         )}
       </section>
 
-      {/* ── Modals & Drawers ── */}
+      {/* â”€â”€ Modals & Drawers â”€â”€ */}
       <AddExpenseDrawer
         open={addExpenseOpen}
         onOpenChange={setAddExpenseOpen}
@@ -1016,8 +1017,8 @@ export const LedgerDetail = ({
       <MonthlyHistoryDrawer
         open={historyOpen}
         onOpenChange={setHistoryOpen}
-        monthlyBudgets={monthlyBudgets}
-        totalSavings={Number(ledger.total_savings || 0)}
+        monthlyClosures={monthlyClosures}
+        totalSavings={ledger.total_savings}
         ledgerName={ledger.name}
       />
 

@@ -12,10 +12,8 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
-import type { LedgerRow } from "./types";
-import { uploadLedgerReceipt, logLedgerActivity } from "./hooks";
-import { compressReceiptImage } from "./utils";
+import type { LedgerRow } from "../types";
+import { useLedgerExpenseMutation } from "../hooks";
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { ImageUpload } from "@/components/ImageUpload";
 import { useExpenseCategories } from "@/hooks/useExpenseCategories";
@@ -48,6 +46,7 @@ interface AddExpenseDrawerProps {
     amount: number;
     category: string | null;
     category_id?: string | null;
+    linked_expense_id?: string | null;
     notes: string | null;
     proof_path: string | null;
   } | null;
@@ -65,6 +64,7 @@ export const AddExpenseDrawer = ({
   const isEdit = Boolean(editExpense);
 
   const { categories, fetchCategories, createCategory, renameCategory, deleteCategory } = useExpenseCategories(currentUserId);
+  const { saveExpense } = useLedgerExpenseMutation(ledger, currentUserId);
 
   useEffect(() => {
     if (open) {
@@ -148,76 +148,20 @@ export const AddExpenseDrawer = ({
     const currentYear = ledger.budget_type === "monthly" ? now.getFullYear() : null;
 
     try {
-      let expenseId = editExpense?.id ?? "";
-
-      if (isEdit && editExpense) {
-        const { error } = await (supabase as never as {
-          from: (t: string) => {
-            update: (d: object) => { eq: (c: string, v: string) => { error: Error | null } };
-          };
-        })
-          .from("ledger_expenses")
-          .update({
-            title: expenseTitle,
-            amount: parsedAmount,
-            category: categoryName || null,
-            category_id: categoryId || null,
-            notes: notes.trim() || null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", editExpense.id);
-        if (error) throw error;
-      } else {
-        const { data, error } = await (supabase
-          .from("ledger_expenses" as never)
-          .insert({
-            ledger_id: ledger.id,
-            user_id: currentUserId,
-            title: expenseTitle,
-            amount: parsedAmount,
-            category: categoryName || null,
-            category_id: categoryId || null,
-            notes: notes.trim() || null,
-            status: "pending",
-            month: currentMonth,
-            year: currentYear,
-          } as never)
-          .select("id")
-          .single() as unknown as { data: { id: string } | null; error: Error | null });
-
-        if (error) throw error;
-        if (!data) throw new Error("Failed to create expense.");
-        expenseId = data.id;
-
-        await logLedgerActivity(ledger.id, currentUserId, "expense_submitted", {
-          entityType: "expense",
-          entityId: expenseId,
-          metadata: { title: expenseTitle, amount: parsedAmount },
-        });
-      }
-
-      if (proofFile && expenseId) {
-        try {
-          const blob = await compressReceiptImage(proofFile);
-          const path = await uploadLedgerReceipt(currentUserId, ledger.id, expenseId, blob);
-          (await supabase
-            .from("ledger_expenses" as never)
-            .update({
-              proof_path: path,
-              proof_uploaded_at: new Date().toISOString(),
-            } as never)
-            .eq("id" as never, expenseId as never)) as unknown as { error: Error | null };
-        } catch (proofError) {
-          toast({
-            title: "Receipt upload failed",
-            description:
-              proofError instanceof Error
-                ? proofError.message
-                : "Could not upload receipt. Expense was saved without it.",
-            variant: "destructive",
-          });
-        }
-      }
+      await saveExpense(
+        {
+          id: editExpense?.id,
+          title: expenseTitle,
+          amount: parsedAmount,
+          category: categoryName || null,
+          category_id: ledger.ledger_type === "personal" ? (categoryId || null) : null,
+          notes: notes.trim() || null,
+          month: currentMonth,
+          year: currentYear,
+          linked_expense_id: editExpense?.linked_expense_id,
+        },
+        proofFile
+      );
 
       toast({
         title: isEdit ? "Expense updated" : "Expense submitted",
@@ -256,14 +200,23 @@ export const AddExpenseDrawer = ({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
           <form id="ledger-expense-form" onSubmit={handleSubmit} className="space-y-3 pb-3">
-            <CategoryPicker
-              categories={personalCategories}
-              value={categoryId}
-              onChange={handleCategoryChange}
-              onCreate={(name) => createCategory("personal", name, null)}
-              onRename={renameCategory}
-              onDelete={deleteCategory}
-            />
+            {ledger.ledger_type === "personal" ? (
+              <CategoryPicker
+                categories={personalCategories}
+                value={categoryId}
+                onChange={handleCategoryChange}
+                onCreate={(name) => createCategory("personal", name, null)}
+                onRename={renameCategory}
+                onDelete={deleteCategory}
+              />
+            ) : (
+              <Field
+                label="Category (optional)"
+                placeholder="e.g. Office Supplies"
+                value={categoryName}
+                onChange={(e) => setCategoryName(e.target.value)}
+              />
+            )}
             
             <Field 
               label="Expense name" 

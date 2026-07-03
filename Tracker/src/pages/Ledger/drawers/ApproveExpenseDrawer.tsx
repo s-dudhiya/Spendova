@@ -14,10 +14,10 @@ import {
 } from "@/components/ui/drawer";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import type { LedgerExpenseRow } from "./types";
-import { EXPENSE_STATUS_CONFIG } from "./types";
-import { money, dateLabel, displayName } from "./utils";
-import { getLedgerReceiptUrl, logLedgerActivity } from "./hooks";
+import type { LedgerExpenseRow } from "../types";
+import { EXPENSE_STATUS_CONFIG } from "../types";
+import { money, dateLabel, displayName } from "../utils";
+import { getLedgerReceiptUrl, logLedgerActivity } from "../hooks";
 
 interface ApproveExpenseDrawerProps {
   open: boolean;

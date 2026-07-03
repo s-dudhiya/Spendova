@@ -3,9 +3,9 @@
 // ============================================================
 
 import { Paperclip } from "lucide-react";
-import type { LedgerExpenseRow, LedgerRole } from "./types";
-import { EXPENSE_STATUS_CONFIG } from "./types";
-import { money, dateLabel, displayName, getInitial } from "./utils";
+import type { LedgerExpenseRow, LedgerRole } from "../types";
+import { EXPENSE_STATUS_CONFIG } from "../types";
+import { money, dateLabel, displayName, getInitial } from "../utils";
 
 interface ExpenseCardProps {
   expense: LedgerExpenseRow;

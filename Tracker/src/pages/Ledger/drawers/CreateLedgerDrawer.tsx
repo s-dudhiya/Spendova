@@ -14,8 +14,8 @@ import {
 } from "@/components/ui/drawer";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import type { LedgerType, BudgetType } from "./types";
-import { logLedgerActivity } from "./hooks";
+import type { LedgerType, BudgetType } from "../types";
+import { logLedgerActivity } from "../hooks";
 
 // ── Primitives ───────────────────────────────────────────────
 
