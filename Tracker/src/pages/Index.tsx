@@ -8,7 +8,7 @@ import {
   ArrowRight,
   AlertTriangle,
   Bell,
-  BookOpen,
+  Wallet,
   Car,
   Check,
   ChevronRight,
@@ -298,7 +298,7 @@ const tabs: Array<{ key: TabKey; label: string; icon: typeof Home }> = [
   { key: "home", label: "Home", icon: Home },
   { key: "split", label: "Split", icon: Split },
   { key: "personal", label: "Personal", icon: WalletCards },
-  { key: "ledger", label: "Ledger", icon: BookOpen },
+  { key: "ledger", label: "Ledger", icon: Wallet },
 ];
 
 const emojiChoices = ["Home", "Trip", "Food", "Party", "Beach", "Movie", "Sports", "Books", "Work", "Cart"];
