@@ -262,3 +262,77 @@ export async function logLedgerActivity(
       if (error) console.warn("Activity log failed", error);
     });
 }
+
+/** Hook for managing isolated categories within a Shared Ledger */
+export function useSharedLedgerCategories(ledgerId: string, currentUserId: string, onMutate?: () => void) {
+  const [categories, setCategories] = useState<import("./types").LedgerCategoryRow[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchCategories = useCallback(async () => {
+    if (!ledgerId) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("ledger_categories" as never)
+        .select("*")
+        .eq("ledger_id", ledgerId)
+        .eq("is_deleted", false)
+        .order("name", { ascending: true });
+      if (error) throw error;
+      setCategories((data || []) as unknown as import("./types").LedgerCategoryRow[]);
+    } catch (error) {
+      console.error("Failed to fetch ledger categories", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [ledgerId]);
+
+  const createCategory = async (name: string) => {
+    const payload = { 
+      ledger_id: ledgerId, 
+      name: name.trim(), 
+      created_by: currentUserId 
+    };
+    const { data: created, error } = await supabase
+      .from("ledger_categories" as never)
+      .insert(payload as never)
+      .select("*")
+      .single();
+    if (error) throw error;
+    setCategories((prev) => [...prev, created as unknown as import("./types").LedgerCategoryRow]);
+    if (onMutate) onMutate();
+    return created as unknown as import("./types").LedgerCategoryRow;
+  };
+
+  const renameCategory = async (categoryId: string, name: string) => {
+    const { error } = await supabase
+      .from("ledger_categories" as never)
+      .update({ name: name.trim(), updated_at: new Date().toISOString() } as never)
+      .eq("id", categoryId)
+      .eq("ledger_id", ledgerId); // safety
+    if (error) throw error;
+    setCategories((prev) => prev.map((c) => c.id === categoryId ? { ...c, name: name.trim() } : c));
+    if (onMutate) onMutate();
+  };
+
+  const deleteCategory = async (categoryId: string) => {
+    const { error } = await supabase
+      .from("ledger_categories" as never)
+      .update({ is_deleted: true, updated_at: new Date().toISOString() } as never)
+      .eq("id", categoryId)
+      .eq("ledger_id", ledgerId); // safety
+    if (error) throw error;
+    setCategories((prev) => prev.filter((c) => c.id !== categoryId));
+    if (onMutate) onMutate();
+  };
+
+  return {
+    categories,
+    loading,
+    fetchCategories,
+    createCategory,
+    renameCategory,
+    deleteCategory,
+    setCategories,
+  };
+}

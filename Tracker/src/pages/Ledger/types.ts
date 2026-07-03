@@ -83,6 +83,18 @@ export interface LedgerMonthlyClosure {
   created_at: string;
 }
 
+export interface LedgerCategoryRow {
+  id: string;
+  ledger_id: string;
+  name: string;
+  color: string | null;
+  icon: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  is_deleted: boolean;
+}
+
 export interface LedgerInvite {
   id: string;
   ledger_id: string;

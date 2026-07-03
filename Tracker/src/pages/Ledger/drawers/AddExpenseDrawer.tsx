@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/drawer";
 import { useToast } from "@/hooks/use-toast";
 import type { LedgerRow } from "../types";
-import { useLedgerExpenseMutation } from "../hooks";
+import { useLedgerExpenseMutation, useSharedLedgerCategories } from "../hooks";
 import { Field, Textarea } from "../components/Fields";
 import { ImageUpload } from "@/components/ImageUpload";
 import { useExpenseCategories } from "@/hooks/useExpenseCategories";
@@ -47,15 +47,22 @@ export const AddExpenseDrawer = ({
 }: AddExpenseDrawerProps) => {
   const { toast } = useToast();
   const isEdit = Boolean(editExpense);
+  const isShared = ledger.ledger_type === "shared";
 
-  const { categories, fetchCategories, createCategory, renameCategory, deleteCategory } = useExpenseCategories(currentUserId);
+  const personalHook = useExpenseCategories(currentUserId);
+  const sharedHook = useSharedLedgerCategories(ledger.id, currentUserId);
   const { saveExpense } = useLedgerExpenseMutation(ledger, currentUserId);
 
   useEffect(() => {
     if (open) {
-      fetchCategories();
+      if (isShared) {
+        sharedHook.fetchCategories();
+      } else {
+        personalHook.fetchCategories();
+      }
     }
-  }, [open, fetchCategories]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isShared]);
 
   const [title, setTitle] = useState(editExpense?.title ?? "");
   const [amount, setAmount] = useState(
@@ -169,7 +176,33 @@ export const AddExpenseDrawer = ({
     }
   };
 
-  const personalCategories = categories.filter((c) => c.type === "personal");
+  const displayCategories = isShared
+    ? sharedHook.categories
+    : personalHook.categories.filter((c) => c.type === "personal");
+
+  const handleCreateCategory = (name: string) => {
+    if (isShared) {
+      return sharedHook.createCategory(name);
+    } else {
+      return personalHook.createCategory("personal", name, null);
+    }
+  };
+
+  const handleRenameCategory = (id: string, name: string) => {
+    if (isShared) {
+      return sharedHook.renameCategory(id, name);
+    } else {
+      return personalHook.renameCategory(id, name);
+    }
+  };
+
+  const handleDeleteCategory = (id: string) => {
+    if (isShared) {
+      return sharedHook.deleteCategory(id);
+    } else {
+      return personalHook.deleteCategory(id);
+    }
+  };
 
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
@@ -186,12 +219,12 @@ export const AddExpenseDrawer = ({
         <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
           <form id="ledger-expense-form" onSubmit={handleSubmit} className="space-y-3 pb-3">
             <CategoryPicker
-              categories={personalCategories}
+              categories={displayCategories as any}
               value={categoryId}
               onChange={handleCategoryChange}
-              onCreate={(name) => createCategory("personal", name, null)}
-              onRename={renameCategory}
-              onDelete={deleteCategory}
+              onCreate={handleCreateCategory}
+              onRename={handleRenameCategory}
+              onDelete={handleDeleteCategory}
             />
             
             <Field 
