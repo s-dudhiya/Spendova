@@ -128,84 +128,28 @@ export function useLedgerExpenseMutation(ledger: LedgerRow, currentUserId: strin
     },
     proofFile?: File | null
   ) => {
-    let finalLinkedExpenseId = payload.linked_expense_id ?? null;
+    const action = payload.id ? "update" : "insert";
 
-    if (ledger.ledger_type === "personal") {
-      // Sync to core expenses table
-      const expenseData = {
-        user_id: currentUserId,
-        paid_by: currentUserId,
-        category: payload.title,
-        category_id: payload.category_id || null,
-        amount: payload.amount,
-        note: payload.notes || null,
-        status: "cleared",
-        split_type: "none",
-        group_id: null,
-      };
+    const { data, error } = await (supabase.rpc("sync_ledger_expense" as never, {
+      p_action: action,
+      p_ledger_id: ledger.id,
+      p_user_id: currentUserId,
+      p_expense_id: payload.id || undefined,
+      p_title: payload.title,
+      p_amount: payload.amount,
+      p_category: payload.category || undefined,
+      p_category_id: payload.category_id || undefined,
+      p_notes: payload.notes || undefined,
+      p_status: "pending",
+      p_month: payload.month || undefined,
+      p_year: payload.year || undefined,
+    } as never) as unknown as { data: { error?: string; expense_id?: string } | null; error: Error | null });
 
-      if (payload.id && finalLinkedExpenseId) {
-        // Update existing core expense
-        await supabase
-          .from("expenses" as never)
-          .update(expenseData as never)
-          .eq("id", finalLinkedExpenseId);
-      } else {
-        // Create new core expense
-        const { data, error } = await supabase
-          .from("expenses" as never)
-          .insert(expenseData as never)
-          .select("id")
-          .single();
-        if (error) throw error;
-        finalLinkedExpenseId = (data as { id: string }).id;
-      }
+    if (error || data?.error) {
+      throw new Error(data?.error || error?.message || "Failed to save expense");
     }
 
-    let expenseId = payload.id;
-
-    if (payload.id) {
-      // Update ledger expense
-      const { error } = await supabase
-        .from("ledger_expenses" as never)
-        .update({
-          title: payload.title,
-          amount: payload.amount,
-          category: payload.category,
-          category_id: payload.category_id,
-          notes: payload.notes,
-          updated_at: new Date().toISOString(),
-        } as never)
-        .eq("id", payload.id);
-      if (error) throw error;
-    } else {
-      // Insert new ledger expense
-      const { data, error } = await supabase
-        .from("ledger_expenses" as never)
-        .insert({
-          ledger_id: ledger.id,
-          user_id: currentUserId,
-          title: payload.title,
-          amount: payload.amount,
-          category: payload.category,
-          category_id: payload.category_id,
-          linked_expense_id: finalLinkedExpenseId,
-          notes: payload.notes,
-          status: "pending",
-          month: payload.month,
-          year: payload.year,
-        } as never)
-        .select("id")
-        .single();
-      if (error) throw error;
-      expenseId = (data as { id: string }).id;
-
-      await logLedgerActivity(ledger.id, currentUserId, "expense_submitted", {
-        entityType: "expense",
-        entityId: expenseId,
-        metadata: { title: payload.title, amount: payload.amount },
-      });
-    }
+    const expenseId = data?.expense_id;
 
     if (proofFile && expenseId) {
       const blob = await compressReceiptImage(proofFile);
@@ -218,26 +162,16 @@ export function useLedgerExpenseMutation(ledger: LedgerRow, currentUserId: strin
   };
 
   const deleteExpense = async (expense: LedgerExpenseRow) => {
-    // Delete from ledger
-    const { error } = await supabase
-      .from("ledger_expenses" as never)
-      .delete()
-      .eq("id", expense.id);
-    if (error) throw error;
+    const { data, error } = await (supabase.rpc("sync_ledger_expense" as never, {
+      p_action: "delete",
+      p_ledger_id: ledger.id,
+      p_user_id: currentUserId,
+      p_expense_id: expense.id,
+    } as never) as unknown as { data: { error?: string } | null; error: Error | null });
 
-    // Delete linked personal expense if it exists
-    if (expense.linked_expense_id && ledger.ledger_type === "personal") {
-      await supabase
-        .from("expenses" as never)
-        .delete()
-        .eq("id", expense.linked_expense_id);
+    if (error || data?.error) {
+      throw new Error(data?.error || error?.message || "Failed to delete expense");
     }
-
-    await logLedgerActivity(ledger.id, currentUserId, "expense_deleted", {
-      entityType: "expense",
-      entityId: expense.id,
-      metadata: { title: expense.title, amount: expense.amount },
-    });
   };
 
   const closeMonth = async (

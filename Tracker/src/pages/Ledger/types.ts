@@ -95,6 +95,17 @@ export interface LedgerInvite {
   expires_at: string | null;
 }
 
+export interface LedgerContribution {
+  id: string;
+  ledger_id: string;
+  user_id: string;
+  month: number | null;
+  year: number | null;
+  expected_amount: number;
+  created_at: string;
+  updated_at: string | null;
+}
+
 export interface LedgerActivityRow {
   id: string;
   ledger_id: string;

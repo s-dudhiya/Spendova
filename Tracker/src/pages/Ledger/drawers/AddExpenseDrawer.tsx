@@ -154,7 +154,7 @@ export const AddExpenseDrawer = ({
           title: expenseTitle,
           amount: parsedAmount,
           category: categoryName || null,
-          category_id: ledger.ledger_type === "personal" ? (categoryId || null) : null,
+          category_id: categoryId || null,
           notes: notes.trim() || null,
           month: currentMonth,
           year: currentYear,
@@ -200,23 +200,14 @@ export const AddExpenseDrawer = ({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
           <form id="ledger-expense-form" onSubmit={handleSubmit} className="space-y-3 pb-3">
-            {ledger.ledger_type === "personal" ? (
-              <CategoryPicker
-                categories={personalCategories}
-                value={categoryId}
-                onChange={handleCategoryChange}
-                onCreate={(name) => createCategory("personal", name, null)}
-                onRename={renameCategory}
-                onDelete={deleteCategory}
-              />
-            ) : (
-              <Field
-                label="Category (optional)"
-                placeholder="e.g. Office Supplies"
-                value={categoryName}
-                onChange={(e) => setCategoryName(e.target.value)}
-              />
-            )}
+            <CategoryPicker
+              categories={personalCategories}
+              value={categoryId}
+              onChange={handleCategoryChange}
+              onCreate={(name) => createCategory("personal", name, null)}
+              onRename={renameCategory}
+              onDelete={deleteCategory}
+            />
             
             <Field 
               label="Expense name" 
