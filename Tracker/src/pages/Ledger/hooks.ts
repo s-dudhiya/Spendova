@@ -10,8 +10,10 @@ import type {
   LedgerBudgetAddition,
   LedgerMonthlyClosure,
   LedgerInvite,
+  LedgerActivityRow,
+  LedgerBudgetSummary,
 } from "./types";
-import { compressReceiptImage } from "./utils";
+import { compressReceiptImage, computeBudgetSummary } from "./utils";
 
 interface UseLedgerDetailResult {
   expenses: LedgerExpenseRow[];
@@ -209,6 +211,149 @@ export function useLedgerExpenseMutation(ledger: LedgerRow, currentUserId: strin
   };
 
   return { saveExpense, deleteExpense, closeMonth };
+}
+
+// ── Dashboard Hook ────────────────────────────────────────────────────────
+
+export interface DashboardLedgerSummary extends LedgerBudgetSummary {
+  ledgerId: string;
+}
+
+export interface UseLedgersDashboardResult {
+  globalSummary: LedgerBudgetSummary;
+  ledgerSummaries: Record<string, DashboardLedgerSummary>;
+  recentActivity: LedgerActivityRow[];
+  loading: boolean;
+  refresh: () => Promise<void>;
+}
+
+export function useLedgersDashboard(ledgers: LedgerRow[]): UseLedgersDashboardResult {
+  const [globalSummary, setGlobalSummary] = useState<LedgerBudgetSummary>({
+    totalBudget: 0,
+    paidExpenses: 0,
+    pendingExpenses: 0,
+    approvedExpenses: 0,
+    availableBudget: 0,
+    expectedAvailable: 0,
+    totalSavings: 0,
+  });
+  const [ledgerSummaries, setLedgerSummaries] = useState<Record<string, DashboardLedgerSummary>>({});
+  const [recentActivity, setRecentActivity] = useState<LedgerActivityRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const refreshTimerRef = useRef<number | null>(null);
+
+  const refresh = useCallback(async () => {
+    if (ledgers.length === 0) {
+      setGlobalSummary({
+        totalBudget: 0,
+        paidExpenses: 0,
+        pendingExpenses: 0,
+        approvedExpenses: 0,
+        availableBudget: 0,
+        expectedAvailable: 0,
+        totalSavings: 0,
+      });
+      setLedgerSummaries({});
+      setRecentActivity([]);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const ledgerIds = ledgers.map((l) => l.id);
+      
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1;
+      const currentYear = now.getFullYear();
+
+      const [expensesRes, additionsRes, activityRes] = await Promise.all([
+        supabase
+          .from("ledger_expenses" as never)
+          .select("ledger_id, amount, status, month, year")
+          .in("ledger_id", ledgerIds),
+        
+        supabase
+          .from("ledger_budget_additions" as never)
+          .select("ledger_id, amount, month, year")
+          .in("ledger_id", ledgerIds),
+
+        supabase
+          .from("ledger_activity" as never)
+          .select("id, ledger_id, actor_id, action, entity_type, entity_id, metadata, created_at, profiles!ledger_activity_actor_id_fkey(full_name, username)")
+          .in("ledger_id", ledgerIds)
+          .order("created_at", { ascending: false })
+          .limit(10),
+      ]);
+
+      if (expensesRes.error) throw expensesRes.error;
+      if (additionsRes.error) throw additionsRes.error;
+      if (activityRes.error) throw activityRes.error;
+
+      const newLedgerSummaries: Record<string, DashboardLedgerSummary> = {};
+      const newGlobalSummary = {
+        totalBudget: 0,
+        paidExpenses: 0,
+        pendingExpenses: 0,
+        approvedExpenses: 0,
+        availableBudget: 0,
+        expectedAvailable: 0,
+        totalSavings: 0,
+      };
+
+      ledgers.forEach((ledger) => {
+        // Filter for this ledger
+        // If monthly, only take current month/year. If one-time, take all.
+        const isMonthly = ledger.budget_type === "monthly";
+        
+        const lExpenses = (expensesRes.data || []).filter(e => 
+          e.ledger_id === ledger.id && 
+          (!isMonthly || (e.month === currentMonth && e.year === currentYear))
+        ) as LedgerExpenseRow[];
+
+        const lAdditions = (additionsRes.data || []).filter(a => 
+          a.ledger_id === ledger.id && 
+          (!isMonthly || (a.month === currentMonth && a.year === currentYear))
+        ) as LedgerBudgetAddition[];
+
+        const summary = computeBudgetSummary(lAdditions, lExpenses, ledger.total_savings);
+        
+        newLedgerSummaries[ledger.id] = { ...summary, ledgerId: ledger.id };
+        
+        newGlobalSummary.totalBudget += summary.totalBudget;
+        newGlobalSummary.paidExpenses += summary.paidExpenses;
+        newGlobalSummary.pendingExpenses += summary.pendingExpenses;
+        newGlobalSummary.approvedExpenses += summary.approvedExpenses;
+        newGlobalSummary.availableBudget += summary.availableBudget;
+        newGlobalSummary.expectedAvailable += summary.expectedAvailable;
+        newGlobalSummary.totalSavings += summary.totalSavings;
+      });
+
+      setLedgerSummaries(newLedgerSummaries);
+      setGlobalSummary(newGlobalSummary);
+      setRecentActivity((activityRes.data || []) as any[]);
+    } catch (error) {
+      console.error("Dashboard fetch failed:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [ledgers]);
+
+  useEffect(() => {
+    refresh();
+    
+    if (refreshTimerRef.current !== null) {
+      window.clearInterval(refreshTimerRef.current);
+    }
+    refreshTimerRef.current = window.setInterval(refresh, 60000);
+    
+    return () => {
+      if (refreshTimerRef.current !== null) {
+        window.clearInterval(refreshTimerRef.current);
+      }
+    };
+  }, [refresh]);
+
+  return { globalSummary, ledgerSummaries, recentActivity, loading, refresh };
 }
 
 /** Upload a receipt image to ledger-receipts bucket */
