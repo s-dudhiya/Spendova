@@ -55,6 +55,7 @@ export interface LedgerExpenseRow {
   title: string;
   amount: number;
   category: string | null;
+  category_id: string | null;
   notes: string | null;
   proof_path: string | null;
   proof_uploaded_at: string | null;

@@ -2,8 +2,7 @@
 // Budget Ledger – Add Expense Drawer (Member & Owner)
 // ============================================================
 
-import { useState, useRef } from "react";
-import { Upload, X, Receipt } from "lucide-react";
+import { useState, useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
@@ -17,38 +16,25 @@ import { supabase } from "@/integrations/supabase/client";
 import type { LedgerRow } from "./types";
 import { uploadLedgerReceipt, logLedgerActivity } from "./hooks";
 import { compressReceiptImage } from "./utils";
+import { CategoryPicker } from "@/components/CategoryPicker";
+import { ImageUpload } from "@/components/ImageUpload";
+import { useExpenseCategories } from "@/hooks/useExpenseCategories";
 
-interface Field {
-  label: string;
-  id: string;
-  children: React.ReactNode;
-}
-
-const FormField = ({ label, id, children }: Field) => (
-  <div className="space-y-1.5">
-    <label htmlFor={id} className="text-sm font-bold text-foreground">
-      {label}
-    </label>
-    {children}
-  </div>
+const Field = ({ label, hint, type = "text", ...props }: { label: string; hint?: ReactNode; type?: string } & React.InputHTMLAttributes<HTMLInputElement>) => (
+  <label className="block text-sm font-semibold text-foreground">
+    {label}
+    <input type={type} className="mt-2 block min-h-11 w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring focus:ring-offset-0 disabled:opacity-50" {...props} />
+    {hint && <div className="mt-1.5 text-xs font-medium text-muted-foreground">{hint}</div>}
+  </label>
 );
 
-const inputCls =
-  "w-full rounded-2xl border border-input bg-elevated px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50";
-
-const CATEGORIES = [
-  "Food & Drinks",
-  "Transport",
-  "Groceries",
-  "Fuel",
-  "Shopping",
-  "Medical",
-  "Entertainment",
-  "Utilities",
-  "Travel",
-  "Office",
-  "Miscellaneous",
-];
+const Textarea = ({ label, hint, ...props }: { label: string; hint?: ReactNode } & React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
+  <label className="block text-sm font-semibold text-foreground">
+    {label}
+    <textarea className="mt-2 block min-h-24 w-full rounded-3xl border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring focus:ring-offset-0 disabled:opacity-50" {...props} />
+    {hint && <div className="mt-1.5 text-xs font-medium text-muted-foreground">{hint}</div>}
+  </label>
+);
 
 interface AddExpenseDrawerProps {
   open: boolean;
@@ -56,12 +42,12 @@ interface AddExpenseDrawerProps {
   ledger: LedgerRow;
   currentUserId: string;
   onSuccess: () => Promise<void>;
-  /** If set, prefills and edit existing pending expense */
   editExpense?: {
     id: string;
     title: string;
     amount: number;
     category: string | null;
+    category_id?: string | null;
     notes: string | null;
     proof_path: string | null;
   } | null;
@@ -77,57 +63,77 @@ export const AddExpenseDrawer = ({
 }: AddExpenseDrawerProps) => {
   const { toast } = useToast();
   const isEdit = Boolean(editExpense);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { categories, fetchCategories, createCategory, renameCategory, deleteCategory } = useExpenseCategories(currentUserId);
+
+  useEffect(() => {
+    if (open) {
+      fetchCategories();
+    }
+  }, [open, fetchCategories]);
 
   const [title, setTitle] = useState(editExpense?.title ?? "");
   const [amount, setAmount] = useState(
     editExpense ? String(editExpense.amount) : ""
   );
-  const [category, setCategory] = useState(editExpense?.category ?? "");
+  const [categoryId, setCategoryId] = useState(editExpense?.category_id ?? "");
+  const [categoryName, setCategoryName] = useState(editExpense?.category ?? "");
   const [notes, setNotes] = useState(editExpense?.notes ?? "");
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [autoNameCategoryId, setAutoNameCategoryId] = useState<string | null>(null);
 
-  // Reset when drawer opens/closes
   const handleOpenChange = (o: boolean) => {
     if (!o) {
       setTitle(editExpense?.title ?? "");
       setAmount(editExpense ? String(editExpense.amount) : "");
-      setCategory(editExpense?.category ?? "");
+      setCategoryId(editExpense?.category_id ?? "");
+      setCategoryName(editExpense?.category ?? "");
       setNotes(editExpense?.notes ?? "");
       setProofFile(null);
       setProofPreview(null);
+      setAutoNameCategoryId(null);
     }
     onOpenChange(o);
   };
 
-  const handleFile = (file: File | null) => {
-    if (!file) return;
-    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-      toast({
-        title: "Invalid file",
-        description: "Please upload a JPEG, PNG, or WebP image.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setProofFile(file);
-    const url = URL.createObjectURL(file);
-    setProofPreview(url);
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setTitle(e.target.value);
+    setAutoNameCategoryId(null);
   };
 
-  const removeProof = () => {
-    setProofFile(null);
-    if (proofPreview) URL.revokeObjectURL(proofPreview);
-    setProofPreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  const handleCategoryChange = (value: string) => {
+    const picked = categories.find((c) => c.id === value);
+    const shouldAutoFillName = !title.trim() || Boolean(autoNameCategoryId);
+
+    setCategoryId(value);
+    if (picked) {
+      setCategoryName(picked.name);
+      if (shouldAutoFillName) {
+        setTitle(picked.name);
+        setAutoNameCategoryId(picked.id);
+      }
+    } else {
+      setCategoryName("");
+      if (autoNameCategoryId) {
+        setTitle("");
+        setAutoNameCategoryId(null);
+      }
+    }
+  };
+
+  const handleProofChange = (file: File | null, url: string | null) => {
+    setProofFile(file);
+    setProofPreview(url);
   };
 
   const parsedAmount = parseFloat(amount);
 
-  const handleSubmit = async () => {
-    if (!title.trim()) {
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const expenseTitle = title.trim() || categoryName || "";
+    if (!expenseTitle) {
       toast({ title: "Title is required", variant: "destructive" });
       return;
     }
@@ -145,7 +151,6 @@ export const AddExpenseDrawer = ({
       let expenseId = editExpense?.id ?? "";
 
       if (isEdit && editExpense) {
-        // Update existing pending expense
         const { error } = await (supabase as never as {
           from: (t: string) => {
             update: (d: object) => { eq: (c: string, v: string) => { error: Error | null } };
@@ -153,24 +158,25 @@ export const AddExpenseDrawer = ({
         })
           .from("ledger_expenses")
           .update({
-            title: title.trim(),
+            title: expenseTitle,
             amount: parsedAmount,
-            category: category.trim() || null,
+            category: categoryName || null,
+            category_id: categoryId || null,
             notes: notes.trim() || null,
             updated_at: new Date().toISOString(),
           })
           .eq("id", editExpense.id);
         if (error) throw error;
       } else {
-        // Insert new expense
         const { data, error } = await (supabase
           .from("ledger_expenses" as never)
           .insert({
             ledger_id: ledger.id,
             user_id: currentUserId,
-            title: title.trim(),
+            title: expenseTitle,
             amount: parsedAmount,
-            category: category.trim() || null,
+            category: categoryName || null,
+            category_id: categoryId || null,
             notes: notes.trim() || null,
             status: "pending",
             month: currentMonth,
@@ -186,11 +192,10 @@ export const AddExpenseDrawer = ({
         await logLedgerActivity(ledger.id, currentUserId, "expense_submitted", {
           entityType: "expense",
           entityId: expenseId,
-          metadata: { title: title.trim(), amount: parsedAmount },
+          metadata: { title: expenseTitle, amount: parsedAmount },
         });
       }
 
-      // Upload receipt if provided
       if (proofFile && expenseId) {
         try {
           const blob = await compressReceiptImage(proofFile);
@@ -235,6 +240,8 @@ export const AddExpenseDrawer = ({
     }
   };
 
+  const personalCategories = categories.filter((c) => c.type === "personal");
+
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
       <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
@@ -248,119 +255,55 @@ export const AddExpenseDrawer = ({
         </DrawerHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
-          <div className="space-y-4 pb-3">
-            {/* Title */}
-            <FormField label="Title *" id="le-title">
-              <input
-                id="le-title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Office Lunch"
-                className={inputCls}
-                maxLength={200}
-              />
-            </FormField>
+          <form id="ledger-expense-form" onSubmit={handleSubmit} className="space-y-3 pb-3">
+            <CategoryPicker
+              categories={personalCategories}
+              value={categoryId}
+              onChange={handleCategoryChange}
+              onCreate={(name) => createCategory("personal", name, null)}
+              onRename={renameCategory}
+              onDelete={deleteCategory}
+            />
+            
+            <Field 
+              label="Expense name" 
+              placeholder="Dinner, groceries..." 
+              value={title} 
+              onChange={handleTitleChange} 
+              hint="Selecting a category can fill this if you leave it blank." 
+            />
+            
+            <Field 
+              label="Amount" 
+              type="number" 
+              inputMode="decimal"
+              min="0.01"
+              step="0.01"
+              placeholder="0" 
+              value={amount} 
+              onChange={(e) => setAmount(e.target.value)} 
+            />
 
-            {/* Amount */}
-            <FormField label="Amount (₹) *" id="le-amount">
-              <input
-                id="le-amount"
-                type="number"
-                inputMode="decimal"
-                min="0.01"
-                step="0.01"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-                className={inputCls}
-              />
-            </FormField>
+            <Textarea 
+              label="Notes (optional)" 
+              placeholder="Add a note" 
+              value={notes} 
+              onChange={(e) => setNotes(e.target.value)} 
+              rows={3} 
+              maxLength={1000} 
+            />
 
-            {/* Category */}
-            <FormField label="Category" id="le-category">
-              <input
-                id="le-category"
-                list="le-category-list"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="Select or type a category"
-                className={inputCls}
-                maxLength={100}
-              />
-              <datalist id="le-category-list">
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
-            </FormField>
-
-            {/* Notes */}
-            <FormField label="Notes" id="le-notes">
-              <textarea
-                id="le-notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Optional details…"
-                rows={3}
-                maxLength={1000}
-                className={`${inputCls} resize-none`}
-              />
-            </FormField>
-
-            {/* Receipt Upload */}
-            <FormField label="Receipt / Proof" id="le-receipt">
-              {proofPreview ? (
-                <div className="relative overflow-hidden rounded-2xl border border-border">
-                  <img
-                    src={proofPreview}
-                    alt="Receipt preview"
-                    className="h-48 w-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    onClick={removeProof}
-                    className="absolute right-2 top-2 grid size-8 place-items-center rounded-full bg-card/90 text-foreground shadow-soft"
-                    aria-label="Remove receipt"
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-border px-4 py-6 text-center transition-colors hover:border-primary/50 hover:bg-elevated/50"
-                >
-                  <Receipt className="size-8 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-bold text-foreground">
-                      Upload receipt
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      JPEG, PNG or WebP — max 5 MB
-                    </p>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-elevated px-3 py-1.5 text-xs font-bold text-muted-foreground">
-                    <Upload className="size-3" />
-                    Choose file
-                  </span>
-                </button>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                id="le-receipt"
-                accept="image/jpeg,image/png,image/webp"
-                className="sr-only"
-                onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
-              />
-            </FormField>
-          </div>
+            <ImageUpload
+              file={proofFile}
+              previewUrl={proofPreview}
+              onChange={handleProofChange}
+            />
+          </form>
         </div>
 
-        {/* Footer */}
         <div className="shrink-0 flex gap-2 border-t border-border/60 bg-card pt-3">
           <Button
+            type="button"
             variant="quiet"
             className="flex-1"
             onClick={() => handleOpenChange(false)}
@@ -369,8 +312,9 @@ export const AddExpenseDrawer = ({
             Cancel
           </Button>
           <Button
+            type="submit"
+            form="ledger-expense-form"
             className="flex-1 shadow-primary-action"
-            onClick={handleSubmit}
             disabled={
               submitting || !title.trim() || !parsedAmount || parsedAmount <= 0
             }

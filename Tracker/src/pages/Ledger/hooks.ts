@@ -39,7 +39,7 @@ export function useLedgerDetail(
           supabase
             .from("ledger_expenses" as never)
             .select(
-              "id, ledger_id, user_id, title, amount, category, notes, proof_path, proof_uploaded_at, status, reviewed_by, reviewed_at, paid_at, month, year, created_at, updated_at, profiles!ledger_expenses_user_id_fkey(user_id, full_name, username)"
+              "id, ledger_id, user_id, title, amount, category, category_id, notes, proof_path, proof_uploaded_at, status, reviewed_by, reviewed_at, paid_at, month, year, created_at, updated_at, profiles!ledger_expenses_user_id_fkey(user_id, full_name, username)"
             )
             .eq("ledger_id", ledgerId)
             .order("created_at", { ascending: false }),
