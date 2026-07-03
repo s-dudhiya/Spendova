@@ -265,6 +265,7 @@ export const AddExpenseDrawer = ({
             />
 
             <ImageUpload
+              label="Receipt / Proof (optional)"
               file={proofFile}
               previewUrl={proofPreview}
               onChange={handleProofChange}
