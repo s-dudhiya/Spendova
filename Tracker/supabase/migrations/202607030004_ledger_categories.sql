@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS public.ledger_categories (
     name TEXT NOT NULL,
     color TEXT,
     icon TEXT,
-    created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    created_by UUID REFERENCES public.profiles(user_id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     is_deleted BOOLEAN DEFAULT false NOT NULL
@@ -27,13 +27,13 @@ CREATE POLICY "Users can view categories of ledgers they are members of"
     USING (
         EXISTS (
             SELECT 1 FROM public.ledger_members
-            WHERE ledger_members.ledger_id = ledger_categories.ledger_id
+            WHERE ledger_members.ledger_id = ledger_id
             AND ledger_members.user_id = auth.uid()
         )
         OR
         EXISTS (
             SELECT 1 FROM public.ledgers
-            WHERE ledgers.id = ledger_categories.ledger_id
+            WHERE ledgers.id = ledger_id
             AND ledgers.owner_id = auth.uid()
         )
     );
@@ -44,13 +44,13 @@ CREATE POLICY "Users can insert categories in ledgers they are members of"
     WITH CHECK (
         EXISTS (
             SELECT 1 FROM public.ledger_members
-            WHERE ledger_members.ledger_id = ledger_categories.ledger_id
+            WHERE ledger_members.ledger_id = ledger_id
             AND ledger_members.user_id = auth.uid()
         )
         OR
         EXISTS (
             SELECT 1 FROM public.ledgers
-            WHERE ledgers.id = ledger_categories.ledger_id
+            WHERE ledgers.id = ledger_id
             AND ledgers.owner_id = auth.uid()
         )
     );
@@ -61,13 +61,13 @@ CREATE POLICY "Users can update categories in ledgers they are members of"
     USING (
         EXISTS (
             SELECT 1 FROM public.ledger_members
-            WHERE ledger_members.ledger_id = ledger_categories.ledger_id
+            WHERE ledger_members.ledger_id = ledger_id
             AND ledger_members.user_id = auth.uid()
         )
         OR
         EXISTS (
             SELECT 1 FROM public.ledgers
-            WHERE ledgers.id = ledger_categories.ledger_id
+            WHERE ledgers.id = ledger_id
             AND ledgers.owner_id = auth.uid()
         )
     );
@@ -78,13 +78,13 @@ CREATE POLICY "Users can delete categories in ledgers they are members of"
     USING (
         EXISTS (
             SELECT 1 FROM public.ledger_members
-            WHERE ledger_members.ledger_id = ledger_categories.ledger_id
+            WHERE ledger_members.ledger_id = ledger_id
             AND ledger_members.user_id = auth.uid()
         )
         OR
         EXISTS (
             SELECT 1 FROM public.ledgers
-            WHERE ledgers.id = ledger_categories.ledger_id
+            WHERE ledgers.id = ledger_id
             AND ledgers.owner_id = auth.uid()
         )
     );

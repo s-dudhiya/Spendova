@@ -75,6 +75,7 @@ export const AddExpenseDrawer = ({
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [autoNameCategoryId, setAutoNameCategoryId] = useState<string | null>(null);
+  const [date, setDate] = useState(editExpense?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
 
   const displayCategories = isShared
     ? sharedHook.categories
@@ -111,6 +112,7 @@ export const AddExpenseDrawer = ({
       setCategoryId(editExpense?.category_id ?? "");
       setCategoryName(editExpense?.category ?? "");
       setNotes(editExpense?.notes ?? "");
+      setDate(editExpense?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
       setProofFile(null);
       setProofPreview(null);
       setAutoNameCategoryId(null);
@@ -163,9 +165,9 @@ export const AddExpenseDrawer = ({
     }
     setSubmitting(true);
 
-    const now = new Date();
-    const currentMonth = ledger.budget_type === "monthly" ? now.getMonth() + 1 : null;
-    const currentYear = ledger.budget_type === "monthly" ? now.getFullYear() : null;
+    const parsedDate = new Date(date + "T12:00:00");
+    const currentMonth = ledger.budget_type === "monthly" ? parsedDate.getMonth() + 1 : null;
+    const currentYear = ledger.budget_type === "monthly" ? parsedDate.getFullYear() : null;
 
     try {
       await saveExpense(
@@ -178,6 +180,7 @@ export const AddExpenseDrawer = ({
           notes: notes.trim() || null,
           month: currentMonth,
           year: currentYear,
+          date: parsedDate.toISOString(),
           linked_expense_id: editExpense?.linked_expense_id,
         },
         proofFile
@@ -243,6 +246,13 @@ export const AddExpenseDrawer = ({
               placeholder="0" 
               value={amount} 
               onChange={(e) => setAmount(e.target.value)} 
+            />
+
+            <Field 
+              label="Date" 
+              type="date" 
+              value={date} 
+              onChange={(e) => setDate(e.target.value)} 
             />
 
             <Textarea 

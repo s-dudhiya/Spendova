@@ -126,6 +126,7 @@ export function useLedgerExpenseMutation(ledger: LedgerRow, currentUserId: strin
       notes: string | null;
       month: number | null;
       year: number | null;
+      date: string | null;
       linked_expense_id?: string | null;
     },
     proofFile?: File | null
@@ -136,15 +137,16 @@ export function useLedgerExpenseMutation(ledger: LedgerRow, currentUserId: strin
       p_action: action,
       p_ledger_id: ledger.id,
       p_user_id: currentUserId,
-      p_expense_id: payload.id || undefined,
+      p_expense_id: payload.id || null,
       p_title: payload.title,
       p_amount: payload.amount,
-      p_category: payload.category || undefined,
-      p_category_id: payload.category_id || undefined,
-      p_notes: payload.notes || undefined,
+      p_category: payload.category || null,
+      p_category_id: payload.category_id || null,
+      p_notes: payload.notes || null,
       p_status: "pending",
-      p_month: payload.month || undefined,
-      p_year: payload.year || undefined,
+      p_month: payload.month || null,
+      p_year: payload.year || null,
+      p_created_at: payload.date || null,
     } as never) as unknown as { data: { error?: string; expense_id?: string } | null; error: Error | null });
 
     if (error || data?.error) {
@@ -163,13 +165,22 @@ export function useLedgerExpenseMutation(ledger: LedgerRow, currentUserId: strin
     }
   };
 
-  const deleteExpense = async (expense: LedgerExpenseRow) => {
-    const { data, error } = await (supabase.rpc("sync_ledger_expense" as never, {
-      p_action: "delete",
-      p_ledger_id: ledger.id,
-      p_user_id: currentUserId,
-      p_expense_id: expense.id,
-    } as never) as unknown as { data: { error?: string } | null; error: Error | null });
+    const deleteExpense = async (expense: LedgerExpenseRow) => {
+      const { data, error } = await (supabase.rpc("sync_ledger_expense" as never, {
+        p_action: "delete",
+        p_ledger_id: ledger.id,
+        p_user_id: currentUserId,
+        p_expense_id: expense.id,
+        p_title: null,
+        p_amount: null,
+        p_category: null,
+        p_category_id: null,
+        p_notes: null,
+        p_status: null,
+        p_month: null,
+        p_year: null,
+        p_created_at: null,
+      } as never) as unknown as { data: { error?: string } | null; error: Error | null });
 
     if (error || data?.error) {
       throw new Error(data?.error || error?.message || "Failed to delete expense");
@@ -305,17 +316,17 @@ export function useLedgersDashboard(ledgers: LedgerRow[]): UseLedgersDashboardRe
         // If monthly, only take current month/year. If one-time, take all.
         const isMonthly = ledger.budget_type === "monthly";
         
-        const lExpenses = (expensesRes.data || []).filter(e => 
+        const lExpenses = ((expensesRes.data || []) as LedgerExpenseRow[]).filter((e) => 
           e.ledger_id === ledger.id && 
           (!isMonthly || (e.month === currentMonth && e.year === currentYear))
-        ) as LedgerExpenseRow[];
+        );
 
-        const lAdditions = (additionsRes.data || []).filter(a => 
+        const lAdditions = ((additionsRes.data || []) as LedgerBudgetAddition[]).filter((a) => 
           a.ledger_id === ledger.id && 
           (!isMonthly || (a.month === currentMonth && a.year === currentYear))
-        ) as LedgerBudgetAddition[];
+        );
 
-        const summary = computeBudgetSummary(lAdditions, lExpenses, ledger.total_savings);
+        const summary = computeBudgetSummary(lAdditions, lExpenses, ledger.total_savings || 0);
         
         newLedgerSummaries[ledger.id] = { ...summary, ledgerId: ledger.id };
         
@@ -330,7 +341,7 @@ export function useLedgersDashboard(ledgers: LedgerRow[]): UseLedgersDashboardRe
 
       setLedgerSummaries(newLedgerSummaries);
       setGlobalSummary(newGlobalSummary);
-      setRecentActivity((activityRes.data || []) as any[]);
+      setRecentActivity((activityRes.data || []) as import("./types").LedgerActivityRow[]);
     } catch (error) {
       console.error("Dashboard fetch failed:", error);
     } finally {
