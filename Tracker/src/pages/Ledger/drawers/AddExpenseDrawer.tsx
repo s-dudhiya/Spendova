@@ -4,7 +4,6 @@
 
 import { useState, useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import {
   Drawer,
@@ -36,6 +35,7 @@ interface AddExpenseDrawerProps {
     linked_expense_id?: string | null;
     notes: string | null;
     proof_path: string | null;
+    created_at?: string;
   } | null;
 }
 
