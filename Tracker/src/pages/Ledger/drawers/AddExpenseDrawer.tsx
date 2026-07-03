@@ -4,6 +4,8 @@
 
 import { useState, useEffect, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import {
   Drawer,
   DrawerContent,
@@ -198,8 +200,7 @@ export const AddExpenseDrawer = ({
     } catch (error) {
       toast({
         title: isEdit ? "Update failed" : "Submission failed",
-        description:
-          error instanceof Error ? error.message : "Something went wrong.",
+        description: getFriendlyErrorMessage(error, "expense"),
         variant: "destructive",
       });
     } finally {
