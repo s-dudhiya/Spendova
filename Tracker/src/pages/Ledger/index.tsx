@@ -3,7 +3,7 @@
 // ============================================================
 
 import { useState } from "react";
-import { Plus, BookOpen, Users, Calendar, Wallet, ChevronRight, Archive } from "lucide-react";
+import { Plus, BookOpen, Users, Calendar, Wallet, ChevronRight, Archive, CircleDollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import type { LedgerRow, LedgerRole } from "./types";
@@ -23,11 +23,6 @@ interface LedgerCardProps {
 const LedgerCard = ({ ledger, currentUserId, onClick }: LedgerCardProps) => {
   const userRole: LedgerRole =
     ledger.ledger_members.find((m) => m.user_id === currentUserId)?.role ?? "member";
-  const isOwner = userRole === "owner";
-
-  // Quick summary: use all budget additions from ledger_members query
-  // For the list view, we can't compute from ledger detail data (not fetched yet),
-  // so just show member count and type badges.
   const memberCount = ledger.ledger_members.length;
 
   return (
@@ -45,7 +40,7 @@ const LedgerCard = ({ ledger, currentUserId, onClick }: LedgerCardProps) => {
         {/* Info */}
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="truncate font-black text-foreground">{ledger.name}</h3>
+            <h3 className="truncate font-bold text-foreground">{ledger.name}</h3>
             {ledger.is_archived && (
               <span className="shrink-0 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-bold text-warning">
                 Archived
@@ -53,23 +48,18 @@ const LedgerCard = ({ ledger, currentUserId, onClick }: LedgerCardProps) => {
             )}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            <span className="flex items-center gap-1 text-xs font-semibold text-muted-foreground capitalize">
-              {ledger.budget_type === "monthly" ? (
-                <Calendar className="size-3" />
-              ) : (
-                <Wallet className="size-3" />
-              )}
+            <span className="rounded-full bg-elevated px-2 py-0.5 text-[10px] font-bold capitalize text-muted-foreground">
+              {ledger.ledger_type}
+            </span>
+            <span className="rounded-full bg-elevated px-2 py-0.5 text-[10px] font-bold capitalize text-muted-foreground">
               {ledger.budget_type === "monthly" ? "Monthly" : "One-Time"}
             </span>
             {ledger.ledger_type === "shared" && (
-              <span className="flex items-center gap-1 text-xs font-semibold text-muted-foreground">
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
                 <Users className="size-3" />
-                {memberCount} members
+                {memberCount}
               </span>
             )}
-            <span className="rounded-full bg-elevated px-1.5 py-0.5 text-[10px] font-bold capitalize text-muted-foreground">
-              {userRole}
-            </span>
           </div>
           {ledger.description && (
             <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
@@ -87,17 +77,15 @@ const LedgerCard = ({ ledger, currentUserId, onClick }: LedgerCardProps) => {
 // ── Empty State ───────────────────────────────────────────────
 
 const LedgerEmptyState = ({ onCreate }: { onCreate: () => void }) => (
-  <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-border bg-card p-10 text-center shadow-soft">
-    <div className="grid size-16 place-items-center rounded-full bg-elevated text-primary">
+  <div className="rounded-[1.25rem] bg-elevated p-6 text-center shadow-soft">
+    <div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary">
       <BookOpen className="size-7" />
     </div>
-    <div>
-      <p className="text-base font-black text-foreground">No ledgers yet</p>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Create a ledger to start tracking budgets and expenses.
-      </p>
-    </div>
-    <Button className="shadow-primary-action" onClick={onCreate}>
+    <p className="mt-4 text-base font-black text-foreground">No ledgers yet</p>
+    <p className="mt-1 text-sm font-medium text-muted-foreground">
+      Create a ledger to start tracking budgets and expenses.
+    </p>
+    <Button className="mt-4 shadow-primary-action" onClick={onCreate}>
       <Plus className="size-4" />
       Create your first ledger
     </Button>
@@ -147,32 +135,55 @@ export const BudgetLedgerView = ({
     ? [...activeLedgers, ...archivedLedgers]
     : activeLedgers;
 
+  const totalMembers = activeLedgers.reduce(
+    (sum, l) => sum + (l.ledger_type === "shared" ? l.ledger_members.length : 0),
+    0
+  );
+  const sharedCount = activeLedgers.filter((l) => l.ledger_type === "shared").length;
+  const personalCount = activeLedgers.filter((l) => l.ledger_type === "personal").length;
+
   return (
     <main className="space-y-6 pb-20">
       {/* ── Hero summary ── */}
       {activeLedgers.length > 0 && (
         <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
-          <p className="text-sm font-medium text-muted-foreground">
-            Budget Ledger
-          </p>
-          <p className="mt-1 text-3xl font-black tracking-tight text-foreground">
+          <p className="text-sm font-medium text-muted-foreground">Budget Ledger</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">
             {activeLedgers.length} Active{" "}
             {activeLedgers.length === 1 ? "Ledger" : "Ledgers"}
           </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Track and manage your budgets in one place.
-          </p>
+          <div className="mt-5 grid grid-cols-2 items-start gap-4">
+            <div className="flex min-w-0 flex-col items-start gap-1 rounded-2xl px-2 py-1.5">
+              <span className="text-xs font-semibold text-muted-foreground">Personal</span>
+              <span className="text-sm font-bold text-foreground">{personalCount} {personalCount === 1 ? "ledger" : "ledgers"}</span>
+            </div>
+            <div className="flex min-w-0 flex-col items-start gap-1 rounded-2xl px-2 py-1.5">
+              <span className="text-xs font-semibold text-muted-foreground">Shared</span>
+              <span className="text-sm font-bold text-foreground">
+                {sharedCount} {sharedCount === 1 ? "ledger" : "ledgers"}
+                {totalMembers > 0 && <span className="ml-1 text-muted-foreground">· {totalMembers} members</span>}
+              </span>
+            </div>
+          </div>
         </section>
       )}
 
-      {/* ── Create button ── */}
+      {/* ── Quick action ── */}
       <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-bold tracking-tight text-foreground">Quick action</h2>
+        </div>
         <Button
-          className="w-full h-12 shadow-primary-action"
+          className="h-16 w-full justify-start gap-4 rounded-[1.25rem] px-5 text-left shadow-primary-action"
           onClick={() => setCreateOpen(true)}
         >
-          <Plus className="size-4" />
-          Create Ledger
+          <span className="grid size-10 place-items-center rounded-full bg-primary-foreground/15">
+            <Plus className="size-5" />
+          </span>
+          <span>
+            <span className="block text-base font-black">Create Ledger</span>
+            <span className="block text-xs font-semibold opacity-85">Start a new budget tracker</span>
+          </span>
         </Button>
       </section>
 
@@ -183,17 +194,17 @@ export const BudgetLedgerView = ({
         ) : (
           <>
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-base font-black tracking-tight text-foreground">
+              <h2 className="text-base font-bold tracking-tight text-foreground">
                 Your Ledgers
               </h2>
               {archivedLedgers.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setShowArchived((prev) => !prev)}
-                  className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground"
+                  className="flex items-center gap-1.5 text-xs font-bold text-primary"
                 >
                   <Archive className="size-3.5" />
-                  {showArchived ? "Hide archived" : `Show archived (${archivedLedgers.length})`}
+                  {showArchived ? "Hide archived" : `Archived (${archivedLedgers.length})`}
                 </button>
               )}
             </div>

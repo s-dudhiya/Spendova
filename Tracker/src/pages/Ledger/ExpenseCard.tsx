@@ -51,7 +51,7 @@ export const ExpenseCard = ({
       <div className="flex items-start gap-3">
         {/* Avatar */}
         <span
-          className="grid size-10 shrink-0 place-items-center rounded-full bg-elevated text-sm font-black text-primary"
+          className="grid size-11 shrink-0 place-items-center rounded-full bg-elevated text-sm font-black text-primary"
           aria-hidden="true"
         >
           {initial}

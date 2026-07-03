@@ -14,7 +14,7 @@ interface SummaryCardProps {
 
 const SummaryCard = ({ label, value, sub, valueClass = "text-foreground" }: SummaryCardProps) => (
   <div className="rounded-2xl bg-elevated p-4 shadow-soft">
-    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+    <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
       {label}
     </p>
     <p className={`mt-2 text-lg font-black leading-tight ${valueClass}`}>

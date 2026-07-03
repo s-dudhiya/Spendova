@@ -17,6 +17,7 @@ import {
   X,
   PiggyBank,
   Loader2,
+  CircleDollarSign,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -770,7 +771,7 @@ export const LedgerDetail = ({
 
         <div className="mt-3 flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="truncate text-2xl font-black tracking-tight text-foreground">
+            <h2 className="truncate text-2xl font-bold tracking-tight text-foreground">
               {ledger.name}
             </h2>
             {ledger.description && (
@@ -807,7 +808,7 @@ export const LedgerDetail = ({
       {/* ── Budget Summary ── */}
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-base font-black tracking-tight text-foreground">
+          <h3 className="text-base font-bold tracking-tight text-foreground">
             Budget Overview
             {isMonthly && monthLabel && (
               <span className="ml-2 text-sm font-semibold text-muted-foreground">
@@ -836,70 +837,81 @@ export const LedgerDetail = ({
         />
       </section>
 
-      {/* ── Action Buttons ── */}
-      <section className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {!ledger.is_archived && (
+      {/* ── Quick Actions ── */}
+      {!ledger.is_archived && (
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Button
-            className="h-12 shadow-primary-action"
+            className="h-11 shadow-primary-action"
             onClick={() => setAddExpenseOpen(true)}
           >
             <Plus className="size-4" />
             Add Expense
           </Button>
-        )}
-        {isOwnerOrAdmin && !ledger.is_archived && (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-2">
-            <Button
-              variant="quiet"
-              className="h-12"
-              onClick={() => setAddBudgetOpen(true)}
-            >
-              <Plus className="size-4" />
-              Add Budget
-            </Button>
-            {ledger.ledger_type === "shared" && (
+          {isOwnerOrAdmin && (
+            <div className="grid grid-cols-2 gap-2">
               <Button
                 variant="quiet"
-                className="relative h-12"
-                onClick={() => setInviteOpen(true)}
+                className="h-11"
+                onClick={() => setAddBudgetOpen(true)}
               >
-                <UserPlus className="size-4" />
-                Invite
-                {invites.length > 0 && (
-                  <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                    {invites.length}
-                  </span>
-                )}
+                <Plus className="size-4" />
+                Add Budget
               </Button>
-            )}
-          </div>
-        )}
-      </section>
+              {ledger.ledger_type === "shared" ? (
+                <Button
+                  variant="quiet"
+                  className="relative h-11"
+                  onClick={() => setInviteOpen(true)}
+                >
+                  <UserPlus className="size-4" />
+                  Invite
+                  {invites.length > 0 && (
+                    <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-black leading-none text-primary-foreground shadow-primary-action ring-2 ring-card">
+                      {invites.length}
+                    </span>
+                  )}
+                </Button>
+              ) : (
+                isMonthly && monthlyBudgets.length > 0 && (
+                  <Button
+                    variant="quiet"
+                    className="h-11"
+                    onClick={() => setHistoryOpen(true)}
+                  >
+                    <History className="size-4" />
+                    History
+                  </Button>
+                )
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ── Expense Timeline ── */}
       <section className="pb-20">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-base font-black tracking-tight text-foreground">
+          <h2 className="text-base font-bold tracking-tight text-foreground">
             Expenses
             {pendingCount > 0 && isOwnerOrAdmin && (
-              <span className="ml-2 rounded-full bg-warning/15 px-2 py-0.5 text-xs font-bold text-warning">
+              <span className="ml-2 rounded-full bg-warning/15 px-2.5 py-1 text-xs font-semibold text-warning">
                 {pendingCount} pending
               </span>
             )}
-          </h3>
+          </h2>
         </div>
 
         {/* Filter tabs */}
-        <div className="mb-3 flex gap-1 overflow-x-auto pb-1">
+        <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
           {FILTERS.map((f) => (
             <button
               key={f.value}
               type="button"
               onClick={() => setFilter(f.value)}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+              className={`shrink-0 rounded-full px-3 py-2 text-xs font-bold transition-colors ${
                 filter === f.value
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-elevated text-muted-foreground hover:text-foreground"
+                  ? "bg-primary text-primary-foreground shadow-primary-action"
+                  : "bg-elevated text-muted-foreground"
               }`}
             >
               {f.label}
@@ -912,12 +924,23 @@ export const LedgerDetail = ({
             <Loader2 className="size-7 animate-spin text-muted-foreground" />
           </div>
         ) : visibleExpenses.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border p-6 text-center">
-            <p className="text-sm font-medium text-muted-foreground">
-              {filter === "all"
-                ? "No expenses yet. Add the first one!"
-                : `No ${filter} expenses.`}
+          <div className="rounded-[1.25rem] bg-elevated p-6 text-center shadow-soft">
+            <div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary">
+              <CircleDollarSign className="size-7" />
+            </div>
+            <p className="mt-4 text-base font-black text-foreground">
+              {filter === "all" ? "No expenses yet" : `No ${filter} expenses`}
             </p>
+            <p className="mt-1 text-sm font-medium text-muted-foreground">
+              {filter === "all"
+                ? "Add your first expense to start tracking this budget."
+                : "Try changing the filter to see other expenses."}
+            </p>
+            {filter === "all" && !ledger.is_archived && (
+              <Button onClick={() => setAddExpenseOpen(true)} variant="quiet" className="mt-4">
+                <Plus />Add Expense
+              </Button>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
