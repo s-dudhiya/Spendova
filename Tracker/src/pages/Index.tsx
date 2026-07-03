@@ -1671,12 +1671,12 @@ const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal
       </section>
 
       <Drawer open={chartFiltersOpen} onOpenChange={setChartFiltersOpen}>
-        <DrawerContent className="mx-auto grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-          <DrawerHeader className="px-0 pb-2 text-left"><DrawerTitle>Chart range</DrawerTitle><DrawerDescription>Choose how much spending history to show.</DrawerDescription></DrawerHeader>
-          <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+          <DrawerHeader className="shrink-0 px-0 pb-2 text-left"><DrawerTitle>Chart range</DrawerTitle><DrawerDescription>Choose how much spending history to show.</DrawerDescription></DrawerHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
             <div className="space-y-2 pb-3">{chartRanges.map((value) => <button key={value} type="button" onClick={() => setDraftChartRange(value)} className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition-colors ${draftChartRange === value ? "border-primary bg-primary/10 text-foreground shadow-soft" : "border-border bg-elevated text-foreground"}`}><span><span className="block text-sm font-black">{chartRangeLabels[value]}</span><span className="mt-0.5 block text-xs font-semibold text-muted-foreground">{chartRangeHelpers[value]}</span></span>{draftChartRange === value ? <Check className="size-4 text-primary" /> : null}</button>)}</div>
           </div>
-          <div className="flex gap-2 border-t border-border/60 bg-card pt-3"><Button type="button" variant="quiet" className="flex-1" onClick={() => setChartFiltersOpen(false)}>Cancel</Button><Button type="button" className="flex-1 shadow-primary-action" onClick={applyChartFilters}>Apply</Button></div>
+          <div className="shrink-0 flex gap-2 border-t border-border/60 bg-card pt-3"><Button type="button" variant="quiet" className="flex-1" onClick={() => setChartFiltersOpen(false)}>Cancel</Button><Button type="button" className="flex-1 shadow-primary-action" onClick={applyChartFilters}>Apply</Button></div>
         </DrawerContent>
       </Drawer>
 

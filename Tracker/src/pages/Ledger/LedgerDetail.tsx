@@ -218,14 +218,14 @@ const AddBudgetDrawer = ({
 
   return (
     <Drawer open={open} onOpenChange={handleClose}>
-      <DrawerContent className="mx-auto grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <DrawerHeader className="px-0 pb-2 text-left">
+      <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <DrawerHeader className="shrink-0 px-0 pb-2 text-left">
           <DrawerTitle>Add Budget</DrawerTitle>
           <DrawerDescription>
             Budget additions are additive and kept as history.
           </DrawerDescription>
         </DrawerHeader>
-        <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
           <div className="space-y-4 pb-3">
             <div className="space-y-1.5">
               <label htmlFor="ab-amount" className="text-sm font-bold text-foreground">
@@ -258,7 +258,7 @@ const AddBudgetDrawer = ({
             </div>
           </div>
         </div>
-        <div className="flex gap-2 border-t border-border/60 bg-card pt-3">
+        <div className="shrink-0 flex gap-2 border-t border-border/60 bg-card pt-3">
           <Button variant="quiet" className="flex-1" onClick={() => handleClose(false)} disabled={submitting}>
             Cancel
           </Button>
@@ -354,12 +354,12 @@ const InviteMembersDrawer = ({
 
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
-      <DrawerContent className="mx-auto grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <DrawerHeader className="px-0 pb-2 text-left">
+      <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <DrawerHeader className="shrink-0 px-0 pb-2 text-left">
           <DrawerTitle>Invite Members</DrawerTitle>
           <DrawerDescription>Share access to this ledger.</DrawerDescription>
         </DrawerHeader>
-        <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
           <div className="space-y-4 pb-3">
             <div className="rounded-2xl border border-border bg-elevated p-4">
               <div className="flex items-start justify-between gap-3">
@@ -490,12 +490,12 @@ const SettingsDrawer = ({
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="mx-auto grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <DrawerHeader className="px-0 pb-2 text-left">
+      <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <DrawerHeader className="shrink-0 px-0 pb-2 text-left">
           <DrawerTitle>Ledger Settings</DrawerTitle>
           <DrawerDescription>{ledger.name}</DrawerDescription>
         </DrawerHeader>
-        <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
           <div className="space-y-4 pb-3">
             {/* Members list */}
             {ledger.ledger_members.length > 0 && (

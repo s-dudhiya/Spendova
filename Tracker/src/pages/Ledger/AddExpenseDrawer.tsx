@@ -237,8 +237,8 @@ export const AddExpenseDrawer = ({
 
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
-      <DrawerContent className="mx-auto grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <DrawerHeader className="px-0 pb-2 text-left">
+      <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <DrawerHeader className="shrink-0 px-0 pb-2 text-left">
           <DrawerTitle>{isEdit ? "Edit Expense" : "Add Expense"}</DrawerTitle>
           <DrawerDescription>
             {isEdit
@@ -247,7 +247,7 @@ export const AddExpenseDrawer = ({
           </DrawerDescription>
         </DrawerHeader>
 
-        <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
           <div className="space-y-4 pb-3">
             {/* Title */}
             <FormField label="Title *" id="le-title">
@@ -359,7 +359,7 @@ export const AddExpenseDrawer = ({
         </div>
 
         {/* Footer */}
-        <div className="flex gap-2 border-t border-border/60 bg-card pt-3">
+        <div className="shrink-0 flex gap-2 border-t border-border/60 bg-card pt-3">
           <Button
             variant="quiet"
             className="flex-1"
