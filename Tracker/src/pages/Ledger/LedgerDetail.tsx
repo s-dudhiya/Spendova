@@ -839,51 +839,51 @@ export const LedgerDetail = ({
 
       {/* ── Quick Actions ── */}
       {!ledger.is_archived && (
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Button
-            className="h-11 shadow-primary-action"
-            onClick={() => setAddExpenseOpen(true)}
-          >
-            <Plus className="size-4" />
-            Add Expense
-          </Button>
-          {isOwnerOrAdmin && (
-            <div className="grid grid-cols-2 gap-2">
+        <section className="flex flex-col gap-3">
+          <div className={`grid gap-3 ${isOwnerOrAdmin ? "grid-cols-2" : "grid-cols-1"}`}>
+            <Button
+              className="h-11 shadow-primary-action"
+              onClick={() => setAddExpenseOpen(true)}
+            >
+              <Plus className="size-4" />
+              Add Expense
+            </Button>
+            {isOwnerOrAdmin && (
               <Button
-                variant="quiet"
-                className="h-11"
+                className="h-11 shadow-primary-action"
                 onClick={() => setAddBudgetOpen(true)}
               >
                 <Plus className="size-4" />
                 Add Budget
               </Button>
-              {ledger.ledger_type === "shared" ? (
-                <Button
-                  variant="quiet"
-                  className="relative h-11"
-                  onClick={() => setInviteOpen(true)}
-                >
-                  <UserPlus className="size-4" />
-                  Invite
-                  {invites.length > 0 && (
-                    <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-black leading-none text-primary-foreground shadow-primary-action ring-2 ring-card">
-                      {invites.length}
-                    </span>
-                  )}
-                </Button>
-              ) : (
-                isMonthly && monthlyBudgets.length > 0 && (
-                  <Button
-                    variant="quiet"
-                    className="h-11"
-                    onClick={() => setHistoryOpen(true)}
-                  >
-                    <History className="size-4" />
-                    History
-                  </Button>
-                )
-              )}
-            </div>
+            )}
+          </div>
+          
+          {isOwnerOrAdmin && (
+            ledger.ledger_type === "shared" ? (
+              <Button
+                variant="quiet"
+                className="relative h-11 w-full"
+                onClick={() => setInviteOpen(true)}
+              >
+                <UserPlus className="size-4" />
+                Invite Members
+                {invites.length > 0 && (
+                  <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-black leading-none text-primary-foreground shadow-primary-action ring-2 ring-card">
+                    {invites.length}
+                  </span>
+                )}
+              </Button>
+            ) : isMonthly && monthlyBudgets.length > 0 ? (
+              <Button
+                variant="quiet"
+                className="h-11 w-full"
+                onClick={() => setHistoryOpen(true)}
+              >
+                <History className="size-4" />
+                History
+              </Button>
+            ) : null
           )}
         </section>
       )}
