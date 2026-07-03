@@ -44,6 +44,7 @@ import { ExpenseCard } from "./components/ExpenseCard";
 import { AddExpenseDrawer } from "./drawers/AddExpenseDrawer";
 import { ApproveExpenseDrawer } from "./drawers/ApproveExpenseDrawer";
 import { MonthlyHistoryDrawer } from "./components/MonthlyHistory";
+import { Field } from "./components/Fields";
 
 import { useLedgerDetail, logLedgerActivity } from "./hooks";
 import {
@@ -214,69 +215,66 @@ const AddBudgetDrawer = ({
     }
   };
 
-  const inputCls =
-    "w-full rounded-2xl border border-input bg-elevated px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50";
-
   return (
     <Drawer open={open} onOpenChange={handleClose}>
-      <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <DrawerHeader className="shrink-0 px-0 pb-2 text-left">
+      <DrawerContent className="mx-auto grid h-[88dvh] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-0">
+        <DrawerHeader className="px-0 pb-3 pt-4 text-left">
           <DrawerTitle>Add Budget</DrawerTitle>
           <DrawerDescription>
             Budget additions are additive and kept as history.
           </DrawerDescription>
         </DrawerHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+
+        <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
           <div className="space-y-4 pb-3">
-            <div className="space-y-1.5">
-              <label htmlFor="ab-amount" className="text-sm font-bold text-foreground">
-                Amount (â‚¹) *
-              </label>
-              <input
-                id="ab-amount"
-                type="number"
-                inputMode="decimal"
-                min="1"
-                step="1"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="e.g. 5000"
-                className={inputCls}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label htmlFor="ab-note" className="text-sm font-bold text-foreground">
-                Note <span className="text-muted-foreground">(optional)</span>
-              </label>
-              <input
-                id="ab-note"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="e.g. Mid-month top-up"
-                className={inputCls}
-                maxLength={300}
-              />
-            </div>
+            <Field
+              id="ab-amount"
+              type="number"
+              inputMode="decimal"
+              min="1"
+              step="1"
+              label="Amount (₹) *"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="e.g. 5000"
+            />
+            <Field
+              id="ab-note"
+              label="Note"
+              hint="(optional)"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. Mid-month top-up"
+              maxLength={300}
+            />
           </div>
         </div>
-        <div className="shrink-0 flex gap-2 border-t border-border/60 bg-card pt-3">
-          <Button variant="quiet" className="flex-1" onClick={() => handleClose(false)} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button
-            className="flex-1 shadow-primary-action"
-            onClick={handleAdd}
-            disabled={submitting || !parsedAmount || parsedAmount <= 0}
-          >
-            {submitting ? "Addingâ€¦" : "Add Budget"}
-          </Button>
+        <div className="grid grid-cols-[1fr_min-content] items-end gap-3 border-t border-border/60 bg-card py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
+          <div className="col-span-2 flex gap-2">
+            <Button
+              type="button"
+              variant="quiet"
+              className="flex-1 h-12 rounded-full"
+              onClick={() => handleClose(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1 h-12 rounded-full shadow-primary-action"
+              onClick={handleAdd}
+              disabled={submitting || !parsedAmount || parsedAmount <= 0}
+            >
+              {submitting ? "Adding…" : "Add Budget"}
+            </Button>
+          </div>
         </div>
       </DrawerContent>
     </Drawer>
   );
 };
 
-// â”€â”€ Invite Members Drawer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ————————————————————————————————————————————————————————————————
 
 interface InviteMembersDrawerProps {
   open: boolean;
@@ -351,16 +349,16 @@ const InviteMembersDrawer = ({
     }
   };
 
-  const inputCls = "w-full rounded-2xl border border-input bg-elevated px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring";
-
+  
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
-      <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <DrawerHeader className="shrink-0 px-0 pb-2 text-left">
+      <DrawerContent className="mx-auto grid h-[88dvh] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-0">
+        <DrawerHeader className="px-0 pb-3 pt-4 text-left">
           <DrawerTitle>Invite Members</DrawerTitle>
           <DrawerDescription>Share access to this ledger.</DrawerDescription>
         </DrawerHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+
+        <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
           <div className="space-y-4 pb-3">
             <div className="rounded-2xl border border-border bg-elevated p-4">
               <div className="flex items-start justify-between gap-3">
@@ -374,30 +372,30 @@ const InviteMembersDrawer = ({
                 </div>
                 <Button size="sm" variant="quiet" disabled={generating} onClick={shareLink ? copyLink : generateLink}>
                   {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
-                  {generating ? "Generatingâ€¦" : shareLink ? (copied ? "Copied!" : "Copy") : "Generate"}
+                  {generating ? "Generating…" : shareLink ? (copied ? "Copied!" : "Copy") : "Generate"}
                 </Button>
               </div>
             </div>
             <div className="space-y-2">
               <p className="text-sm font-bold text-foreground">Invite by email</p>
               <div className="flex gap-2">
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@email.com" className={`${inputCls} flex-1`} />
+                <Field type="email" label="" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@email.com" className="flex-1 mt-0" />
                 <Button disabled={sending || !email.trim()} onClick={sendInvite}>
-                  {sending ? "â€¦" : "Send"}
+                  {sending ? "…" : "Send"}
                 </Button>
               </div>
             </div>
           </div>
         </div>
-        <div className="border-t border-border/60 bg-card pt-3">
-          <Button variant="quiet" className="w-full" onClick={() => handleOpenChange(false)}>Close</Button>
+        <div className="border-t border-border/60 bg-card py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
+          <Button variant="quiet" className="w-full h-12 rounded-full" onClick={() => handleOpenChange(false)}>Close</Button>
         </div>
       </DrawerContent>
     </Drawer>
   );
 };
 
-// â”€â”€ Ledger Settings Drawer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ————————————————————————————————————————————————————————————————
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -568,8 +566,8 @@ const SettingsDrawer = ({
             </div>
           </div>
         </div>
-        <div className="border-t border-border/60 bg-card pt-3">
-          <Button variant="quiet" className="w-full" onClick={() => onOpenChange(false)}>Close</Button>
+        <div className="grid grid-cols-[1fr] items-end gap-3 border-t border-border/60 bg-card py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
+          <Button variant="quiet" className="w-full h-12 rounded-full" onClick={() => onOpenChange(false)}>Close</Button>
         </div>
       </DrawerContent>
     </Drawer>

@@ -14,25 +14,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import type { LedgerRow } from "../types";
 import { useLedgerExpenseMutation } from "../hooks";
-import { CategoryPicker } from "@/components/CategoryPicker";
+import { Field, Textarea } from "../components/Fields";
 import { ImageUpload } from "@/components/ImageUpload";
 import { useExpenseCategories } from "@/hooks/useExpenseCategories";
-
-const Field = ({ label, hint, type = "text", ...props }: { label: string; hint?: ReactNode; type?: string } & React.InputHTMLAttributes<HTMLInputElement>) => (
-  <label className="block text-sm font-semibold text-foreground">
-    {label}
-    <input type={type} className="mt-2 block min-h-11 w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring focus:ring-offset-0 disabled:opacity-50" {...props} />
-    {hint && <div className="mt-1.5 text-xs font-medium text-muted-foreground">{hint}</div>}
-  </label>
-);
-
-const Textarea = ({ label, hint, ...props }: { label: string; hint?: ReactNode } & React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
-  <label className="block text-sm font-semibold text-foreground">
-    {label}
-    <textarea className="mt-2 block min-h-24 w-full rounded-3xl border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring focus:ring-offset-0 disabled:opacity-50" {...props} />
-    {hint && <div className="mt-1.5 text-xs font-medium text-muted-foreground">{hint}</div>}
-  </label>
-);
+import { CategoryPicker } from "@/components/CategoryPicker";
 
 interface AddExpenseDrawerProps {
   open: boolean;
@@ -188,8 +173,8 @@ export const AddExpenseDrawer = ({
 
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
-      <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <DrawerHeader className="shrink-0 px-0 pb-2 text-left">
+      <DrawerContent className="mx-auto grid h-[88dvh] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-0">
+        <DrawerHeader className="px-0 pb-3 pt-4 text-left">
           <DrawerTitle>{isEdit ? "Edit Expense" : "Add Expense"}</DrawerTitle>
           <DrawerDescription>
             {isEdit
@@ -198,7 +183,7 @@ export const AddExpenseDrawer = ({
           </DrawerDescription>
         </DrawerHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+        <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
           <form id="ledger-expense-form" onSubmit={handleSubmit} className="space-y-3 pb-3">
             <CategoryPicker
               categories={personalCategories}
@@ -245,32 +230,34 @@ export const AddExpenseDrawer = ({
           </form>
         </div>
 
-        <div className="shrink-0 flex gap-2 border-t border-border/60 bg-card pt-3">
-          <Button
-            type="button"
-            variant="quiet"
-            className="flex-1"
-            onClick={() => handleOpenChange(false)}
-            disabled={submitting}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="ledger-expense-form"
-            className="flex-1 shadow-primary-action"
-            disabled={
-              submitting || !title.trim() || !parsedAmount || parsedAmount <= 0
-            }
-          >
-            {submitting
-              ? isEdit
-                ? "Saving…"
-                : "Submitting…"
-              : isEdit
-              ? "Save Changes"
-              : "Submit Expense"}
-          </Button>
+        <div className="grid grid-cols-[1fr_min-content] items-end gap-3 border-t border-border/60 bg-card py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
+          <div className="col-span-2 flex gap-2">
+            <Button
+              type="button"
+              variant="quiet"
+              className="flex-1 h-12 rounded-full"
+              onClick={() => handleOpenChange(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="ledger-expense-form"
+              className="flex-1 h-12 rounded-full shadow-primary-action"
+              disabled={
+                submitting || !title.trim() || !parsedAmount || parsedAmount <= 0
+              }
+            >
+              {submitting
+                ? isEdit
+                  ? "Saving…"
+                  : "Submitting…"
+                : isEdit
+                ? "Save Changes"
+                : "Submit Expense"}
+            </Button>
+          </div>
         </div>
       </DrawerContent>
     </Drawer>

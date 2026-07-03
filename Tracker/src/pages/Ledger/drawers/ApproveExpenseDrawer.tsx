@@ -192,15 +192,15 @@ export const ApproveExpenseDrawer = ({
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <DrawerHeader className="shrink-0 px-0 pb-2 text-left">
+      <DrawerContent className="mx-auto grid h-[88dvh] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-0">
+        <DrawerHeader className="px-0 pb-3 pt-4 text-left">
           <DrawerTitle>Review Expense</DrawerTitle>
           <DrawerDescription>
             Submitted by {name}
           </DrawerDescription>
         </DrawerHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+        <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
           {/* Tab switcher */}
           {expense.proof_path && (
             <div className="mb-4 grid grid-cols-2 rounded-full bg-elevated p-1">
@@ -383,10 +383,10 @@ export const ApproveExpenseDrawer = ({
           )}
         </div>
 
-        <div className="shrink-0 flex gap-2 border-t border-border/60 bg-card pt-3">
+        <div className="grid grid-cols-[1fr] items-end gap-3 border-t border-border/60 bg-card py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
           <Button
             variant="quiet"
-            className="flex-1"
+            className="w-full h-12 rounded-full"
             onClick={() => onOpenChange(false)}
             disabled={activeAction !== null}
           >

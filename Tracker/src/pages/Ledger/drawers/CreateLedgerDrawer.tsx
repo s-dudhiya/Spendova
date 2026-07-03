@@ -15,61 +15,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { LedgerType, BudgetType } from "../types";
+import { Field, Textarea, SelectField } from "../components/Fields";
 import { logLedgerActivity } from "../hooks";
-
-// ── Primitives ───────────────────────────────────────────────
-
-const inputCls =
-  "w-full rounded-2xl border border-input bg-elevated px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50";
-
-interface RadioGroupProps<T extends string> {
-  id: string;
-  options: Array<{ value: T; label: string; description: string }>;
-  value: T;
-  onChange: (v: T) => void;
-}
-
-const RadioGroup = <T extends string>({
-  id,
-  options,
-  value,
-  onChange,
-}: RadioGroupProps<T>) => (
-  <div className="space-y-2" id={id}>
-    {options.map((opt) => (
-      <button
-        key={opt.value}
-        type="button"
-        onClick={() => onChange(opt.value)}
-        className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
-          value === opt.value
-            ? "border-primary bg-primary/10"
-            : "border-border bg-elevated"
-        }`}
-      >
-        <span
-          className={`grid size-5 shrink-0 place-items-center rounded-full border-2 ${
-            value === opt.value
-              ? "border-primary bg-primary"
-              : "border-muted-foreground/40 bg-transparent"
-          }`}
-        >
-          {value === opt.value && (
-            <span className="size-2 rounded-full bg-primary-foreground" />
-          )}
-        </span>
-        <span>
-          <span className="block text-sm font-bold text-foreground">
-            {opt.label}
-          </span>
-          <span className="mt-0.5 block text-xs text-muted-foreground">
-            {opt.description}
-          </span>
-        </span>
-      </button>
-    ))}
-  </div>
-);
 
 // ── Main component ───────────────────────────────────────────
 
@@ -292,8 +239,8 @@ export const CreateLedgerDrawer = ({
 
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
-      <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <DrawerHeader className="shrink-0 px-0 pb-2 text-left">
+      <DrawerContent className="mx-auto grid h-[88dvh] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-0">
+        <DrawerHeader className="px-0 pb-3 pt-4 text-left">
           <DrawerTitle>
             {step === "form" ? "Create Ledger" : "Invite Members"}
           </DrawerTitle>
@@ -304,104 +251,73 @@ export const CreateLedgerDrawer = ({
           </DrawerDescription>
         </DrawerHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+        <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
           {step === "form" ? (
             <div className="space-y-5 pb-3">
-              {/* Name */}
-              <div className="space-y-1.5">
-                <label htmlFor="cl-name" className="text-sm font-bold text-foreground">
-                  Ledger Name *
-                </label>
-                <input
-                  id="cl-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Family Budget, Office Petty Cash"
-                  className={inputCls}
-                  maxLength={100}
-                />
-              </div>
+              <Field
+                id="cl-name"
+                label="Ledger Name *"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Family Budget, Office Petty Cash"
+                maxLength={100}
+              />
 
-              {/* Description */}
-              <div className="space-y-1.5">
-                <label htmlFor="cl-desc" className="text-sm font-bold text-foreground">
-                  Description <span className="text-muted-foreground">(optional)</span>
-                </label>
-                <textarea
-                  id="cl-desc"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="What is this ledger for?"
-                  rows={2}
-                  className={`${inputCls} resize-none`}
-                  maxLength={500}
-                />
-              </div>
+              <Textarea
+                id="cl-desc"
+                label="Description (optional)"
+                hint="What is this ledger for?"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="What is this ledger for?"
+                rows={2}
+                maxLength={500}
+              />
 
-              {/* Ledger Type */}
-              <div className="space-y-2">
-                <p className="text-sm font-bold text-foreground">Ledger Type *</p>
-                <RadioGroup<LedgerType>
-                  id="cl-type"
-                  value={ledgerType}
-                  onChange={setLedgerType}
-                  options={[
-                    {
-                      value: "personal",
-                      label: "Personal",
-                      description: "Only you manage this budget.",
-                    },
-                    {
-                      value: "shared",
-                      label: "Shared",
-                      description:
-                        "Invite members to submit expenses against this budget.",
-                    },
-                  ]}
-                />
-              </div>
+              <SelectField
+                label="Ledger Type *"
+                value={ledgerType}
+                onChange={(v) => setLedgerType(v as LedgerType)}
+                options={[
+                  {
+                    value: "personal",
+                    label: "Personal (Only you manage this budget)",
+                  },
+                  {
+                    value: "shared",
+                    label: "Shared (Invite members to submit expenses)",
+                  },
+                ]}
+              />
 
-              {/* Budget Type */}
-              <div className="space-y-2">
-                <p className="text-sm font-bold text-foreground">Budget Type *</p>
-                <RadioGroup<BudgetType>
-                  id="cl-budget-type"
-                  value={budgetType}
-                  onChange={setBudgetType}
-                  options={[
-                    {
-                      value: "one_time",
-                      label: "One-Time",
-                      description:
-                        "A fixed budget with no monthly reset. Good for events and trips.",
-                    },
-                    {
-                      value: "monthly",
-                      label: "Monthly",
-                      description:
-                        "Budget resets every month. Remaining amount rolls over to savings.",
-                    },
-                  ]}
-                />
-              </div>
+              <SelectField
+                label="Budget Type *"
+                value={budgetType}
+                onChange={(v) => setBudgetType(v as BudgetType)}
+                options={[
+                  {
+                    value: "one_time",
+                    label: "One-Time (Fixed budget)",
+                  },
+                  {
+                    value: "monthly",
+                    label: "Monthly (Resets every month)",
+                  },
+                ]}
+              />
 
               {/* Initial Budget */}
-              <div className="space-y-1.5">
-                <label htmlFor="cl-budget" className="text-sm font-bold text-foreground">
-                  {budgetType === "monthly" ? "Budget for this Month (₹) *" : "Total Budget (₹) *"}
-                </label>
-                <input
-                  id="cl-budget"
-                  type="number"
-                  inputMode="decimal"
-                  min="1"
-                  step="1"
-                  value={initialBudget}
-                  onChange={(e) => setInitialBudget(e.target.value)}
-                  placeholder="e.g. 20000"
-                  className={inputCls}
-                />
-              </div>
+              <Field
+                id="cl-budget"
+                type="number"
+                inputMode="decimal"
+                min="1"
+                step="1"
+                label={budgetType === "monthly" ? "Budget for this Month (₹) *" : "Total Budget (₹) *"}
+                value={initialBudget}
+                onChange={(e) => setInitialBudget(e.target.value)}
+                placeholder="e.g. 20000"
+              />
             </div>
           ) : (
             // Invite step
@@ -451,12 +367,13 @@ export const CreateLedgerDrawer = ({
               <div className="space-y-2">
                 <p className="text-sm font-bold text-foreground">Invite by email</p>
                 <div className="flex gap-2">
-                  <input
+                  <Field
                     type="email"
+                    label=""
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
                     placeholder="member@email.com"
-                    className={`${inputCls} flex-1`}
+                    className="flex-1 mt-0"
                   />
                   <Button
                     disabled={sendingInvite || !inviteEmail.trim()}
@@ -471,30 +388,28 @@ export const CreateLedgerDrawer = ({
         </div>
 
         {/* Footer */}
-        <div className="shrink-0 flex gap-2 border-t border-border/60 bg-card pt-3">
+        <div className="grid grid-cols-[1fr_min-content] items-end gap-3 border-t border-border/60 bg-card py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
           {step === "form" ? (
-            <>
+            <div className="col-span-2 flex gap-2">
               <Button
                 variant="quiet"
-                className="flex-1"
+                className="flex-1 h-12 rounded-full"
                 onClick={() => handleOpenChange(false)}
                 disabled={submitting}
               >
                 Cancel
               </Button>
               <Button
-                className="flex-1 shadow-primary-action"
+                className="flex-1 h-12 rounded-full shadow-primary-action"
                 onClick={handleCreate}
-                disabled={
-                  submitting || !name.trim() || !parsedBudget || parsedBudget <= 0
-                }
+                disabled={submitting || !name.trim() || !initialBudget.trim()}
               >
-                {submitting ? "Creating…" : "Create Ledger"}
+                {submitting ? "Creating…" : "Create"}
               </Button>
-            </>
+            </div>
           ) : (
             <Button
-              className="flex-1 shadow-primary-action"
+              className="col-span-2 h-12 rounded-full shadow-primary-action"
               onClick={handleDone}
             >
               Done
