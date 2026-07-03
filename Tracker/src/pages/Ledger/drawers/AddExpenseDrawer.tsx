@@ -76,6 +76,34 @@ export const AddExpenseDrawer = ({
   const [submitting, setSubmitting] = useState(false);
   const [autoNameCategoryId, setAutoNameCategoryId] = useState<string | null>(null);
 
+  const displayCategories = isShared
+    ? sharedHook.categories
+    : personalHook.categories.filter((c) => c.type === "personal");
+
+  const handleCreateCategory = (name: string) => {
+    if (isShared) {
+      return sharedHook.createCategory(name);
+    } else {
+      return personalHook.createCategory("personal", name, null);
+    }
+  };
+
+  const handleRenameCategory = (id: string, name: string) => {
+    if (isShared) {
+      return sharedHook.renameCategory(id, name);
+    } else {
+      return personalHook.renameCategory(id, name);
+    }
+  };
+
+  const handleDeleteCategory = (id: string) => {
+    if (isShared) {
+      return sharedHook.deleteCategory(id);
+    } else {
+      return personalHook.deleteCategory(id);
+    }
+  };
+
   const handleOpenChange = (o: boolean) => {
     if (!o) {
       setTitle(editExpense?.title ?? "");
@@ -96,7 +124,7 @@ export const AddExpenseDrawer = ({
   };
 
   const handleCategoryChange = (value: string) => {
-    const picked = categories.find((c) => c.id === value);
+    const picked = displayCategories.find((c) => c.id === value);
     const shouldAutoFillName = !title.trim() || Boolean(autoNameCategoryId);
 
     setCategoryId(value);
@@ -175,35 +203,6 @@ export const AddExpenseDrawer = ({
       setSubmitting(false);
     }
   };
-
-  const displayCategories = isShared
-    ? sharedHook.categories
-    : personalHook.categories.filter((c) => c.type === "personal");
-
-  const handleCreateCategory = (name: string) => {
-    if (isShared) {
-      return sharedHook.createCategory(name);
-    } else {
-      return personalHook.createCategory("personal", name, null);
-    }
-  };
-
-  const handleRenameCategory = (id: string, name: string) => {
-    if (isShared) {
-      return sharedHook.renameCategory(id, name);
-    } else {
-      return personalHook.renameCategory(id, name);
-    }
-  };
-
-  const handleDeleteCategory = (id: string) => {
-    if (isShared) {
-      return sharedHook.deleteCategory(id);
-    } else {
-      return personalHook.deleteCategory(id);
-    }
-  };
-
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
       <DrawerContent className="mx-auto grid h-[88dvh] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-0">
@@ -219,7 +218,7 @@ export const AddExpenseDrawer = ({
         <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
           <form id="ledger-expense-form" onSubmit={handleSubmit} className="space-y-3 pb-3">
             <CategoryPicker
-              categories={displayCategories as any}
+              categories={displayCategories}
               value={categoryId}
               onChange={handleCategoryChange}
               onCreate={handleCreateCategory}

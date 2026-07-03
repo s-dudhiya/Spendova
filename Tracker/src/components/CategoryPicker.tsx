@@ -7,6 +7,11 @@ import { useToast } from "@/components/ui/use-toast";
 import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import type { ExpenseCategoryRow } from "@/pages/Index";
 
+export interface PickerCategory {
+  id: string;
+  name: string;
+}
+
 const CREATE_CATEGORY_ACTION = "___create_category___";
 const MANAGE_CATEGORIES_ACTION = "___manage_categories___";
 const UNCATEGORIZED_CATEGORY = "___uncategorized___";
@@ -19,10 +24,10 @@ export const CategoryPicker = ({
   onRename,
   onDelete,
 }: {
-  categories: ExpenseCategoryRow[];
+  categories: PickerCategory[];
   value: string;
   onChange: (value: string) => void;
-  onCreate: (name: string) => Promise<ExpenseCategoryRow>;
+  onCreate: (name: string) => Promise<PickerCategory>;
   onRename: (categoryId: string, name: string) => Promise<void>;
   onDelete: (categoryId: string) => Promise<void>;
 }) => {
