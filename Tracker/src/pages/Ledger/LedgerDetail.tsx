@@ -40,7 +40,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
-import type { LedgerRow, LedgerExpenseRow, LedgerRole } from "./types";
+import type { LedgerRow, LedgerExpenseRow, LedgerRole, LedgerActivityRow } from "./types";
 import { MONTH_NAMES } from "./types";
 import { BudgetCards } from "./components/BudgetCards";
 import { ExpenseCard } from "./components/ExpenseCard";
@@ -783,6 +783,8 @@ export const LedgerDetail = ({
     } else if (isOwn && isPending) {
       setEditExpense(expense);
     }
+  };
+
   const handleDeleteExpense = async (expense: LedgerExpenseRow) => {
     const canDelete =
       isOwnerOrAdmin || (expense.user_id === currentUserId && expense.status === "pending");
@@ -812,82 +814,61 @@ export const LedgerDetail = ({
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 pt-4 pb-32">
       {/* ── Header ── */}
-      <header className="flex flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={onBack}
-            className="flex items-center gap-1.5 text-sm font-bold text-primary"
-          >
-            <ArrowLeft className="size-4" />
-            Back
-          </button>
+      <header className="flex items-center gap-2 sm:gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="grid size-9 shrink-0 place-items-center rounded-full text-primary hover:bg-primary/10"
+        >
+          <ArrowLeft className="size-4" />
+        </button>
+        
+        <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-elevated text-primary shadow-soft">
+          <PiggyBank className="size-6" />
+        </div>
+
+        <div className="min-w-0 flex-1 pr-1">
+          <h1 className="truncate text-xl font-bold text-foreground">
+            {ledger.name}
+          </h1>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+              {ledger.ledger_type === "shared" ? `${invites.length + 1} MEMBERS` : "PERSONAL"}
+            </p>
+            <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-bold uppercase text-success">
+              {ledger.budget_type === "monthly" ? "Monthly" : "One-Time"}
+            </span>
+            {ledger.is_archived && (
+              <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-bold uppercase text-warning">
+                Archived
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
-            className="grid size-8 place-items-center rounded-full text-muted-foreground transition hover:bg-elevated hover:text-foreground"
+            className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10"
             aria-label="Ledger settings"
           >
             <Settings className="size-4" />
           </button>
         </div>
-
-        <div className="mt-3">
-          <h2 className="text-2xl font-black tracking-tight text-foreground">
-            {ledger.name}
-          </h2>
-          {ledger.description && (
-            <p className="mt-1 text-sm text-muted-foreground">{ledger.description}</p>
-          )}
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-            <span className="capitalize">{ledger.ledger_type}</span>
-            <span>·</span>
-            <span className="capitalize">{ledger.budget_type === "monthly" ? "Monthly" : "One-Time"}</span>
-            <span>·</span>
-            <span className="capitalize">{userRole}</span>
-            {ledger.is_archived && (
-              <>
-                <span>·</span>
-                <span className="text-warning">Archived</span>
-              </>
-            )}
-          </div>
-        </div>
       </header>
 
-      {/* ── Budget Progress ── */}
-      {!ledger.is_archived && (
-        <section>
-          <div className="rounded-2xl bg-card p-4 shadow-soft">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Budget Used</span>
-              <span className="text-sm font-black text-foreground">
-                {summary.totalBudget > 0 ? Math.round((summary.totalSpent / summary.totalBudget) * 100) : 0}%
-              </span>
-            </div>
-            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-elevated">
-              <div 
-                className={`h-full rounded-full transition-all duration-500 ${
-                  summary.totalBudget > 0 && summary.totalSpent / summary.totalBudget > 0.95 ? 'bg-destructive' 
-                  : summary.totalBudget > 0 && summary.totalSpent / summary.totalBudget > 0.8 ? 'bg-warning' 
-                  : 'bg-success'
-                }`}
-                style={{ width: `${Math.min(summary.totalBudget > 0 ? (summary.totalSpent / summary.totalBudget) * 100 : 0, 100)}%` }}
-              />
-            </div>
-          </div>
-        </section>
-      )}
+
 
       {/* ── Budget Summary ── */}
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-base font-black tracking-tight text-foreground">
+          <h2 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
             Budget Overview
             {isMonthly && monthLabel && (
-              <span className="ml-2 text-sm font-semibold text-muted-foreground">
+              <span className="ml-2">
                 · {monthLabel}
               </span>
             )}
@@ -897,7 +878,7 @@ export const LedgerDetail = ({
               <button
                 type="button"
                 onClick={() => setHistoryOpen(true)}
-                className="flex items-center gap-1 text-xs font-bold text-primary transition-colors hover:text-primary/80"
+                className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-primary transition-colors hover:text-primary/80"
               >
                 <History className="size-3.5" />
                 History
@@ -915,59 +896,47 @@ export const LedgerDetail = ({
 
       {/* ── Quick Actions ── */}
       {!ledger.is_archived && (
-        <section className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-3">
+        <section className={`grid grid-cols-1 gap-3 ${isOwnerOrAdmin ? 'min-[420px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''}`}>
+          <Button
+            className="h-[52px] w-full rounded-2xl shadow-primary-action"
+            onClick={() => setAddExpenseOpen(true)}
+          >
+            <Plus className="mr-1 size-4" />
+            Add Expense
+          </Button>
+          {isOwnerOrAdmin && (
             <Button
-              className="h-12 rounded-[1.25rem] shadow-primary-action"
-              onClick={() => setAddExpenseOpen(true)}
+              variant="outline"
+              className="h-[52px] w-full rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary"
+              onClick={() => setAddBudgetOpen(true)}
             >
-              <Plus className="size-4 mr-1" />
-              Expense
-            </Button>
-            {isOwnerOrAdmin && (
-              <Button
-                variant="quiet"
-                className="h-12 rounded-[1.25rem] bg-elevated hover:bg-elevated/70"
-                onClick={() => setAddBudgetOpen(true)}
-              >
-                <Plus className="size-4 mr-1" />
-                Budget
-              </Button>
-            )}
-            {!isOwnerOrAdmin && ledger.ledger_type === "shared" && (
-              <Button
-                variant="quiet"
-                className="h-12 rounded-[1.25rem] bg-elevated hover:bg-elevated/70"
-                onClick={() => setInviteOpen(true)}
-              >
-                <UserPlus className="size-4 mr-1" />
-                Invite
-              </Button>
-            )}
-          </div>
-          
-          {isOwnerOrAdmin && ledger.ledger_type === "shared" && (
-            <Button
-              variant="quiet"
-              className="relative h-12 w-full rounded-[1.25rem] bg-elevated hover:bg-elevated/70"
-              onClick={() => setInviteOpen(true)}
-            >
-              <UserPlus className="size-4 mr-2" />
-              Invite Members
-              {invites.length > 0 && (
-                <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-black leading-none text-primary-foreground shadow-primary-action ring-2 ring-card">
-                  {invites.length}
-                </span>
-              )}
+              <Plus className="mr-1 size-4" />
+              Add Budget
             </Button>
           )}
         </section>
       )}
 
+      {!ledger.is_archived && isOwnerOrAdmin && ledger.ledger_type === "shared" && (
+        <Button
+          variant="quiet"
+          className="relative h-11 w-full rounded-2xl text-primary hover:bg-primary/10"
+          onClick={() => setInviteOpen(true)}
+        >
+          <UserPlus className="mr-2 size-4" />
+          Invite Members
+          {invites.length > 0 && (
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 grid min-h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-black leading-none text-primary-foreground shadow-primary-action">
+              {invites.length}
+            </span>
+          )}
+        </Button>
+      )}
+
       {/* ── Activity Timeline ── */}
       {activities && activities.length > 0 && (
-        <section>
-          <h2 className="mb-3 text-base font-black tracking-tight text-foreground">
+        <section className="pt-2">
+          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
             Activity
           </h2>
           <div className="space-y-3">
@@ -979,12 +948,12 @@ export const LedgerDetail = ({
       )}
 
       {/* ── Expense Timeline ── */}
-      <section className="pb-20">
+      <section className="pt-2">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-base font-black tracking-tight text-foreground">
-            Expenses
+          <h2 className="text-[11px] font-bold uppercase tracking-wide text-foreground">
+            Expense History
             {pendingCount > 0 && isOwnerOrAdmin && (
-              <span className="ml-2 rounded-full bg-warning/15 px-2.5 py-1 text-xs font-semibold text-warning">
+              <span className="ml-2 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-bold text-warning">
                 {pendingCount} pending
               </span>
             )}

@@ -13,16 +13,18 @@ interface SummaryCardProps {
 }
 
 const SummaryCard = ({ label, value, sub, valueClass = "text-foreground" }: SummaryCardProps) => (
-  <div className="rounded-2xl bg-elevated p-4 shadow-soft">
-    <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+  <div className="flex min-h-[104px] flex-col justify-between rounded-[20px] border border-border/70 bg-card p-4">
+    <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
       {label}
     </p>
-    <p className={`mt-2 text-lg font-black leading-tight ${valueClass}`}>
-      {value}
-    </p>
-    {sub && (
-      <p className="mt-1 text-xs font-medium text-muted-foreground">{sub}</p>
-    )}
+    <div>
+      <p className={`spendova-money-value mt-2 text-xl font-black sm:text-2xl ${valueClass}`}>
+        {value}
+      </p>
+      {sub && (
+        <p className="mt-1 text-xs font-medium text-muted-foreground">{sub}</p>
+      )}
+    </div>
   </div>
 );
 
@@ -50,61 +52,67 @@ export const BudgetCards = ({
   } = summary;
 
   const hasPending = pendingExpenses + approvedExpenses > 0;
+  
+  let progress = 0;
+  if (totalBudget > 0) {
+    progress = Math.min(Math.round(((paidExpenses + pendingExpenses + approvedExpenses) / totalBudget) * 100), 100);
+  }
 
   return (
-    <div className="space-y-3">
-      {/* Row 1: Total Budget + Available Budget */}
-      <div className="grid grid-cols-2 gap-3">
-        <SummaryCard
-          label="Total Budget"
-          value={money(totalBudget)}
-          sub={isMonthly && monthLabel ? monthLabel : undefined}
-        />
-        <SummaryCard
-          label="Available"
-          value={money(availableBudget)}
-          valueClass={
-            availableBudget <= 0
-              ? "text-destructive"
-              : availableBudget < totalBudget * 0.2
-              ? "text-warning"
-              : "text-success"
-          }
-        />
+    <div className="flex w-full flex-col gap-4 rounded-[20px] bg-card p-4 shadow-soft border border-border/70">
+      
+      {/* Primary Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Budget</span>
+          <span className="spendova-money-value text-xl font-black text-foreground">{money(totalBudget)}</span>
+        </div>
+        <div className="flex flex-col gap-1 text-center">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Spent</span>
+          <span className="spendova-money-value text-xl font-black text-foreground">{money(paidExpenses)}</span>
+        </div>
+        <div className="flex flex-col gap-1 text-right">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Available</span>
+          <span className={`spendova-money-value text-xl font-black ${availableBudget <= 0 ? "text-destructive" : availableBudget < totalBudget * 0.2 ? "text-warning" : "text-success"}`}>
+            {money(availableBudget)}
+          </span>
+        </div>
       </div>
 
-      {/* Row 2: Secondary Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <SummaryCard
-          label="Spent"
-          value={money(paidExpenses)}
-          valueClass={paidExpenses > 0 ? "text-foreground" : "text-muted-foreground"}
-        />
-        <SummaryCard
-          label="Pending"
-          value={money(pendingExpenses + approvedExpenses)}
-          valueClass={(pendingExpenses + approvedExpenses) > 0 ? "text-warning" : "text-muted-foreground"}
-        />
-        <SummaryCard
-          label="Expected"
-          value={money(expectedAvailable)}
-          valueClass={
-            expectedAvailable <= 0
-              ? "text-destructive"
-              : "text-muted-foreground"
-          }
-        />
+      {/* Progress Bar */}
+      <div className="flex items-center gap-3">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-elevated">
+          <div 
+            className={`h-full rounded-full transition-all duration-500 ${
+              progress > 95 ? 'bg-destructive' : progress > 80 ? 'bg-warning' : 'bg-primary'
+            }`} 
+            style={{ width: `${progress}%` }} 
+          />
+        </div>
+        <span className="text-xs font-bold text-muted-foreground">{progress}%</span>
       </div>
 
-      {/* Row 4: Savings (monthly only) */}
-      {budgetType === "monthly" && (
-        <SummaryCard
-          label="Total Savings"
-          value={money(totalSavings)}
-          valueClass={totalSavings > 0 ? "text-success" : "text-muted-foreground"}
-          sub="Carried over from previous months"
-        />
-      )}
+      {/* Extra Info (Pending, Expected, Savings) */}
+      <div className={`grid gap-2 border-t border-border/60 pt-3 ${budgetType === "monthly" ? "grid-cols-3" : "grid-cols-2"}`}>
+        <div className="flex flex-col gap-0.5 text-left">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Pending</span>
+          <span className={`spendova-money-value text-sm font-bold ${hasPending ? "text-warning" : "text-muted-foreground"}`}>
+            {money(pendingExpenses + approvedExpenses)}
+          </span>
+        </div>
+        <div className={`flex flex-col gap-0.5 ${budgetType === "monthly" ? "text-center" : "text-right"}`}>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Expected</span>
+          <span className={`spendova-money-value text-sm font-bold ${expectedAvailable <= 0 ? "text-destructive" : expectedAvailable < totalBudget * 0.2 && hasPending ? "text-warning" : "text-muted-foreground"}`}>
+            {money(expectedAvailable)}
+          </span>
+        </div>
+        {budgetType === "monthly" && (
+          <div className="flex flex-col gap-0.5 text-right">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Total Savings</span>
+            <span className={`spendova-money-value text-sm font-bold ${totalSavings > 0 ? "text-success" : "text-muted-foreground"}`}>{money(totalSavings)}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
