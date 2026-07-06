@@ -111,7 +111,7 @@ export const MonthlyHistoryDrawer = ({
       <div className="shrink-0 border-t border-border/60 bg-card pt-3">
         <Button
           variant="quiet"
-          className="w-full"
+          className="w-full h-12 rounded-full"
           onClick={() => onOpenChange(false)}
         >
           Close

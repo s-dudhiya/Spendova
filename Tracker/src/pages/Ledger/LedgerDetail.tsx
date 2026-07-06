@@ -807,14 +807,14 @@ export const LedgerDetail = ({
       {/* â”€â”€ Budget Summary â”€â”€ */}
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-base font-bold tracking-tight text-foreground">
+          <h2 className="text-base font-black tracking-tight text-foreground">
             Budget Overview
             {isMonthly && monthLabel && (
               <span className="ml-2 text-sm font-semibold text-muted-foreground">
                 Â· {monthLabel}
               </span>
             )}
-          </h3>
+          </h2>
           <div className="flex items-center gap-2">
             {isMonthly && monthlyClosures.length > 0 && (
               <button
@@ -841,7 +841,7 @@ export const LedgerDetail = ({
         <section className="flex flex-col gap-3">
           <div className={`grid gap-3 ${isOwnerOrAdmin ? "grid-cols-2" : "grid-cols-1"}`}>
             <Button
-              className="h-11 shadow-primary-action"
+              className="h-12 shadow-primary-action"
               onClick={() => setAddExpenseOpen(true)}
             >
               <Plus className="size-4" />
@@ -849,7 +849,7 @@ export const LedgerDetail = ({
             </Button>
             {isOwnerOrAdmin && (
               <Button
-                className="h-11 shadow-primary-action"
+                className="h-12 shadow-primary-action"
                 onClick={() => setAddBudgetOpen(true)}
               >
                 <Plus className="size-4" />
@@ -862,7 +862,7 @@ export const LedgerDetail = ({
             ledger.ledger_type === "shared" ? (
               <Button
                 variant="quiet"
-                className="relative h-11 w-full"
+                className="relative h-12 w-full"
                 onClick={() => setInviteOpen(true)}
               >
                 <UserPlus className="size-4" />
@@ -876,7 +876,7 @@ export const LedgerDetail = ({
             ) : isMonthly && monthlyClosures.length > 0 ? (
               <Button
                 variant="quiet"
-                className="h-11 w-full"
+                className="h-12 w-full"
                 onClick={() => setHistoryOpen(true)}
               >
                 <History className="size-4" />
@@ -890,7 +890,7 @@ export const LedgerDetail = ({
       {/* â”€â”€ Expense Timeline â”€â”€ */}
       <section className="pb-20">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-base font-bold tracking-tight text-foreground">
+          <h2 className="text-base font-black tracking-tight text-foreground">
             Expenses
             {pendingCount > 0 && isOwnerOrAdmin && (
               <span className="ml-2 rounded-full bg-warning/15 px-2.5 py-1 text-xs font-semibold text-warning">

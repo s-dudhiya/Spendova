@@ -45,59 +45,51 @@ const LedgerCard = ({ ledger, summary, onClick }: LedgerCardProps) => {
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full flex-col gap-4 rounded-[1.25rem] bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel"
+      className="flex w-full flex-col gap-4 rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel"
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-12 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
-            {ledger.ledger_type === "shared" ? <Home className="size-5" /> : <Briefcase className="size-5" />}
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-elevated text-primary">
+            {ledger.ledger_type === "shared" ? <Home className="size-4" /> : <Briefcase className="size-4" />}
           </span>
           <div className="min-w-0">
-            <h3 className="truncate text-base font-bold text-foreground">{ledger.name}</h3>
-            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+            <h3 className="truncate font-bold text-foreground">{ledger.name}</h3>
+            <p className="mt-1 truncate text-sm text-muted-foreground">
               <span className="capitalize">{ledger.ledger_type}</span>
-              <span>•</span>
+              <span> · </span>
               <span className="capitalize">{ledger.budget_type === "monthly" ? "Monthly" : "One-Time"}</span>
               {ledger.ledger_type === "shared" && (
                 <>
-                  <span>•</span>
+                  <span> · </span>
                   <span>{memberCount} members</span>
                 </>
               )}
-            </div>
+            </p>
           </div>
         </div>
-        <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 border-t border-border/60 pt-3">
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Budget</span>
+          <span className="text-sm font-black text-foreground">{money(summary?.totalBudget ?? 0)}</span>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Spent</span>
+          <span className="text-sm font-black text-foreground">{money((summary?.paidExpenses ?? 0) + (summary?.approvedExpenses ?? 0))}</span>
+        </div>
+        <div className="flex flex-col gap-1 text-right">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Available</span>
+          <span className="text-sm font-black text-emerald-500">{money(summary?.expectedAvailable ?? 0)}</span>
+        </div>
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-elevated">
           <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
         </div>
-        <span className="text-xs font-bold text-muted-foreground">{progress}%</span>
-      </div>
-
-      <div className="grid grid-cols-5 gap-2">
-        <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-muted-foreground">Budget</span>
-          <span className="text-xs font-bold text-foreground">{money(summary?.totalBudget ?? 0)}</span>
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-muted-foreground">Spent</span>
-          <span className="text-xs font-bold text-foreground">{money((summary?.paidExpenses ?? 0) + (summary?.approvedExpenses ?? 0))}</span>
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-muted-foreground">Remaining</span>
-          <span className="text-xs font-bold text-emerald-500">{money(summary?.expectedAvailable ?? 0)}</span>
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-muted-foreground">Savings</span>
-          <span className="text-xs font-bold text-primary">{money(summary?.totalSavings ?? 0)}</span>
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold text-muted-foreground">Pending</span>
-          <span className="text-xs font-bold text-orange-500">{money(summary?.pendingExpenses ?? 0)}</span>
-        </div>
+        <span className="text-[10px] font-bold text-muted-foreground">{progress}%</span>
       </div>
     </button>
   );
@@ -106,9 +98,9 @@ const LedgerCard = ({ ledger, summary, onClick }: LedgerCardProps) => {
 // ── Activity Row ───────────────────────────────────────────────
 
 const ActivityRow = ({ activity, ledger }: { activity: LedgerActivityRow; ledger?: LedgerRow }) => {
-  let icon = <PlusCircle className="size-5" />;
-  let iconBg = "bg-primary/10 text-primary";
-  let amountClass = "text-primary";
+  let icon = <PlusCircle className="size-4" />;
+  let iconBg = "bg-primary/15 text-primary";
+  let amountClass = "text-foreground";
   let amountPrefix = "+";
   let amountStr = "";
 
@@ -116,14 +108,14 @@ const ActivityRow = ({ activity, ledger }: { activity: LedgerActivityRow; ledger
   const isRollover = activity.action === "monthly_rollover";
   
   if (isExpense) {
-    icon = <ShoppingCart className="size-5" />;
-    iconBg = "bg-emerald-500/10 text-emerald-500";
+    icon = <ShoppingCart className="size-4" />;
+    iconBg = "bg-primary/15 text-primary";
     amountClass = "text-foreground";
     amountPrefix = "";
   } else if (isRollover) {
-    icon = <RefreshCw className="size-5" />;
-    iconBg = "bg-primary/10 text-primary";
-    amountClass = "text-primary";
+    icon = <RefreshCw className="size-4" />;
+    iconBg = "bg-primary/15 text-primary";
+    amountClass = "text-foreground";
   }
 
   if (activity.metadata && typeof activity.metadata.amount === "number") {
@@ -140,21 +132,21 @@ const ActivityRow = ({ activity, ledger }: { activity: LedgerActivityRow; ledger
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl bg-card p-3 shadow-soft transition-shadow hover:shadow-panel">
+    <div className="flex items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-soft">
       <div className="flex min-w-0 items-center gap-3">
         <span className={`grid size-10 shrink-0 place-items-center rounded-full ${iconBg}`}>
           {icon}
         </span>
         <div className="min-w-0">
-          <h4 className="truncate text-sm font-bold text-foreground">{title}</h4>
-          <p className="truncate text-xs font-semibold text-muted-foreground">{ledger?.name || "Unknown Ledger"}</p>
+          <h3 className="truncate font-bold text-foreground">{title}</h3>
+          <p className="mt-1 truncate text-sm text-muted-foreground">{ledger?.name || "Unknown Ledger"}</p>
         </div>
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-0.5">
-        <span className={`text-sm font-black ${amountClass}`}>
+      <div className="shrink-0 text-right">
+        <p className={`font-black ${amountClass}`}>
           {amountPrefix}{amountStr}
-        </span>
-        <span className="text-[10px] font-bold text-muted-foreground">{timeAgo(activity.created_at)}</span>
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">{timeAgo(activity.created_at)}</p>
       </div>
     </div>
   );
@@ -171,7 +163,7 @@ const LedgerEmptyState = ({ onCreate }: { onCreate: () => void }) => (
     <p className="mt-1 text-sm font-medium text-muted-foreground">
       Create a ledger to start tracking budgets and expenses.
     </p>
-    <Button className="mt-4 shadow-primary-action" onClick={onCreate}>
+    <Button variant="quiet" className="mt-4" onClick={onCreate}>
       <Plus className="size-4" />
       Create your first ledger
     </Button>
@@ -223,68 +215,56 @@ export const BudgetLedgerView = ({
   return (
     <main className="space-y-6 pb-20">
       {/* ── Global Stats Row ── */}
-      <section className="flex w-full items-stretch justify-between rounded-[1.25rem] bg-card p-4 shadow-panel">
-        <div className="flex min-w-0 flex-1 flex-col gap-1 pr-2">
-          <span className="truncate text-[11px] font-bold text-muted-foreground">Total Budget</span>
-          <span className="truncate text-base font-black text-foreground">{money(globalSummary.totalBudget)}</span>
-          <Wallet className="mt-auto size-4 shrink-0 text-primary" />
+      <section className="rounded-[1.4rem] bg-card p-5 shadow-panel sm:p-6">
+        <div>
+          <div className="flex items-start justify-between gap-3">
+            <p className="pt-0.5 text-sm font-semibold text-muted-foreground">Total Budget</p>
+          </div>
+          <p className="mt-2 text-4xl font-black leading-tight tracking-tight text-foreground sm:text-5xl">{money(globalSummary.totalBudget)}</p>
+          <p className="mt-1 text-sm font-medium leading-5 text-muted-foreground">Across all active ledgers</p>
         </div>
-        <div className="w-px shrink-0 bg-border" />
-        <div className="flex min-w-0 flex-1 flex-col gap-1 px-3">
-          <span className="truncate text-[11px] font-bold text-muted-foreground">Available</span>
-          <span className="truncate text-base font-black text-emerald-500">{money(globalSummary.expectedAvailable)}</span>
-          <TrendingUp className="mt-auto size-4 shrink-0 text-muted-foreground" />
-        </div>
-        <div className="w-px shrink-0 bg-border" />
-        <div className="flex min-w-0 flex-1 flex-col gap-1 px-3">
-          <span className="truncate text-[11px] font-bold text-muted-foreground">Pending</span>
-          <span className="truncate text-base font-black text-orange-500">{money(globalSummary.pendingExpenses)}</span>
-          <Clock className="mt-auto size-4 shrink-0 text-muted-foreground" />
-        </div>
-        <div className="w-px shrink-0 bg-border" />
-        <div className="flex min-w-0 flex-1 flex-col gap-1 pl-2">
-          <span className="truncate text-[11px] font-bold text-muted-foreground">Savings</span>
-          <span className="truncate text-base font-black text-primary">{money(globalSummary.totalSavings)}</span>
-          <Cloud className="mt-auto size-4 shrink-0 text-muted-foreground" />
+        <div className="mt-7 flex w-full items-start justify-between gap-4">
+          <div className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
+            <span className="m-0 inline-flex max-w-full flex-col items-start p-0">
+              <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">Available</span>
+              <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-emerald-500 sm:text-lg">{money(globalSummary.expectedAvailable)}</span>
+            </span>
+          </div>
+          <div className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
+            <span className="m-0 inline-flex max-w-full flex-col items-end p-0">
+              <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">Savings</span>
+              <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-primary sm:text-lg">{money(globalSummary.totalSavings)}</span>
+            </span>
+          </div>
         </div>
       </section>
 
       {/* ── Quick actions ── */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-black text-foreground">Quick actions</h2>
-          <button type="button" className="text-xs font-bold text-primary">View all</button>
+          <h2 className="text-base font-black tracking-tight text-foreground">Quick action</h2>
         </div>
         
-        <div className="grid grid-cols-4 gap-3">
-          <button type="button" onClick={() => setCreateOpen(true)} className="flex aspect-square flex-col items-center justify-center gap-2 rounded-2xl bg-card shadow-soft transition-shadow hover:shadow-panel">
-            <Plus className="size-5 text-primary" />
-            <span className="text-[10px] font-bold text-foreground">Create Ledger</span>
-          </button>
-          <button type="button" className="flex aspect-square flex-col items-center justify-center gap-2 rounded-2xl bg-card shadow-soft opacity-60 transition-shadow hover:shadow-panel">
-            <Users className="size-5 text-muted-foreground" />
-            <span className="text-[10px] font-bold text-foreground">Join Ledger</span>
-          </button>
-          <button type="button" className="flex aspect-square flex-col items-center justify-center gap-2 rounded-2xl bg-card shadow-soft opacity-60 transition-shadow hover:shadow-panel">
-            <Clock className="size-5 text-muted-foreground" />
-            <span className="text-[10px] font-bold text-foreground">History</span>
-          </button>
-          <button type="button" className="flex aspect-square flex-col items-center justify-center gap-2 rounded-2xl bg-card shadow-soft opacity-60 transition-shadow hover:shadow-panel">
-            <BarChart2 className="size-5 text-muted-foreground" />
-            <span className="text-[10px] font-bold text-foreground">Analytics</span>
-          </button>
-        </div>
+        <Button onClick={() => setCreateOpen(true)} className="h-16 w-full justify-start gap-4 rounded-[1.25rem] px-5 text-left shadow-primary-action">
+          <span className="grid size-10 place-items-center rounded-full bg-primary-foreground/15">
+            <Plus className="size-5" />
+          </span>
+          <span>
+            <span className="block text-base font-black">Create Ledger</span>
+            <span className="block text-xs font-semibold opacity-85">Start tracking a new budget</span>
+          </span>
+        </Button>
       </section>
 
       {/* ── Ledger list ── */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-black text-foreground">Your Ledgers</h2>
+          <h2 className="text-base font-black tracking-tight text-foreground">Your Ledgers</h2>
           <div className="flex items-center gap-3">
-            <button type="button" className="flex items-center gap-1 text-xs font-bold text-muted-foreground">
+            <button type="button" className="flex items-center gap-1 text-xs font-bold text-primary">
               Recent <ChevronDown className="size-3" />
             </button>
-            <Filter className="size-4 text-muted-foreground" />
+            <Filter className="size-4 text-primary" />
           </div>
         </div>
 
@@ -308,8 +288,7 @@ export const BudgetLedgerView = ({
       {recentActivity.length > 0 && (
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-black text-foreground">Recent activity</h2>
-            <button type="button" className="text-xs font-bold text-primary">View all</button>
+            <h2 className="text-base font-black tracking-tight text-foreground">Recent activity</h2>
           </div>
           <div className="space-y-3">
             {recentActivity.map((activity) => (
