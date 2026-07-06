@@ -48,6 +48,7 @@ import { AddExpenseDrawer } from "./drawers/AddExpenseDrawer";
 import { ApproveExpenseDrawer } from "./drawers/ApproveExpenseDrawer";
 import { MonthlyHistoryDrawer } from "./components/MonthlyHistory";
 import { Field } from "./components/Fields";
+import { FilterSheet, FilterField, FilterTrigger, DateFilterControls } from "./components/Filters";
 
 import { useLedgerDetail, logLedgerActivity } from "./hooks";
 import {
@@ -340,6 +341,7 @@ interface InviteMembersDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   ledgerId: string;
+  ledgerName: string;
   currentUserId: string;
   onSuccess: () => Promise<void>;
 }
@@ -348,18 +350,21 @@ const InviteMembersDrawer = ({
   open,
   onOpenChange,
   ledgerId,
+  ledgerName,
   currentUserId,
   onSuccess,
 }: InviteMembersDrawerProps) => {
   const { toast } = useToast();
   const [email, setEmail] = useState("");
+  const [userId, setUserId] = useState("");
   const [sending, setSending] = useState(false);
+  const [addingUser, setAddingUser] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const handleOpenChange = (o: boolean) => {
-    if (!o) { setEmail(""); setShareLink(null); setCopied(false); }
+    if (!o) { setEmail(""); setUserId(""); setShareLink(null); setCopied(false); }
     onOpenChange(o);
   };
 
@@ -394,22 +399,81 @@ const InviteMembersDrawer = ({
     if (!email.trim() || sending) return;
     setSending(true);
     try {
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      const { error } = (await supabase
-        .from("ledger_invites" as never)
-        .insert({ ledger_id: ledgerId, email: email.trim().toLowerCase(), invite_type: "email", invited_by: currentUserId, expires_at: expiresAt } as never)) as unknown as { error: Error | null };
-      if (error) throw error;
+      const { data: profile } = await supabase.from('profiles').select('full_name, username').eq('id', currentUserId).maybeSingle();
+      const inviterName = profile?.full_name || profile?.username || "A Spendova user";
+
+      const { data, error } = await supabase.functions.invoke('send-ledger-invite', {
+        body: {
+          email: email.trim().toLowerCase(),
+          ledger_id: ledgerId,
+          ledger_name: ledgerName,
+          inviter_name: inviterName,
+        }
+      });
+      if (error || data?.error) throw error || new Error(data?.error);
+      
       toast({ title: "Invite sent!", description: `Invited ${email.trim()}` });
       setEmail("");
       await onSuccess();
-    } catch (e) {
-      toast({ title: "Failed to send invite", variant: "destructive" });
+    } catch (e: any) {
+      toast({ title: "Failed to send invite", description: e.message || "Network error.", variant: "destructive" });
     } finally {
       setSending(false);
     }
   };
 
-  
+  const addByUsername = async () => {
+    if (!userId.trim() || addingUser) return;
+    setAddingUser(true);
+    try {
+      const cleanUsername = userId.trim().replace(/^@/, "").toLowerCase();
+      
+      const { data: foundUser, error: lookupError } = await supabase
+        .from("profiles")
+        .select("user_id, full_name, username")
+        .eq("username", cleanUsername)
+        .maybeSingle();
+
+      if (lookupError) throw lookupError;
+      
+      if (!foundUser) {
+        toast({ title: "User not found", description: "No account matches that username.", variant: "destructive" });
+        return;
+      }
+
+      if (foundUser.user_id === currentUserId) {
+        toast({ title: "Cannot add yourself", variant: "destructive" });
+        return;
+      }
+      
+      const { data: existing } = await supabase
+        .from("ledger_members" as never)
+        .select("id")
+        .eq("ledger_id", ledgerId)
+        .eq("user_id", foundUser.user_id)
+        .maybeSingle();
+      
+      if (existing) {
+        toast({ title: "User is already in ledger", variant: "destructive" });
+        return;
+      }
+      
+      const { error } = await supabase
+        .from("ledger_members" as never)
+        .insert({ ledger_id: ledgerId, user_id: foundUser.user_id, role: "member" } as never);
+      
+      if (error) throw error;
+      
+      toast({ title: "User added successfully", description: `${foundUser.full_name || foundUser.username} was added to the ledger.` });
+      setUserId("");
+      await onSuccess();
+    } catch (e: any) {
+      toast({ title: "Failed to add user", description: e.message || "Network error.", variant: "destructive" });
+    } finally {
+      setAddingUser(false);
+    }
+  };
+
   return (
     <Drawer open={open} onOpenChange={handleOpenChange}>
       <DrawerContent className="mx-auto grid h-[88dvh] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-0">
@@ -436,11 +500,34 @@ const InviteMembersDrawer = ({
                 </Button>
               </div>
             </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-bold text-foreground">Add by Username</p>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={userId} 
+                  onChange={(e) => setUserId(e.target.value)} 
+                  placeholder="@username" 
+                  className="flex-1 block h-[44px] rounded-full border border-input bg-background px-4 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring focus:ring-offset-0 disabled:opacity-50" 
+                />
+                <Button className="h-[44px] rounded-full px-6" disabled={addingUser || !userId.trim()} onClick={addByUsername}>
+                  {addingUser ? "…" : "Add"}
+                </Button>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <p className="text-sm font-bold text-foreground">Invite by email</p>
               <div className="flex gap-2">
-                <Field type="email" label="" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="member@email.com" className="flex-1 mt-0" />
-                <Button disabled={sending || !email.trim()} onClick={sendInvite}>
+                <input 
+                  type="email" 
+                  value={email} 
+                  onChange={(e) => setEmail(e.target.value)} 
+                  placeholder="member@email.com" 
+                  className="flex-1 block h-[44px] rounded-full border border-input bg-background px-4 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring focus:ring-offset-0 disabled:opacity-50" 
+                />
+                <Button className="h-[44px] rounded-full px-6" disabled={sending || !email.trim()} onClick={sendInvite}>
                   {sending ? "…" : "Send"}
                 </Button>
               </div>
@@ -596,34 +683,58 @@ const SettingsDrawer = ({
             )}
 
             {/* Danger zone */}
-            <div className="space-y-2">
-              <p className="text-xs font-bold uppercase tracking-wide text-destructive/70">
+            <div className="mt-4 space-y-3">
+              <p className="px-1 text-xs font-bold uppercase tracking-wide text-destructive/70">
                 Danger Zone
               </p>
               {isOwner ? (
                 confirmDelete ? (
-                  <div className="space-y-3 rounded-2xl bg-destructive/10 p-3 pb-4">
-                    <p className="text-center text-xs font-semibold text-destructive">
-                      Delete this ledger? A CSV export will be emailed to all members, and all data will be permanently deleted.
-                    </p>
-                    <div className="flex gap-3">
-                      <Button variant="quiet" className="flex-1" onClick={() => setConfirmDelete(false)} disabled={deletingLedger}>
+                  <div className="overflow-hidden rounded-2xl border border-destructive/20 bg-destructive/5">
+                    <div className="p-4 text-center">
+                      <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-destructive/10">
+                        <Trash2 className="size-5 text-destructive" />
+                      </div>
+                      <h4 className="mb-1 text-sm font-bold text-destructive">Delete Ledger?</h4>
+                      <p className="text-xs font-medium leading-relaxed text-destructive/80">
+                        A CSV export will be emailed to all members, and all data will be permanently deleted. This cannot be undone.
+                      </p>
+                    </div>
+                    <div className="flex border-t border-destructive/10">
+                      <button
+                        className="flex-1 p-3 text-xs font-bold text-foreground/70 transition-colors hover:bg-foreground/5 active:bg-foreground/10"
+                        onClick={() => setConfirmDelete(false)}
+                        disabled={deletingLedger}
+                      >
                         Cancel
-                      </Button>
-                      <Button variant="destructive" className="flex-1" onClick={deleteLedger} disabled={deletingLedger}>
+                      </button>
+                      <div className="w-[1px] bg-destructive/10" />
+                      <button
+                        className="flex-1 p-3 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10 active:bg-destructive/20 disabled:opacity-50"
+                        onClick={deleteLedger}
+                        disabled={deletingLedger}
+                      >
                         {deletingLedger ? "Deleting..." : "Confirm Delete"}
-                      </Button>
+                      </button>
                     </div>
                   </div>
                 ) : (
-                  <Button variant="quiet" className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setConfirmDelete(true)}>
-                    <Trash2 className="mr-2 inline size-4" />
+                  <Button 
+                    variant="outline" 
+                    className="h-12 w-full rounded-2xl border-destructive/30 bg-destructive/5 text-destructive hover:bg-destructive/10 hover:text-destructive" 
+                    onClick={() => setConfirmDelete(true)}
+                  >
+                    <Trash2 className="mr-2 size-4" />
                     Delete Ledger
                   </Button>
                 )
               ) : (
-                <Button variant="quiet" className="w-full" onClick={leaveledger} disabled={deletingLedger}>
-                  <UserMinus className="size-4" />
+                <Button 
+                  variant="outline" 
+                  className="h-12 w-full rounded-2xl border-destructive/30 bg-destructive/5 text-destructive hover:bg-destructive/10 hover:text-destructive" 
+                  onClick={leaveledger} 
+                  disabled={deletingLedger}
+                >
+                  <UserMinus className="mr-2 size-4" />
                   {deletingLedger ? "Leaving…" : "Leave Ledger"}
                 </Button>
               )}
@@ -672,6 +783,10 @@ export const LedgerDetail = ({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [filter, setFilter] = useState<ExpenseFilter>("all");
+  const [dateFilter, setDateFilter] = useState("all");
+  const [dateStart, setDateStart] = useState("");
+  const [dateEnd, setDateEnd] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Monthly rollover
   const [rolloverOpen, setRolloverOpen] = useState(false);
@@ -807,15 +922,59 @@ export const LedgerDetail = ({
     await refresh();
   };
 
-  const pendingCount = filteredExpenses.filter((e) => e.status === "pending").length;
+  const applyDateFilter = (dateString: string | undefined | null, dFilter: string, customStart?: string, customEnd?: string) => {
+    if (dFilter === "all") return true;
+    if (!dateString) return false;
+    const date = new Date(dateString);
+    const now = new Date();
+    if (Number.isNaN(date.getTime())) return false;
+    
+    if (dFilter === "custom") {
+      const start = customStart ? new Date(`${customStart}T00:00:00`) : null;
+      const end = customEnd ? new Date(`${customEnd}T23:59:59`) : null;
+      if (start && date < start) return false;
+      if (end && date > end) return false;
+      return Boolean(start || end);
+    }
+    
+    if (dFilter === "today") return date.toDateString() === now.toDateString();
+    
+    if (dFilter === "this_week") {
+      const start = new Date(now);
+      start.setDate(now.getDate() - now.getDay()); 
+      start.setHours(0, 0, 0, 0);
+      return date >= start;
+    }
+    
+    if (dFilter === "this_month") {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      return date >= start && date <= end;
+    }
+    
+    if (dFilter === "previous_month") {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+      return date >= start && date <= end;
+    }
+    
+    if (dFilter === "this_year") {
+      const start = new Date(now.getFullYear(), 0, 1);
+      return date >= start;
+    }
+    
+    return true;
+  };
 
-  const FILTERS: Array<{ value: ExpenseFilter; label: string }> = [
-    { value: "all", label: "All" },
-    { value: "pending", label: "Pending" },
-    { value: "approved", label: "Approved" },
-    { value: "paid", label: "Paid" },
-    { value: "rejected", label: "Rejected" },
-  ];
+  const filteredExpenses = expenses.filter((e) => {
+    if (filter !== "all" && e.status !== filter) return false;
+    if (!applyDateFilter(e.created_at, dateFilter, dateStart, dateEnd)) return false;
+    return true;
+  });
+
+  const pendingCount = expenses.filter((e) => e.status === "pending").length;
+  
+  const activeFilterCount = (filter !== "all" ? 1 : 0) + (dateFilter !== "all" ? 1 : 0);
 
   return (
     <div className="space-y-5 pt-4 pb-32">
@@ -955,24 +1114,7 @@ export const LedgerDetail = ({
               </span>
             )}
           </h2>
-        </div>
-
-        {/* Filter tabs */}
-        <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-          {FILTERS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              onClick={() => setFilter(f.value)}
-              className={`shrink-0 rounded-full px-3 py-2 text-xs font-bold transition-colors ${
-                filter === f.value
-                  ? "bg-primary text-primary-foreground shadow-primary-action"
-                  : "bg-elevated text-muted-foreground"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
+          <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
         </div>
 
         {loading && expenses.length === 0 ? (
@@ -1065,6 +1207,7 @@ export const LedgerDetail = ({
         open={inviteOpen}
         onOpenChange={setInviteOpen}
         ledgerId={ledger.id}
+        ledgerName={ledger.name}
         currentUserId={currentUserId}
         onSuccess={refresh}
       />
@@ -1076,6 +1219,40 @@ export const LedgerDetail = ({
         totalSavings={ledger.total_savings}
         ledgerName={ledger.name}
       />
+
+      <FilterSheet 
+        open={filtersOpen} 
+        onOpenChange={setFiltersOpen} 
+        title="Expense filters" 
+        onClear={() => {
+          setFilter("all");
+          setDateFilter("all");
+          setDateStart("");
+          setDateEnd("");
+        }}
+      >
+        <FilterField 
+          label="Status" 
+          value={filter} 
+          onChange={(value) => setFilter(value as ExpenseFilter)} 
+          options={[
+            { value: "all", label: "All" },
+            { value: "pending", label: "Pending" },
+            { value: "approved", label: "Approved" },
+            { value: "paid", label: "Paid" },
+            { value: "rejected", label: "Rejected" },
+          ]} 
+        />
+        
+        <DateFilterControls 
+          value={dateFilter} 
+          start={dateStart} 
+          end={dateEnd} 
+          onDateChange={setDateFilter} 
+          onStartChange={setDateStart} 
+          onEndChange={setDateEnd} 
+        />
+      </FilterSheet>
 
       <SettingsDrawer
         open={settingsOpen}

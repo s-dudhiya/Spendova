@@ -52,6 +52,8 @@ export const CreateLedgerDrawer = ({
   const [copied, setCopied] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [sendingInvite, setSendingInvite] = useState(false);
+  const [inviteUsername, setInviteUsername] = useState("");
+  const [addingUsername, setAddingUsername] = useState(false);
 
   const reset = () => {
     setStep("form");
@@ -65,6 +67,7 @@ export const CreateLedgerDrawer = ({
     setShareLink(null);
     setCopied(false);
     setInviteEmail("");
+    setInviteUsername("");
     setGeneratingLink(false);
   };
 
@@ -206,18 +209,19 @@ export const CreateLedgerDrawer = ({
     if (!createdLedgerId || !inviteEmail.trim() || sendingInvite) return;
     setSendingInvite(true);
     try {
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      const { error } = (await supabase
-        .from("ledger_invites" as never)
-        .insert({
-          ledger_id: createdLedgerId,
-          email: inviteEmail.trim().toLowerCase(),
-          invite_type: "email",
-          invited_by: currentUserId,
-          expires_at: expiresAt,
-        } as never)) as unknown as { error: Error | null };
+      const { data: profile } = await supabase.from('profiles').select('full_name, username').eq('id', currentUserId).maybeSingle();
+      const inviterName = profile?.full_name || profile?.username || "A Spendova user";
 
-      if (error) throw error;
+      const { data, error } = await supabase.functions.invoke('send-ledger-invite', {
+        body: {
+          email: inviteEmail.trim().toLowerCase(),
+          ledger_id: createdLedgerId,
+          ledger_name: name,
+          inviter_name: inviterName,
+        }
+      });
+      if (error || data?.error) throw error || new Error(data?.error);
+
       toast({ title: "Invite sent!", description: `Invited ${inviteEmail.trim()}` });
       setInviteEmail("");
     } catch (error) {
@@ -229,6 +233,57 @@ export const CreateLedgerDrawer = ({
       });
     } finally {
       setSendingInvite(false);
+    }
+  };
+
+  const addByUsername = async () => {
+    if (!createdLedgerId || !inviteUsername.trim() || addingUsername) return;
+    setAddingUsername(true);
+    try {
+      const cleanUsername = inviteUsername.trim().replace(/^@/, "").toLowerCase();
+      
+      const { data: foundUser, error: lookupError } = await supabase
+        .from("profiles")
+        .select("user_id, full_name, username")
+        .eq("username", cleanUsername)
+        .maybeSingle();
+
+      if (lookupError) throw lookupError;
+      
+      if (!foundUser) {
+        toast({ title: "User not found", description: "No account matches that username.", variant: "destructive" });
+        return;
+      }
+
+      if (foundUser.user_id === currentUserId) {
+        toast({ title: "Cannot add yourself", variant: "destructive" });
+        return;
+      }
+      
+      const { data: existing } = await supabase
+        .from("ledger_members" as never)
+        .select("id")
+        .eq("ledger_id", createdLedgerId)
+        .eq("user_id", foundUser.user_id)
+        .maybeSingle();
+      
+      if (existing) {
+        toast({ title: "User is already in ledger", variant: "destructive" });
+        return;
+      }
+      
+      const { error } = await supabase
+        .from("ledger_members" as never)
+        .insert({ ledger_id: createdLedgerId, user_id: foundUser.user_id, role: "member" } as never);
+      
+      if (error) throw error;
+      
+      toast({ title: "User added successfully", description: `${foundUser.full_name || foundUser.username} was added to the ledger.` });
+      setInviteUsername("");
+    } catch (e: any) {
+      toast({ title: "Failed to add user", description: e.message || "Network error.", variant: "destructive" });
+    } finally {
+      setAddingUsername(false);
     }
   };
 
@@ -363,23 +418,36 @@ export const CreateLedgerDrawer = ({
                 </div>
               </div>
 
+              {/* Add by Username */}
+              <div className="space-y-2">
+                <p className="text-sm font-bold text-foreground">Add by Username</p>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={inviteUsername} 
+                    onChange={(e) => setInviteUsername(e.target.value)} 
+                    placeholder="@username" 
+                    className="flex-1 block h-[44px] rounded-full border border-input bg-background px-4 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring focus:ring-offset-0 disabled:opacity-50" 
+                  />
+                  <Button className="h-[44px] rounded-full px-6" disabled={addingUsername || !inviteUsername.trim()} onClick={addByUsername}>
+                    {addingUsername ? "…" : "Add"}
+                  </Button>
+                </div>
+              </div>
+
               {/* Email invite */}
               <div className="space-y-2">
                 <p className="text-sm font-bold text-foreground">Invite by email</p>
                 <div className="flex gap-2">
-                  <Field
-                    type="email"
-                    label=""
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="member@email.com"
-                    className="flex-1 mt-0"
+                  <input 
+                    type="email" 
+                    value={inviteEmail} 
+                    onChange={(e) => setInviteEmail(e.target.value)} 
+                    placeholder="member@email.com" 
+                    className="flex-1 block h-[44px] rounded-full border border-input bg-background px-4 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring focus:ring-offset-0 disabled:opacity-50" 
                   />
-                  <Button
-                    disabled={sendingInvite || !inviteEmail.trim()}
-                    onClick={sendEmailInvite}
-                  >
-                    {sendingInvite ? "Sending…" : "Invite"}
+                  <Button className="h-[44px] rounded-full px-6" disabled={sendingInvite || !inviteEmail.trim()} onClick={sendEmailInvite}>
+                    {sendingInvite ? "…" : "Send"}
                   </Button>
                 </div>
               </div>

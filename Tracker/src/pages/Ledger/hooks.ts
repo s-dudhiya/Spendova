@@ -40,7 +40,7 @@ export function useLedgerDetail(
     if (!ledgerId) return;
     setLoading(true);
     try {
-      const [expensesRes, additionsRes, monthlyRes, invitesRes] =
+      const [expensesRes, additionsRes, monthlyRes, invitesRes, activitiesRes] =
         await Promise.all([
           supabase
             .from("ledger_expenses" as never)
