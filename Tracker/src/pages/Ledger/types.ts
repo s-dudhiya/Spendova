@@ -33,6 +33,7 @@ export interface LedgerRow {
   total_savings: number;
   owner_id: string;
   budget_admin_id?: string;
+  icon?: string | null;
   is_archived: boolean;
   created_at: string;
   updated_at: string | null;

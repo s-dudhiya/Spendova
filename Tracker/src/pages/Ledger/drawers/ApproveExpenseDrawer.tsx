@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Banknote, ExternalLink, Loader2, Paperclip, Undo2 } from "lucide-react";
+import { Banknote, ExternalLink, Loader2, Paperclip, Undo2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
@@ -23,6 +23,7 @@ interface ApproveExpenseDrawerProps {
   currentUserId: string;
   budgetAdminId?: string;
   onSuccess: () => Promise<void>;
+  onDelete?: (expense: LedgerExpenseRow) => Promise<void>;
 }
 
 export const ApproveExpenseDrawer = ({
@@ -33,9 +34,10 @@ export const ApproveExpenseDrawer = ({
   currentUserId,
   budgetAdminId,
   onSuccess,
+  onDelete,
 }: ApproveExpenseDrawerProps) => {
   const { toast } = useToast();
-  const [activeAction, setActiveAction] = useState<"pay" | "pending" | null>(null);
+  const [activeAction, setActiveAction] = useState<"pay" | "pending" | "delete" | null>(null);
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
   const [loadingReceipt, setLoadingReceipt] = useState(false);
   const [tab, setTab] = useState<"details" | "receipt">("details");
@@ -225,8 +227,27 @@ export const ApproveExpenseDrawer = ({
                     )
                   ) : (
                     <p className="rounded-2xl bg-elevated/50 p-4 text-sm text-muted-foreground text-center border border-dashed border-border/50">
-                      Only the budget admin or the payer can mark this expense as paid.
+                      Only the budget admin or the payer can modify this expense.
                     </p>
+                  )}
+                  {canModify && onDelete && expense && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setActiveAction("delete");
+                        try {
+                          await onDelete(expense);
+                          onOpenChange(false);
+                        } finally {
+                          setActiveAction(null);
+                        }
+                      }}
+                      disabled={activeAction !== null}
+                      className="flex w-full items-center justify-center gap-3 rounded-full bg-destructive/10 border border-destructive/20 p-4 text-destructive transition-transform active:scale-[0.98] hover:bg-destructive/20 disabled:opacity-50 mt-2"
+                    >
+                      {activeAction === "delete" ? <Loader2 className="size-5 animate-spin" /> : <Trash2 className="size-5" />}
+                      <span className="font-bold text-base">Delete Expense</span>
+                    </button>
                   )}
                 </div>
               </div>

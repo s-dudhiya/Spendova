@@ -3,6 +3,7 @@
 // ============================================================
 
 import { useState, useEffect, type ReactNode } from "react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import {
@@ -13,7 +14,7 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import { useToast } from "@/hooks/use-toast";
-import type { LedgerRow } from "../types";
+import type { LedgerRow, LedgerExpenseRow } from "../types";
 import { useLedgerExpenseMutation, useSharedLedgerCategories } from "../hooks";
 import { Field, Textarea } from "../components/Fields";
 import { ImageUpload } from "@/components/ImageUpload";
@@ -29,6 +30,7 @@ interface AddExpenseDrawerProps {
   ledger: LedgerRow;
   currentUserId: string;
   onSuccess: () => Promise<void>;
+  onDelete?: (expense: LedgerExpenseRow) => Promise<void>;
   editExpense?: {
     id: string;
     title: string;
@@ -49,6 +51,7 @@ export const AddExpenseDrawer = ({
   ledger,
   currentUserId,
   onSuccess,
+  onDelete,
   editExpense,
   members = [],
 }: AddExpenseDrawerProps) => {
@@ -81,6 +84,7 @@ export const AddExpenseDrawer = ({
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [autoNameCategoryId, setAutoNameCategoryId] = useState<string | null>(null);
   const [date, setDate] = useState(editExpense?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
   const [markAsPending, setMarkAsPending] = useState(false);
@@ -315,16 +319,36 @@ export const AddExpenseDrawer = ({
               variant="quiet"
               className="flex-1 h-12 rounded-full"
               onClick={() => handleOpenChange(false)}
-              disabled={submitting}
+              disabled={submitting || deleting}
             >
               Cancel
             </Button>
+            {isEdit && onDelete && editExpense && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="h-12 w-12 shrink-0 rounded-full p-0"
+                onClick={async () => {
+                  setDeleting(true);
+                  try {
+                    await onDelete(editExpense as any);
+                    handleOpenChange(false);
+                  } finally {
+                    setDeleting(false);
+                  }
+                }}
+                disabled={submitting || deleting}
+                title="Delete Expense"
+              >
+                <Trash2 className="size-5" />
+              </Button>
+            )}
             <Button
               type="submit"
               form="ledger-expense-form"
               className="flex-1 h-12 rounded-full shadow-primary-action"
               disabled={
-                submitting || !title.trim() || !parsedAmount || parsedAmount <= 0
+                submitting || deleting || !title.trim() || !parsedAmount || parsedAmount <= 0
               }
             >
               {submitting

@@ -51,6 +51,7 @@ import type { LedgerRow, LedgerExpenseRow, LedgerRole, LedgerActivityRow } from 
 import { MONTH_NAMES } from "./types";
 import { BudgetCards } from "./components/BudgetCards";
 import { ExpenseCard } from "./components/ExpenseCard";
+import { getLedgerIcon } from "./components/LedgerIcon";
 import { AddExpenseDrawer } from "./drawers/AddExpenseDrawer";
 import { ApproveExpenseDrawer } from "./drawers/ApproveExpenseDrawer";
 import { MonthlyHistoryDrawer } from "./components/MonthlyHistory";
@@ -1018,24 +1019,25 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
   });
   
   const activeFilterCount = (filter !== "all" ? 1 : 0) + (dateFilter !== "all" ? 1 : 0);
+  const ActiveIcon = getLedgerIcon(ledger.icon);
 
   return (
     <div className="space-y-5 pt-4 pb-32">
       {/* ── Header ── */}
-      <header className="flex items-center gap-2 sm:gap-3">
+      <header className="flex items-center gap-3 py-2">
         <button
           type="button"
           onClick={onBack}
-          className="grid size-9 shrink-0 place-items-center rounded-full text-primary hover:bg-primary/10"
+          className="grid size-10 shrink-0 place-items-center rounded-full text-primary hover:bg-primary/10"
         >
-          <ArrowLeft className="size-4" />
+          <ArrowLeft className="size-5" />
         </button>
         
-        <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-elevated text-primary shadow-soft">
-          <PiggyBank className="size-6" />
+        <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+          <ActiveIcon className="size-5" />
         </div>
 
-        <div className="min-w-0 flex-1 pr-1">
+        <div className="min-w-0 flex-1 pl-1">
           <h1 className="truncate text-xl font-bold text-foreground">
             {ledger.name}
           </h1>
@@ -1193,18 +1195,6 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
                   userRole={userRole}
                   onClick={handleExpenseClick}
                 />
-                {/* Delete button for owner or own pending */}
-                {(isOwnerOrAdmin ||
-                  (expense.user_id === currentUserId && expense.status === "pending")) && (
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteExpense(expense)}
-                    className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-card text-muted-foreground opacity-0 shadow-soft transition hover:bg-destructive/10 hover:text-destructive hover:opacity-100 group-hover:opacity-100"
-                    aria-label="Delete expense"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                )}
               </div>
             ))}
           </div>
@@ -1227,6 +1217,7 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
         ledger={ledger}
         currentUserId={currentUserId}
         onSuccess={async () => { setEditExpense(null); await refresh(); }}
+        onDelete={async (e) => { setEditExpense(null); await handleDeleteExpense(e); }}
         editExpense={editExpense}
         members={ledger.ledger_members}
       />
@@ -1239,6 +1230,7 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
         currentUserId={currentUserId}
         budgetAdminId={ledger.budget_admin_id}
         onSuccess={async () => { setReviewExpense(null); await refresh(); }}
+        onDelete={async (e) => { setReviewExpense(null); await handleDeleteExpense(e); }}
       />
 
       <AddBudgetDrawer

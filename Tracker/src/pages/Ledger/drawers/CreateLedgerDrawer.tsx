@@ -16,6 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { LedgerType, BudgetType } from "../types";
 import { Field, Textarea, SelectField } from "../components/Fields";
+import { LedgerIconPicker } from "../components/LedgerIconPicker";
+import { DEFAULT_LEDGER_ICON } from "../components/LedgerIcon";
 import { logLedgerActivity } from "../hooks";
 
 // ── Main component ───────────────────────────────────────────
@@ -43,6 +45,7 @@ export const CreateLedgerDrawer = ({
   const [ledgerType, setLedgerType] = useState<LedgerType>("personal");
   const [budgetType, setBudgetType] = useState<BudgetType>("one_time");
   const [initialBudget, setInitialBudget] = useState("");
+  const [icon, setIcon] = useState<string>(DEFAULT_LEDGER_ICON);
   const [submitting, setSubmitting] = useState(false);
 
   // Created ledger state (used in invite step)
@@ -62,6 +65,7 @@ export const CreateLedgerDrawer = ({
     setLedgerType("personal");
     setBudgetType("one_time");
     setInitialBudget("");
+    setIcon(DEFAULT_LEDGER_ICON);
     setSubmitting(false);
     setCreatedLedgerId(null);
     setShareLink(null);
@@ -105,6 +109,7 @@ export const CreateLedgerDrawer = ({
           owner_id: currentUserId,
           budget_admin_id: currentUserId,
           total_savings: 0,
+          icon,
         } as never)
         .select("id")
         .single() as unknown as { data: { id: string } | null; error: Error | null });
@@ -361,6 +366,8 @@ export const CreateLedgerDrawer = ({
                   },
                 ]}
               />
+
+              <LedgerIconPicker icon={icon} onIconChange={setIcon} />
 
               {/* Initial Budget */}
               <Field
