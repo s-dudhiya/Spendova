@@ -53,7 +53,7 @@ import { BudgetCards } from "./components/BudgetCards";
 import { ExpenseCard } from "./components/ExpenseCard";
 import { getLedgerIcon } from "./components/LedgerIcon";
 import { AddExpenseDrawer } from "./drawers/AddExpenseDrawer";
-import { ApproveExpenseDrawer } from "./drawers/ApproveExpenseDrawer";
+import { ViewExpenseDrawer } from "./drawers/ViewExpenseDrawer";
 import { MonthlyHistoryDrawer } from "./components/MonthlyHistory";
 import { Field } from "./components/Fields";
 import { FilterSheet, FilterField, FilterTrigger, DateFilterControls } from "./components/Filters";
@@ -940,13 +940,32 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
 
   // Expense card click
   const handleExpenseClick = (expense: LedgerExpenseRow) => {
-    const isOwn = expense.user_id === currentUserId;
-    const isPending = expense.status === "pending";
+    setReviewExpense(expense);
+  };
 
-    if (isOwnerOrAdmin) {
-      setReviewExpense(expense);
-    } else if (isOwn && isPending) {
-      setEditExpense(expense);
+  const handleExpenseEditClick = (expense: LedgerExpenseRow) => {
+    setEditExpense(expense);
+  };
+
+  const handleExpenseApproveClick = async (expense: LedgerExpenseRow) => {
+    const now = new Date().toISOString();
+    try {
+      const { error } = await supabase
+        .from("ledger_expenses" as never)
+        .update({
+          status: "paid",
+          paid_at: now,
+          reviewed_by: currentUserId,
+          reviewed_at: now,
+          updated_at: now,
+        } as never)
+        .eq("id" as never, expense.id as never);
+
+      if (error) throw error;
+      toast({ title: "Marked as paid" });
+      await refresh();
+    } catch (e) {
+      toast({ title: "Failed to mark paid", variant: "destructive" });
     }
   };
 
@@ -1188,7 +1207,10 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
                   expense={expense}
                   currentUserId={currentUserId}
                   userRole={userRole}
+                  isBudgetAdmin={ledger.budget_admin_id === currentUserId}
                   onClick={handleExpenseClick}
+                  onEdit={handleExpenseEditClick}
+                  onApprove={handleExpenseApproveClick}
                 />
               </div>
             ))}
@@ -1212,12 +1234,11 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
         ledger={ledger}
         currentUserId={currentUserId}
         onSuccess={async () => { setEditExpense(null); await refresh(); }}
-        onDelete={async (e) => { setEditExpense(null); await handleDeleteExpense(e); }}
         editExpense={editExpense}
         members={ledger.ledger_members}
       />
 
-      <ApproveExpenseDrawer
+      <ViewExpenseDrawer
         open={Boolean(reviewExpense)}
         onOpenChange={(o) => !o && setReviewExpense(null)}
         expense={reviewExpense}
@@ -1226,6 +1247,7 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
         budgetAdminId={ledger.budget_admin_id}
         onSuccess={async () => { setReviewExpense(null); await refresh(); }}
         onDelete={async (e) => { setReviewExpense(null); await handleDeleteExpense(e); }}
+        onEdit={(e) => { setReviewExpense(null); setEditExpense(e); }}
       />
 
       <AddBudgetDrawer

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Banknote, ExternalLink, Loader2, Paperclip, Undo2, Trash2 } from "lucide-react";
+import { Banknote, ExternalLink, Loader2, Paperclip, Undo2, Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
@@ -15,7 +15,7 @@ import { EXPENSE_STATUS_CONFIG } from "../types";
 import { money, dateLabel, displayName } from "../utils";
 import { getLedgerReceiptUrl, logLedgerActivity } from "../hooks";
 
-interface ApproveExpenseDrawerProps {
+interface ViewExpenseDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   expense: LedgerExpenseRow | null;
@@ -24,9 +24,10 @@ interface ApproveExpenseDrawerProps {
   budgetAdminId?: string;
   onSuccess: () => Promise<void>;
   onDelete?: (expense: LedgerExpenseRow) => Promise<void>;
+  onEdit?: (expense: LedgerExpenseRow) => void;
 }
 
-export const ApproveExpenseDrawer = ({
+export const ViewExpenseDrawer = ({
   open,
   onOpenChange,
   expense,
@@ -35,7 +36,8 @@ export const ApproveExpenseDrawer = ({
   budgetAdminId,
   onSuccess,
   onDelete,
-}: ApproveExpenseDrawerProps) => {
+  onEdit,
+}: ViewExpenseDrawerProps) => {
   const { toast } = useToast();
   const [activeAction, setActiveAction] = useState<"pay" | "pending" | "delete" | null>(null);
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
@@ -121,11 +123,9 @@ export const ApproveExpenseDrawer = ({
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
       <DrawerContent className="mx-auto grid h-[88dvh] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-[2.5rem] border-border bg-background px-0 pb-0">
-        <DrawerHeader className="px-6 pb-2 pt-6 text-center">
-          <DrawerTitle className="text-xl font-bold">Review Expense</DrawerTitle>
-          <DrawerDescription className="text-sm mt-1">
-            Paid by {name}
-          </DrawerDescription>
+        <DrawerHeader className="sr-only">
+          <DrawerTitle>Expense Details</DrawerTitle>
+          <DrawerDescription>Paid by {name}</DrawerDescription>
         </DrawerHeader>
 
         <div className="min-h-0 overflow-y-auto overscroll-contain px-6 py-2">
@@ -229,6 +229,20 @@ export const ApproveExpenseDrawer = ({
                     <p className="rounded-2xl bg-elevated/50 p-4 text-sm text-muted-foreground text-center border border-dashed border-border/50">
                       Only the budget admin or the payer can modify this expense.
                     </p>
+                  )}
+                  {canModify && onEdit && expense && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onOpenChange(false);
+                        onEdit(expense);
+                      }}
+                      disabled={activeAction !== null}
+                      className="flex w-full items-center justify-center gap-3 rounded-full bg-elevated border border-border p-4 text-foreground transition-transform active:scale-[0.98] hover:bg-elevated/80 disabled:opacity-50 mt-2"
+                    >
+                      <Pencil className="size-5" />
+                      <span className="font-bold text-base">Edit Expense</span>
+                    </button>
                   )}
                   {canModify && onDelete && expense && (
                     <button

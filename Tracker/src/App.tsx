@@ -13,15 +13,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { consumeFreshLoginUnlocked, isBiometricLockEnabled, unlockWithBiometric } from "@/lib/biometric-lock";
 import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
-import Auth from "./pages/Auth.tsx";
+import Auth from "./pages/Auth";
 
-const Admin = lazy(() => import("./pages/Admin.tsx"));
-const Index = lazy(() => import("./pages/Index.tsx"));
-const InviteAccept = lazy(() => import("./pages/InviteAccept.tsx"));
-const InviteLedgerAccept = lazy(() => import("./pages/Ledger/InviteLedgerAccept.tsx"));
-const Maintenance = lazy(() => import("./pages/Maintenance.tsx"));
-const NotFound = lazy(() => import("./pages/NotFound.tsx"));
-const VerifyOtp = lazy(() => import("./pages/VerifyOtp.tsx"));
+const Admin = lazy(() => import("./pages/Admin"));
+const Index = lazy(() => import("./pages/Index"));
+const InviteAccept = lazy(() => import("./pages/InviteAccept"));
+const InviteLedgerAccept = lazy(() => import("./pages/Ledger/InviteLedgerAccept"));
+const Maintenance = lazy(() => import("./pages/Maintenance"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const VerifyOtp = lazy(() => import("./pages/VerifyOtp"));
 
 const queryClient = new QueryClient();
 const STARTUP_FALLBACK_DELAY = 5000;

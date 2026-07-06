@@ -323,26 +323,6 @@ export const AddExpenseDrawer = ({
             >
               Cancel
             </Button>
-            {isEdit && onDelete && editExpense && (
-              <Button
-                type="button"
-                variant="destructive"
-                className="h-12 w-12 shrink-0 rounded-full p-0"
-                onClick={async () => {
-                  setDeleting(true);
-                  try {
-                    await onDelete(editExpense as any);
-                    handleOpenChange(false);
-                  } finally {
-                    setDeleting(false);
-                  }
-                }}
-                disabled={submitting || deleting}
-                title="Delete Expense"
-              >
-                <Trash2 className="size-5" />
-              </Button>
-            )}
             <Button
               type="submit"
               form="ledger-expense-form"
