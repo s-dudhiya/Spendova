@@ -81,7 +81,7 @@ export const BudgetCards = ({
 
       {/* Progress Bar */}
       <div className="flex items-center gap-3">
-        <div className="h-2 flex-1 overflow-hidden rounded-full bg-elevated">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-primary/10">
           <div 
             className={`h-full rounded-full transition-all duration-500 ${
               progress > 95 ? 'bg-destructive' : progress > 80 ? 'bg-warning' : 'bg-primary'
