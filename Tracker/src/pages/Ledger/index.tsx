@@ -210,7 +210,7 @@ export const BudgetLedgerView = ({
     );
   }
 
-  const activeLedgers = ledgers.filter((l) => !l.is_archived);
+  const activeLedgers = ledgers;
 
   return (
     <main className="space-y-6 pb-20">

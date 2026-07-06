@@ -481,28 +481,34 @@ const SettingsDrawer = ({
   const { toast } = useToast();
   const [deletingLedger, setDeletingLedger] = useState(false);
   const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
-  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const isOwner = userRole === "owner";
 
-  const archiveLedger = async () => {
-    if (!isOwner || deletingLedger) return;
+  const deleteLedger = async () => {
+    if (!ledger) return;
     setDeletingLedger(true);
     try {
-      const { error } = (await supabase
-        .from("ledgers" as never)
-        .update({ is_archived: !ledger.is_archived, updated_at: new Date().toISOString() } as never)
-        .eq("id" as never, ledger.id as never)) as unknown as { error: Error | null };
-      if (error) throw error;
-      toast({ title: ledger.is_archived ? "Ledger restored" : "Ledger archived" });
-      setConfirmArchive(false);
+      const { error: fnError } = await supabase.functions.invoke('send-ledger-export', {
+        body: { ledgerId: ledger.id }
+      });
+      if (fnError) {
+        console.warn('CSV Export email failed:', fnError);
+      }
+
+      const { data, error } = await supabase.rpc('delete_ledger' as any, { p_ledger_id: ledger.id });
+      if (error || (data as any)?.error) throw error || new Error((data as any)?.error);
+
+      toast({ title: "Ledger deleted and export emailed" });
       onOpenChange(false);
       onBack();
       await onRefreshList();
-    } catch (e) {
-      toast({ title: "Failed to archive ledger", variant: "destructive" });
+    } catch (error: any) {
+      console.error(error);
+      toast({ title: "Failed to delete ledger", variant: "destructive" });
     } finally {
       setDeletingLedger(false);
+      setConfirmDelete(false);
     }
   };
 
@@ -581,7 +587,7 @@ const SettingsDrawer = ({
                         onClick={() => removeMember(m.user_id, displayName(m.profiles))}
                       >
                         <UserMinus className="size-4" />
-                        {deletingExpenseId === m.user_id ? "Removingâ€¦" : "Remove"}
+                        {deletingExpenseId === m.user_id ? "Removing…" : "Remove"}
                       </Button>
                     )}
                   </div>
@@ -595,32 +601,30 @@ const SettingsDrawer = ({
                 Danger Zone
               </p>
               {isOwner ? (
-                confirmArchive ? (
-                  <div className="space-y-3 rounded-2xl bg-destructive/10 p-4">
-                    <p className="text-sm font-medium text-foreground">
-                      {ledger.is_archived
-                        ? "Restore this ledger? It will become active again."
-                        : "Archive this ledger? Members won't lose data, but it will be hidden from the list."}
+                confirmDelete ? (
+                  <div className="space-y-3 rounded-2xl bg-destructive/10 p-3 pb-4">
+                    <p className="text-center text-xs font-semibold text-destructive">
+                      Delete this ledger? A CSV export will be emailed to all members, and all data will be permanently deleted.
                     </p>
-                    <div className="flex gap-2">
-                      <Button variant="quiet" className="flex-1" onClick={() => setConfirmArchive(false)} disabled={deletingLedger}>
+                    <div className="flex gap-3">
+                      <Button variant="quiet" className="flex-1" onClick={() => setConfirmDelete(false)} disabled={deletingLedger}>
                         Cancel
                       </Button>
-                      <Button variant="destructive" className="flex-1" onClick={archiveLedger} disabled={deletingLedger}>
-                        {deletingLedger ? "Processingâ€¦" : ledger.is_archived ? "Restore" : "Archive"}
+                      <Button variant="destructive" className="flex-1" onClick={deleteLedger} disabled={deletingLedger}>
+                        {deletingLedger ? "Deleting..." : "Confirm Delete"}
                       </Button>
                     </div>
                   </div>
                 ) : (
-                  <Button variant="quiet" className="w-full" onClick={() => setConfirmArchive(true)}>
-                    <Trash2 className="size-4" />
-                    {ledger.is_archived ? "Restore Ledger" : "Archive Ledger"}
+                  <Button variant="quiet" className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setConfirmDelete(true)}>
+                    <Trash2 className="mr-2 inline size-4" />
+                    Delete Ledger
                   </Button>
                 )
               ) : (
                 <Button variant="quiet" className="w-full" onClick={leaveledger} disabled={deletingLedger}>
                   <UserMinus className="size-4" />
-                  {deletingLedger ? "Leavingâ€¦" : "Leave Ledger"}
+                  {deletingLedger ? "Leaving…" : "Leave Ledger"}
                 </Button>
               )}
             </div>
@@ -634,7 +638,7 @@ const SettingsDrawer = ({
   );
 };
 
-// â”€â”€ Main LedgerDetail View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ————————————————— Main LedgerDetail View ————————————————————————————————————
 
 interface LedgerDetailProps {
   ledger: LedgerRow;
@@ -840,11 +844,6 @@ export const LedgerDetail = ({
             <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-bold uppercase text-success">
               {ledger.budget_type === "monthly" ? "Monthly" : "One-Time"}
             </span>
-            {ledger.is_archived && (
-              <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-bold uppercase text-warning">
-                Archived
-              </span>
-            )}
           </div>
         </div>
 
@@ -895,8 +894,7 @@ export const LedgerDetail = ({
       </section>
 
       {/* ── Quick Actions ── */}
-      {!ledger.is_archived && (
-        <section className={`grid grid-cols-1 gap-3 ${isOwnerOrAdmin ? 'min-[420px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''}`}>
+      <section className={`grid grid-cols-1 gap-3 ${isOwnerOrAdmin ? 'min-[420px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''}`}>
           <Button
             className="h-[52px] w-full rounded-2xl shadow-primary-action"
             onClick={() => setAddExpenseOpen(true)}
@@ -915,9 +913,8 @@ export const LedgerDetail = ({
             </Button>
           )}
         </section>
-      )}
 
-      {!ledger.is_archived && isOwnerOrAdmin && ledger.ledger_type === "shared" && (
+      {isOwnerOrAdmin && ledger.ledger_type === "shared" && (
         <Button
           variant="quiet"
           className="relative h-11 w-full rounded-2xl text-primary hover:bg-primary/10"
@@ -995,7 +992,7 @@ export const LedgerDetail = ({
                 ? "Add your first expense to start tracking this budget."
                 : "Try changing the filter to see other expenses."}
             </p>
-            {filter === "all" && !ledger.is_archived && (
+            {filter === "all" && (
               <Button onClick={() => setAddExpenseOpen(true)} variant="quiet" className="mt-4">
                 <Plus />Add Expense
               </Button>

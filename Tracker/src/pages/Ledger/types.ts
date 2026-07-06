@@ -16,7 +16,7 @@ export interface LedgerMemberProfile {
 
 export interface LedgerMemberRow {
   id: string;
-  ledger_id: string;
+  ledger_id?: string;
   user_id: string;
   role: LedgerRole;
   joined_at: string | null;
