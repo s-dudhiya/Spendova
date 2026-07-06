@@ -29,9 +29,9 @@ const MonthRow = ({ closure }: { closure: LedgerMonthlyClosure }) => {
   const deficit = closure.deficit;
 
   return (
-    <div className="rounded-2xl bg-elevated p-4 shadow-soft">
+    <div className="rounded-2xl bg-card p-4 shadow-soft">
       <div className="flex items-center justify-between">
-        <span className="font-semibold text-foreground">
+        <span className="text-base font-bold text-foreground">
           {monthName} {closure.year}
         </span>
         {saved > 0 && (
@@ -42,14 +42,14 @@ const MonthRow = ({ closure }: { closure: LedgerMonthlyClosure }) => {
         )}
       </div>
 
-      <div className="mt-3 flex gap-2">
-        <div className="flex-1 rounded-xl bg-card p-2 text-center border border-border/50">
-          <p className="text-xs text-muted-foreground">Savings</p>
-          <p className="mt-0.5 font-bold text-success">{money(saved)}</p>
+      <div className="mt-3 flex items-center justify-between">
+        <div className="flex flex-col">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Savings</p>
+          <p className="mt-0.5 text-sm font-black text-success">{money(saved)}</p>
         </div>
-        <div className="flex-1 rounded-xl bg-card p-2 text-center border border-border/50">
-          <p className="text-xs text-muted-foreground">Deficit</p>
-          <p className="mt-0.5 font-bold text-destructive">{money(deficit)}</p>
+        <div className="flex flex-col text-right">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Deficit</p>
+          <p className="mt-0.5 text-sm font-black text-destructive">{money(deficit)}</p>
         </div>
       </div>
     </div>
@@ -92,10 +92,12 @@ export const MonthlyHistoryDrawer = ({
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
           <div className="space-y-3 pb-4">
             {monthlyClosures.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-12 text-center">
-                <History className="mb-2 size-8 text-muted-foreground/50" />
-                <p className="text-sm font-medium text-foreground">No history yet</p>
-                <p className="text-xs text-muted-foreground max-w-[200px] mt-1">
+              <div className="rounded-[1.25rem] bg-elevated p-6 text-center shadow-soft">
+                <div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary">
+                  <History className="size-7" />
+                </div>
+                <p className="mt-4 text-base font-black text-foreground">No history yet</p>
+                <p className="mt-1 text-sm font-medium text-muted-foreground">
                   Past months will appear here after they are closed.
                 </p>
               </div>

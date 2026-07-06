@@ -61,7 +61,7 @@ export const BudgetCards = ({
           sub={isMonthly && monthLabel ? monthLabel : undefined}
         />
         <SummaryCard
-          label="Available Budget"
+          label="Available"
           value={money(availableBudget)}
           valueClass={
             availableBudget <= 0
@@ -70,45 +70,31 @@ export const BudgetCards = ({
               ? "text-warning"
               : "text-success"
           }
-          sub="After paid expenses"
         />
       </div>
 
-      {/* Row 2: Paid + Expected Available */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Row 2: Secondary Stats */}
+      <div className="grid grid-cols-3 gap-3">
         <SummaryCard
-          label="Paid Expenses"
+          label="Spent"
           value={money(paidExpenses)}
           valueClass={paidExpenses > 0 ? "text-foreground" : "text-muted-foreground"}
         />
         <SummaryCard
-          label="Expected Available"
+          label="Pending"
+          value={money(pendingExpenses + approvedExpenses)}
+          valueClass={(pendingExpenses + approvedExpenses) > 0 ? "text-warning" : "text-muted-foreground"}
+        />
+        <SummaryCard
+          label="Expected"
           value={money(expectedAvailable)}
           valueClass={
             expectedAvailable <= 0
               ? "text-destructive"
               : "text-muted-foreground"
           }
-          sub="If all pending paid"
         />
       </div>
-
-      {/* Row 3: Pending + Approved (only when relevant) */}
-      {hasPending && (
-        <div className="grid grid-cols-2 gap-3">
-          <SummaryCard
-            label="Pending"
-            value={money(pendingExpenses)}
-            valueClass={pendingExpenses > 0 ? "text-warning" : "text-muted-foreground"}
-          />
-          <SummaryCard
-            label="Approved"
-            value={money(approvedExpenses)}
-            valueClass={approvedExpenses > 0 ? "text-primary" : "text-muted-foreground"}
-            sub="Awaiting payment"
-          />
-        </div>
-      )}
 
       {/* Row 4: Savings (monthly only) */}
       {budgetType === "monthly" && (

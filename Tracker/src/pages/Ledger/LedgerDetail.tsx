@@ -18,6 +18,9 @@ import {
   PiggyBank,
   Loader2,
   CircleDollarSign,
+  PlusCircle,
+  ShoppingCart,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,7 +55,64 @@ import {
   displayName,
   computeBudgetSummary,
   detectRolloverNeeded,
+  timeAgo,
 } from "./utils";
+
+const ActivityRow = ({ activity, ledger }: { activity: LedgerActivityRow; ledger?: LedgerRow }) => {
+  let icon = <PlusCircle className="size-4" />;
+  let iconBg = "bg-primary/15 text-primary";
+  let amountClass = "text-foreground";
+  let amountPrefix = "+";
+  let amountStr = "";
+
+  const isExpense = activity.action === "expense_submitted" || activity.action === "expense_paid" || activity.action === "expense_approved";
+  const isRollover = activity.action === "monthly_rollover";
+  
+  if (isExpense) {
+    icon = <ShoppingCart className="size-4" />;
+    iconBg = "bg-primary/15 text-primary";
+    amountClass = "text-foreground";
+    amountPrefix = "";
+  } else if (isRollover) {
+    icon = <RefreshCw className="size-4" />;
+    iconBg = "bg-primary/15 text-primary";
+    amountClass = "text-foreground";
+  }
+
+  if (activity.metadata && typeof (activity.metadata as any).amount === "number") {
+    amountStr = money((activity.metadata as any).amount);
+  }
+
+  let title = activity.action;
+  if (isExpense && activity.metadata && (activity.metadata as any).title) {
+    title = `${activity.profiles?.full_name || activity.profiles?.username || "User"} added ${(activity.metadata as any).title}`;
+  } else if (activity.action === "budget_added") {
+    title = "Budget increased";
+  } else if (isRollover) {
+    title = "Monthly rollover completed";
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-soft">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className={`grid size-10 shrink-0 place-items-center rounded-full ${iconBg}`}>
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-bold text-foreground">{title}</h3>
+        </div>
+      </div>
+      <div className="shrink-0 text-right">
+        {amountStr && (
+          <p className={`text-sm font-black ${amountClass}`}>
+            {amountPrefix}{amountStr}
+          </p>
+        )}
+        <p className="mt-0.5 text-xs text-muted-foreground">{timeAgo(activity.created_at)}</p>
+      </div>
+    </div>
+  );
+};
 
 // â”€â”€ Rollover Confirmation Dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -592,7 +652,7 @@ export const LedgerDetail = ({
   onRefreshList,
 }: LedgerDetailProps) => {
   const { toast } = useToast();
-  const { expenses, budgetAdditions, monthlyClosures, invites, loading, refresh } =
+  const { expenses, budgetAdditions, monthlyClosures, invites, activities, loading, refresh } =
     useLedgerDetail(ledger.id);
 
   const userRole: LedgerRole =
@@ -723,8 +783,6 @@ export const LedgerDetail = ({
     } else if (isOwn && isPending) {
       setEditExpense(expense);
     }
-  };
-
   const handleDeleteExpense = async (expense: LedgerExpenseRow) => {
     const canDelete =
       isOwnerOrAdmin || (expense.user_id === currentUserId && expense.status === "pending");
@@ -755,63 +813,82 @@ export const LedgerDetail = ({
 
   return (
     <div className="space-y-6">
-      {/* â”€â”€ Header â”€â”€ */}
-      <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
-        <div className="flex items-start gap-3">
+      {/* ── Header ── */}
+      <header className="flex flex-col gap-1">
+        <div className="flex items-center justify-between">
           <button
             type="button"
             onClick={onBack}
-            className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-primary"
+            className="flex items-center gap-1.5 text-sm font-bold text-primary"
           >
             <ArrowLeft className="size-4" />
             Back
           </button>
-        </div>
-
-        <div className="mt-3 flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h2 className="truncate text-2xl font-bold tracking-tight text-foreground">
-              {ledger.name}
-            </h2>
-            {ledger.description && (
-              <p className="mt-0.5 text-sm text-muted-foreground">{ledger.description}</p>
-            )}
-            <div className="mt-2 flex flex-wrap gap-2">
-              <span className="rounded-full bg-elevated px-2.5 py-1 text-xs font-semibold capitalize text-muted-foreground">
-                {ledger.ledger_type}
-              </span>
-              <span className="rounded-full bg-elevated px-2.5 py-1 text-xs font-semibold capitalize text-muted-foreground">
-                {ledger.budget_type === "monthly" ? "Monthly" : "One-Time"}
-              </span>
-              <span className="rounded-full bg-elevated px-2.5 py-1 text-xs font-semibold capitalize text-muted-foreground">
-                {userRole}
-              </span>
-              {ledger.is_archived && (
-                <span className="rounded-full bg-warning/15 px-2.5 py-1 text-xs font-semibold text-warning">
-                  Archived
-                </span>
-              )}
-            </div>
-          </div>
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
-            className="grid size-9 shrink-0 place-items-center rounded-full bg-elevated text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
+            className="grid size-8 place-items-center rounded-full text-muted-foreground transition hover:bg-elevated hover:text-foreground"
             aria-label="Ledger settings"
           >
             <Settings className="size-4" />
           </button>
         </div>
-      </section>
 
-      {/* â”€â”€ Budget Summary â”€â”€ */}
+        <div className="mt-3">
+          <h2 className="text-2xl font-black tracking-tight text-foreground">
+            {ledger.name}
+          </h2>
+          {ledger.description && (
+            <p className="mt-1 text-sm text-muted-foreground">{ledger.description}</p>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+            <span className="capitalize">{ledger.ledger_type}</span>
+            <span>·</span>
+            <span className="capitalize">{ledger.budget_type === "monthly" ? "Monthly" : "One-Time"}</span>
+            <span>·</span>
+            <span className="capitalize">{userRole}</span>
+            {ledger.is_archived && (
+              <>
+                <span>·</span>
+                <span className="text-warning">Archived</span>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* ── Budget Progress ── */}
+      {!ledger.is_archived && (
+        <section>
+          <div className="rounded-2xl bg-card p-4 shadow-soft">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Budget Used</span>
+              <span className="text-sm font-black text-foreground">
+                {summary.totalBudget > 0 ? Math.round((summary.totalSpent / summary.totalBudget) * 100) : 0}%
+              </span>
+            </div>
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-elevated">
+              <div 
+                className={`h-full rounded-full transition-all duration-500 ${
+                  summary.totalBudget > 0 && summary.totalSpent / summary.totalBudget > 0.95 ? 'bg-destructive' 
+                  : summary.totalBudget > 0 && summary.totalSpent / summary.totalBudget > 0.8 ? 'bg-warning' 
+                  : 'bg-success'
+                }`}
+                style={{ width: `${Math.min(summary.totalBudget > 0 ? (summary.totalSpent / summary.totalBudget) * 100 : 0, 100)}%` }}
+              />
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── Budget Summary ── */}
       <section>
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-base font-black tracking-tight text-foreground">
             Budget Overview
             {isMonthly && monthLabel && (
               <span className="ml-2 text-sm font-semibold text-muted-foreground">
-                Â· {monthLabel}
+                · {monthLabel}
               </span>
             )}
           </h2>
@@ -820,7 +897,7 @@ export const LedgerDetail = ({
               <button
                 type="button"
                 onClick={() => setHistoryOpen(true)}
-                className="flex items-center gap-1 text-xs font-bold text-primary"
+                className="flex items-center gap-1 text-xs font-bold text-primary transition-colors hover:text-primary/80"
               >
                 <History className="size-3.5" />
                 History
@@ -836,58 +913,72 @@ export const LedgerDetail = ({
         />
       </section>
 
-      {/* â”€â”€ Quick Actions â”€â”€ */}
+      {/* ── Quick Actions ── */}
       {!ledger.is_archived && (
         <section className="flex flex-col gap-3">
-          <div className={`grid gap-3 ${isOwnerOrAdmin ? "grid-cols-2" : "grid-cols-1"}`}>
+          <div className="grid grid-cols-2 gap-3">
             <Button
-              className="h-12 shadow-primary-action"
+              className="h-12 rounded-[1.25rem] shadow-primary-action"
               onClick={() => setAddExpenseOpen(true)}
             >
-              <Plus className="size-4" />
-              Add Expense
+              <Plus className="size-4 mr-1" />
+              Expense
             </Button>
             {isOwnerOrAdmin && (
               <Button
-                className="h-12 shadow-primary-action"
+                variant="quiet"
+                className="h-12 rounded-[1.25rem] bg-elevated hover:bg-elevated/70"
                 onClick={() => setAddBudgetOpen(true)}
               >
-                <Plus className="size-4" />
-                Add Budget
+                <Plus className="size-4 mr-1" />
+                Budget
+              </Button>
+            )}
+            {!isOwnerOrAdmin && ledger.ledger_type === "shared" && (
+              <Button
+                variant="quiet"
+                className="h-12 rounded-[1.25rem] bg-elevated hover:bg-elevated/70"
+                onClick={() => setInviteOpen(true)}
+              >
+                <UserPlus className="size-4 mr-1" />
+                Invite
               </Button>
             )}
           </div>
           
-          {isOwnerOrAdmin && (
-            ledger.ledger_type === "shared" ? (
-              <Button
-                variant="quiet"
-                className="relative h-12 w-full"
-                onClick={() => setInviteOpen(true)}
-              >
-                <UserPlus className="size-4" />
-                Invite Members
-                {invites.length > 0 && (
-                  <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-black leading-none text-primary-foreground shadow-primary-action ring-2 ring-card">
-                    {invites.length}
-                  </span>
-                )}
-              </Button>
-            ) : isMonthly && monthlyClosures.length > 0 ? (
-              <Button
-                variant="quiet"
-                className="h-12 w-full"
-                onClick={() => setHistoryOpen(true)}
-              >
-                <History className="size-4" />
-                History
-              </Button>
-            ) : null
+          {isOwnerOrAdmin && ledger.ledger_type === "shared" && (
+            <Button
+              variant="quiet"
+              className="relative h-12 w-full rounded-[1.25rem] bg-elevated hover:bg-elevated/70"
+              onClick={() => setInviteOpen(true)}
+            >
+              <UserPlus className="size-4 mr-2" />
+              Invite Members
+              {invites.length > 0 && (
+                <span className="absolute -right-1 -top-1 grid min-h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-black leading-none text-primary-foreground shadow-primary-action ring-2 ring-card">
+                  {invites.length}
+                </span>
+              )}
+            </Button>
           )}
         </section>
       )}
 
-      {/* â”€â”€ Expense Timeline â”€â”€ */}
+      {/* ── Activity Timeline ── */}
+      {activities && activities.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-base font-black tracking-tight text-foreground">
+            Activity
+          </h2>
+          <div className="space-y-3">
+            {activities.slice(0, 3).map((activity) => (
+              <ActivityRow key={activity.id} activity={activity} ledger={ledger} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Expense Timeline ── */}
       <section className="pb-20">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-base font-black tracking-tight text-foreground">

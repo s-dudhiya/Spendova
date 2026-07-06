@@ -20,6 +20,7 @@ interface UseLedgerDetailResult {
   budgetAdditions: LedgerBudgetAddition[];
   monthlyClosures: LedgerMonthlyClosure[];
   invites: LedgerInvite[];
+  activities: LedgerActivityRow[];
   loading: boolean;
   refresh: () => Promise<void>;
 }
@@ -31,6 +32,7 @@ export function useLedgerDetail(
   const [budgetAdditions, setBudgetAdditions] = useState<LedgerBudgetAddition[]>([]);
   const [monthlyClosures, setMonthlyClosures] = useState<LedgerMonthlyClosure[]>([]);
   const [invites, setInvites] = useState<LedgerInvite[]>([]);
+  const [activities, setActivities] = useState<LedgerActivityRow[]>([]);
   const [loading, setLoading] = useState(false);
   const refreshTimerRef = useRef<number | null>(null);
 
@@ -67,6 +69,13 @@ export function useLedgerDetail(
             .eq("ledger_id", ledgerId)
             .eq("status", "pending")
             .order("created_at", { ascending: false }),
+
+          supabase
+            .from("ledger_activity" as never)
+            .select("id, ledger_id, user_id, action, metadata, created_at, profiles!ledger_activity_user_id_fkey(full_name, username)")
+            .eq("ledger_id", ledgerId)
+            .order("created_at", { ascending: false })
+            .limit(10),
         ]);
 
       if (!expensesRes.error)
@@ -77,6 +86,8 @@ export function useLedgerDetail(
         setMonthlyClosures((monthlyRes.data || []) as unknown as LedgerMonthlyClosure[]);
       if (!invitesRes.error)
         setInvites((invitesRes.data || []) as unknown as LedgerInvite[]);
+      if (!activitiesRes.error)
+        setActivities((activitiesRes.data || []) as unknown as LedgerActivityRow[]);
     } catch (error) {
       console.error("Ledger detail fetch failed", error);
     } finally {
@@ -111,7 +122,7 @@ export function useLedgerDetail(
     };
   }, [ledgerId, scheduleRefresh]);
 
-  return { expenses, budgetAdditions, monthlyClosures, invites, loading, refresh };
+  return { expenses, budgetAdditions, monthlyClosures, invites, activities, loading, refresh };
 }
 
 /** Hook for Ledger Expense Mutations with syncing */

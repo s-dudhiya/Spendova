@@ -43,54 +43,48 @@ export const ExpenseCard = ({
       type="button"
       disabled={!isClickable}
       onClick={() => onClick(expense)}
-      className={`w-full rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow ${
+      className={`flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-soft transition-shadow ${
         isClickable ? "hover:shadow-panel" : "cursor-default"
       }`}
       aria-label={`${name}: ${expense.title} – ${money(expense.amount)}`}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         {/* Avatar */}
         <span
-          className="grid size-11 shrink-0 place-items-center rounded-full bg-elevated text-sm font-black text-primary"
+          className="grid size-10 shrink-0 place-items-center rounded-full bg-elevated text-sm font-black text-primary"
           aria-hidden="true"
         >
           {initial}
         </span>
 
         {/* Content */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-bold text-foreground">
-                {name}
-              </p>
-              <p className="truncate font-bold text-foreground">{expense.title}</p>
-              {expense.category && (
-                <span className="mt-0.5 inline-block rounded-full bg-elevated px-2 py-0.5 text-xs font-semibold text-muted-foreground">
-                  {expense.category}
-                </span>
-              )}
-            </div>
-
-            {/* Amount + Status */}
-            <div className="shrink-0 text-right">
-              <p className="font-black text-foreground">{money(expense.amount)}</p>
-              <StatusBadge status={expense.status} />
-            </div>
-          </div>
-
-          {/* Footer row */}
-          <div className="mt-2 flex items-center gap-2">
-            <p className="text-xs text-muted-foreground">
-              {dateLabel(expense.created_at)}
-            </p>
+        <div className="min-w-0 text-left">
+          <p className="truncate text-sm font-bold text-foreground">
+            {expense.title}
+          </p>
+          <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <span className="truncate">{name}</span>
+            {expense.category && (
+              <>
+                <span>·</span>
+                <span className="truncate">{expense.category}</span>
+              </>
+            )}
             {expense.proof_path && (
-              <span className="flex items-center gap-0.5 text-xs font-medium text-muted-foreground">
+              <>
+                <span>·</span>
                 <Paperclip className="size-3" aria-hidden="true" />
-                Receipt
-              </span>
+              </>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Amount + Status */}
+      <div className="shrink-0 text-right">
+        <p className="text-sm font-black text-foreground">{money(expense.amount)}</p>
+        <div className="mt-1">
+          <StatusBadge status={expense.status} />
         </div>
       </div>
     </button>
