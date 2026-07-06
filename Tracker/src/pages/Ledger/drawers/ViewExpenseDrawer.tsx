@@ -42,7 +42,6 @@ export const ViewExpenseDrawer = ({
   const [activeAction, setActiveAction] = useState<"pay" | "pending" | "delete" | null>(null);
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
   const [loadingReceipt, setLoadingReceipt] = useState(false);
-  const [loadingReceipt, setLoadingReceipt] = useState(false);
 
   useEffect(() => {
     if (!expense?.proof_path || !open) {
