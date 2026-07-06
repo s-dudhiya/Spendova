@@ -81,7 +81,7 @@ const LedgerCard = ({ ledger, summary, onClick }: LedgerCardProps) => {
         </div>
         <div className="flex flex-col gap-1 text-right">
           <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Available</span>
-          <span className="text-sm font-black text-emerald-500">{money(summary?.expectedAvailable ?? 0)}</span>
+          <span className="text-sm font-black text-success">{money(summary?.expectedAvailable ?? 0)}</span>
         </div>
       </div>
 
@@ -227,7 +227,7 @@ export const BudgetLedgerView = ({
           <div className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
             <span className="m-0 inline-flex max-w-full flex-col items-start p-0">
               <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">Available</span>
-              <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-emerald-500 sm:text-lg">{money(globalSummary.expectedAvailable)}</span>
+              <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-success sm:text-lg">{money(globalSummary.expectedAvailable)}</span>
             </span>
           </div>
           <div className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
