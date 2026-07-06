@@ -70,13 +70,8 @@ export const FilterDateField = ({ label, value, onChange }: { label: string; val
         type="date"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className={`block h-10 w-full min-w-0 rounded-full border border-input bg-background px-3 text-left text-xs font-medium outline-none [color-scheme:light] focus:ring-2 focus:ring-inset focus:ring-ring dark:[color-scheme:dark] ${value ? "text-foreground" : "text-transparent"}`}
+        className={`block h-10 w-full min-w-0 rounded-full border border-input bg-background px-3 text-left text-xs font-medium outline-none [color-scheme:light] focus:ring-2 focus:ring-inset focus:ring-ring dark:[color-scheme:dark] text-foreground`}
       />
-      {!value ? (
-        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs font-medium text-muted-foreground">
-          Select date
-        </span>
-      ) : null}
     </span>
   </label>
 );

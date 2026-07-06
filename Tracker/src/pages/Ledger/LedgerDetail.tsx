@@ -2,7 +2,7 @@
 // Budget Ledger â€“ Ledger Detail View
 // ============================================================
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   ArrowLeft,
   Plus,
@@ -621,6 +621,20 @@ const SettingsDrawer = ({
     }
   };
 
+  const makeOwner = async (userId: string) => {
+    try {
+      const { data, error } = await supabase.rpc('transfer_ledger_ownership' as any, { 
+        p_ledger_id: ledger.id, 
+        p_new_owner_id: userId 
+      });
+      if (error || (data as any)?.error) throw error || new Error((data as any)?.error);
+      toast({ title: "Ownership transferred successfully" });
+      await onRefreshList({ silent: true });
+    } catch (e) {
+      toast({ title: "Failed to transfer ownership", variant: "destructive" });
+    }
+  };
+
   const removeMember = async (userId: string, name: string) => {
     if (!isOwner) return;
     setDeletingExpenseId(userId);
@@ -680,7 +694,8 @@ const SettingsDrawer = ({
                 </p>
                 {ledger.ledger_members.map((m) => {
                   const isBudgetAdmin = ledger.budget_admin_id === m.user_id;
-                  const canManage = isOwner || userRole === "admin";
+                  const currentUserIsBudgetAdmin = ledger.budget_admin_id === currentUserId;
+                  const canManage = isOwner || currentUserIsBudgetAdmin;
                   
                   return (
                     <div key={m.user_id} className="flex items-center justify-between gap-3 rounded-2xl bg-elevated p-3">
@@ -706,12 +721,20 @@ const SettingsDrawer = ({
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-48 rounded-2xl">
-                            {!isBudgetAdmin && (
+                            {!isBudgetAdmin && (isOwner || currentUserIsBudgetAdmin) && (
                               <DropdownMenuItem 
                                 onClick={() => makeBudgetAdmin(m.user_id)}
                                 className="font-semibold py-2"
                               >
                                 Make Budget Admin
+                              </DropdownMenuItem>
+                            )}
+                            {isOwner && m.user_id !== currentUserId && (
+                              <DropdownMenuItem 
+                                onClick={() => makeOwner(m.user_id)}
+                                className="font-semibold py-2"
+                              >
+                                Make Owner
                               </DropdownMenuItem>
                             )}
                             {isOwner && m.user_id !== currentUserId && (
@@ -833,6 +856,7 @@ export const LedgerDetail = ({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [filter, setFilter] = useState<ExpenseFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState("all");
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
@@ -999,7 +1023,7 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
       const end = customEnd ? new Date(`${customEnd}T23:59:59`) : null;
       if (start && date < start) return false;
       if (end && date > end) return false;
-      return Boolean(start || end);
+      return true;
     }
     
     if (dFilter === "today") return date.toDateString() === now.toDateString();
@@ -1031,13 +1055,25 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
     return true;
   };
 
-  const visibleExpenses = expenses.filter((e) => {
-    if (filter !== "all" && e.status !== filter) return false;
-    if (!applyDateFilter(e.created_at, dateFilter, dateStart, dateEnd)) return false;
-    return true;
-  });
+  const visibleExpenses = useMemo(() => {
+    return expenses.filter((e) => {
+      if (filter !== "all" && e.status !== filter) return false;
+      if (categoryFilter !== "all" && (e.category || "Uncategorized") !== categoryFilter) return false;
+      if (!applyDateFilter(e.created_at, dateFilter, dateStart, dateEnd)) return false;
+      return true;
+    });
+  }, [expenses, filter, categoryFilter, dateFilter, dateStart, dateEnd]);
+
+  const availableCategories = useMemo(() => {
+    const cats = new Set<string>();
+    expenses.forEach(e => {
+      if (e.category) cats.add(e.category);
+      else cats.add("Uncategorized");
+    });
+    return Array.from(cats).sort();
+  }, [expenses]);
   
-  const activeFilterCount = (filter !== "all" ? 1 : 0) + (dateFilter !== "all" ? 1 : 0);
+  const activeFilterCount = (filter !== "all" ? 1 : 0) + (categoryFilter !== "all" ? 1 : 0) + (dateFilter !== "all" ? 1 : 0);
   const ActiveIcon = getLedgerIcon(ledger.icon);
 
   return (
@@ -1117,7 +1153,7 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
       </section>
 
       {/* ── Quick Actions ── */}
-      <section className={`grid grid-cols-1 gap-3 ${isOwnerOrAdmin ? 'min-[420px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]' : ''}`}>
+      <section className={`grid grid-cols-1 gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]`}>
           <Button
             className="h-[52px] w-full rounded-2xl shadow-primary-action"
             onClick={() => setAddExpenseOpen(true)}
@@ -1125,19 +1161,17 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
             <Plus className="mr-1 size-4" />
             Add Expense
           </Button>
-          {isOwnerOrAdmin && (
-            <Button
-              variant="outline"
-              className="h-[52px] w-full rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary"
-              onClick={() => setAddBudgetOpen(true)}
-            >
-              <Plus className="mr-1 size-4" />
-              Add Budget
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            className="h-[52px] w-full rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary"
+            onClick={() => setAddBudgetOpen(true)}
+          >
+            <Plus className="mr-1 size-4" />
+            Add Budget
+          </Button>
         </section>
 
-      {isOwnerOrAdmin && ledger.ledger_type === "shared" && (
+      {ledger.ledger_type === "shared" && (
         <Button
           variant="quiet"
           className="relative h-11 w-full rounded-2xl text-primary hover:bg-primary/10"
@@ -1281,6 +1315,7 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
         title="Expense filters" 
         onClear={() => {
           setFilter("all");
+          setCategoryFilter("all");
           setDateFilter("all");
           setDateStart("");
           setDateEnd("");
@@ -1296,6 +1331,18 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
             { value: "paid", label: "Paid" },
           ]} 
         />
+
+        {availableCategories.length > 0 && (
+          <FilterField 
+            label="Category" 
+            value={categoryFilter} 
+            onChange={setCategoryFilter} 
+            options={[
+              { value: "all", label: "All categories" },
+              ...availableCategories.map(c => ({ value: c, label: c }))
+            ]} 
+          />
+        )}
         
         <DateFilterControls 
           value={dateFilter} 
