@@ -42,7 +42,7 @@ export const ViewExpenseDrawer = ({
   const [activeAction, setActiveAction] = useState<"pay" | "pending" | "delete" | null>(null);
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
   const [loadingReceipt, setLoadingReceipt] = useState(false);
-  const [tab, setTab] = useState<"details" | "receipt">("details");
+  const [loadingReceipt, setLoadingReceipt] = useState(false);
 
   useEffect(() => {
     if (!expense?.proof_path || !open) {
@@ -56,7 +56,7 @@ export const ViewExpenseDrawer = ({
   }, [expense?.proof_path, open]);
 
   useEffect(() => {
-    if (open) setTab("details");
+    // Reset any state on open if needed
   }, [open]);
 
   if (!expense) return null;
@@ -129,26 +129,6 @@ export const ViewExpenseDrawer = ({
         </DrawerHeader>
 
         <div className="min-h-0 overflow-y-auto overscroll-contain px-6 py-2">
-          {expense.proof_path && (
-            <div className="mb-6 grid grid-cols-2 rounded-[2rem] bg-elevated p-1 shadow-inner">
-              {(["details", "receipt"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setTab(t)}
-                  className={`rounded-full px-4 py-2.5 text-sm font-bold capitalize transition-all ${
-                    tab === t
-                      ? "bg-primary text-primary-foreground shadow-md"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {t === "details" ? "Details" : "Receipt"}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {tab === "details" && (
             <div className="space-y-6">
               <div className="flex flex-col items-center justify-center py-6 text-center">
                 <p className="text-xl font-bold text-foreground mb-1">{expense.title}</p>
@@ -182,18 +162,37 @@ export const ViewExpenseDrawer = ({
                   </div>
                 )}
                 {expense.proof_path && (
-                  <div className="flex items-center justify-between pt-4 border-t border-border/50">
+                  <div className="flex flex-col gap-3 pt-4 border-t border-border/50">
                     <div className="flex items-center gap-2">
                       <Paperclip className="size-4 text-muted-foreground" />
                       <span className="text-sm font-semibold text-muted-foreground">Receipt</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setTab("receipt")}
-                      className="text-sm font-bold text-primary hover:underline"
-                    >
-                      View attached
-                    </button>
+                    {loadingReceipt ? (
+                      <div className="flex items-center justify-center py-6">
+                        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : receiptUrl ? (
+                      <div className="overflow-hidden rounded-[1rem] border border-border/50 bg-elevated/20 flex flex-col mt-2">
+                        <div className="flex items-center justify-center p-2 bg-background/50 max-h-[300px]">
+                          <img
+                            src={receiptUrl}
+                            alt="Expense receipt"
+                            className="max-w-full max-h-full object-contain rounded-lg"
+                          />
+                        </div>
+                        <a
+                          href={receiptUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 bg-elevated border-t border-border px-4 py-3 text-sm font-bold text-foreground hover:bg-elevated/80 transition-colors"
+                        >
+                          <ExternalLink className="size-4" />
+                          Open full size
+                        </a>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground mt-2">Receipt could not be loaded.</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -266,42 +265,6 @@ export const ViewExpenseDrawer = ({
                 </div>
               </div>
             </div>
-          )}
-
-          {tab === "receipt" && (
-            <div className="space-y-4 pb-4 h-full flex flex-col">
-              {loadingReceipt ? (
-                <div className="flex flex-1 items-center justify-center">
-                  <Loader2 className="size-8 animate-spin text-muted-foreground" />
-                </div>
-              ) : receiptUrl ? (
-                <div className="overflow-hidden rounded-[1.5rem] border border-border/50 shadow-sm bg-elevated/20 flex-1 flex items-center justify-center p-2">
-                  <img
-                    src={receiptUrl}
-                    alt="Expense receipt"
-                    className="max-w-full max-h-full object-contain rounded-[1rem]"
-                  />
-                </div>
-              ) : (
-                <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-[1.5rem] border border-dashed border-border text-muted-foreground bg-elevated/30">
-                  <Paperclip className="size-10 opacity-50" />
-                  <p className="text-sm font-medium">Receipt could not be loaded.</p>
-                </div>
-              )}
-
-              {receiptUrl && (
-                <a
-                  href={receiptUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 rounded-full bg-elevated border border-border px-4 py-3.5 text-sm font-bold text-foreground hover:bg-elevated/80 transition-colors"
-                >
-                  <ExternalLink className="size-4" />
-                  Open full size
-                </a>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="p-6 pt-2 bg-background border-t border-transparent">

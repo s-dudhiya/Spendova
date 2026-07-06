@@ -148,7 +148,7 @@ export const compressReceiptImage = async (file: File): Promise<Blob> => {
   if (file.size > 10 * 1024 * 1024) {
     throw new Error("File must be under 10 MB.");
   }
-  if (file.size <= MAX_RECEIPT_SIZE) return file;
+  // Always compress the image, regardless of initial size, to save maximum storage space
 
   const bitmap = await (async () => {
     if ("createImageBitmap" in window) return createImageBitmap(file);
@@ -175,9 +175,9 @@ export const compressReceiptImage = async (file: File): Promise<Blob> => {
   const toBlob = (q: number) =>
     new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", q));
 
-  for (const quality of [0.78, 0.72, 0.65, 0.58]) {
-    const blob = await toBlob(quality);
-    if (blob && blob.size <= MAX_RECEIPT_SIZE) return blob;
-  }
-  throw new Error("Image is too large to upload even after compression. Please choose a smaller file.");
+  // Convert to WebP at a low quality setting for maximum compression
+  const blob = await toBlob(0.58);
+  if (blob) return blob;
+  
+  return file;
 };
