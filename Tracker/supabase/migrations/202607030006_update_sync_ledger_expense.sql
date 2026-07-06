@@ -32,11 +32,12 @@ BEGIN
 
   IF p_action = 'insert' THEN
     IF v_ledger_type = 'personal' THEN
-      INSERT INTO expenses (user_id, amount, category, note, paid_by, status, split_type, group_id, created_at)
+      INSERT INTO expenses (user_id, amount, category, category_id, note, paid_by, status, split_type, group_id, created_at)
       VALUES (
         p_user_id, 
         p_amount, 
-        COALESCE(p_category_id::text, p_category), 
+        COALESCE(p_title, p_category, 'Expense'), 
+        p_category_id,
         p_notes, 
         p_user_id, 
         'cleared', 
@@ -71,7 +72,8 @@ BEGIN
     IF v_linked_expense_id IS NOT NULL AND v_ledger_type = 'personal' THEN
       UPDATE expenses SET
         amount = COALESCE(p_amount, amount),
-        category = COALESCE(p_category_id::text, p_category, category),
+        category = COALESCE(p_title, p_category, category),
+        category_id = COALESCE(p_category_id, category_id),
         note = COALESCE(p_notes, note),
         created_at = COALESCE(p_created_at, created_at),
         updated_at = now()
