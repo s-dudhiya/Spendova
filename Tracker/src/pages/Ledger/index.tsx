@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { 
   Plus, 
   Users, 
@@ -177,6 +178,7 @@ interface BudgetLedgerViewProps {
   currentUserId: string;
   profile: { full_name?: string | null; username?: string | null } | null;
   refresh: (options?: { silent?: boolean }) => Promise<void>;
+  initialLedgerId?: string;
 }
 
 export const BudgetLedgerView = ({
@@ -184,9 +186,17 @@ export const BudgetLedgerView = ({
   currentUserId,
   profile,
   refresh,
+  initialLedgerId,
 }: BudgetLedgerViewProps) => {
-  const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(initialLedgerId || null);
   const [createOpen, setCreateOpen] = useState(false);
+
+  useEffect(() => {
+    if (initialLedgerId !== undefined) {
+      setSelectedLedgerId(initialLedgerId || null);
+    }
+  }, [initialLedgerId]);
   
   const { globalSummary, ledgerSummaries, recentActivity, refresh: refreshDashboard } = useLedgersDashboard(ledgers);
 
@@ -203,6 +213,7 @@ export const BudgetLedgerView = ({
         currentUserId={currentUserId}
         onBack={() => {
           setSelectedLedgerId(null);
+          navigate("/dashboard");
           refreshDashboard();
         }}
         onRefreshList={refresh}
@@ -277,7 +288,10 @@ export const BudgetLedgerView = ({
                 key={ledger.id}
                 ledger={ledger}
                 summary={ledgerSummaries[ledger.id]}
-                onClick={() => setSelectedLedgerId(ledger.id)}
+                onClick={() => {
+                  setSelectedLedgerId(ledger.id);
+                  navigate(`/ledger/${ledger.id}`);
+                }}
               />
             ))}
           </div>

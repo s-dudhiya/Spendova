@@ -18,6 +18,7 @@ import Auth from "./pages/Auth.tsx";
 const Admin = lazy(() => import("./pages/Admin.tsx"));
 const Index = lazy(() => import("./pages/Index.tsx"));
 const InviteAccept = lazy(() => import("./pages/InviteAccept.tsx"));
+const InviteLedgerAccept = lazy(() => import("./pages/Ledger/InviteLedgerAccept.tsx"));
 const Maintenance = lazy(() => import("./pages/Maintenance.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const VerifyOtp = lazy(() => import("./pages/VerifyOtp.tsx"));
@@ -182,6 +183,7 @@ const AppRoutes = () => {
       <Routes>
         <Route path="/" element={<ProtectedIndex />} />
         <Route path="/dashboard" element={<ProtectedIndex />} />
+        <Route path="/ledger/:id" element={<ProtectedIndex />} />
         <Route path="/profile" element={<ProtectedIndex />} />
         <Route path="/split" element={<ProtectedIndex />} />
         <Route path="/split/friend/:id" element={<ProtectedIndex />} />
@@ -199,6 +201,7 @@ const AppRoutes = () => {
         <Route path="/auth" element={<Auth mode="login" />} />
         <Route path="/invite" element={<InviteAccept />} />
         <Route path="/accept-invite" element={<InviteAccept />} />
+        <Route path="/invite-ledger" element={<InviteLedgerAccept />} />
         {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
         <Route path="*" element={<NotFound />} />
       </Routes>

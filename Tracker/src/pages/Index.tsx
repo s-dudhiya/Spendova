@@ -4581,11 +4581,13 @@ const Index = () => {
   const params = useParams();
   const isSplitRoute = location.pathname.startsWith("/split");
   const isProfileRoute = location.pathname === "/profile";
+  const isLedgerRoute = location.pathname.startsWith("/ledger");
   const friendDetailId = location.pathname.startsWith("/split/friend/") ? params.id : undefined;
   const groupDetailId = location.pathname.startsWith("/split/group/") ? params.id : undefined;
   const expenseDetailId = location.pathname.startsWith("/split/expense/") ? params.id : undefined;
   const settlementDetailId = location.pathname.startsWith("/split/settlement/") ? params.id : undefined;
-  const [activeTab, setActiveTabState] = useState<TabKey>(isSplitRoute ? "split" : "home");
+  const ledgerDetailId = isLedgerRoute && location.pathname !== "/ledger" ? params.id : undefined;
+  const [activeTab, setActiveTabState] = useState<TabKey>(isSplitRoute ? "split" : isLedgerRoute ? "ledger" : "home");
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [modal, setModal] = useState<ModalState>({ type: null });
   const { data, loading, refresh } = useSpendovaData(user?.id);
@@ -4606,7 +4608,7 @@ const Index = () => {
     else if (location.pathname.startsWith("/split") || isProfileRoute) navigate("/dashboard");
   };
 
-  const activeContentTab: ContentKey = isProfileRoute ? "profile" : isSplitRoute ? "split" : activeTab;
+  const activeContentTab: ContentKey = isProfileRoute ? "profile" : isSplitRoute ? "split" : isLedgerRoute ? "ledger" : activeTab;
   const title = friendDetailId ? "Friend" : groupDetailId ? "Group" : expenseDetailId ? "Expense" : settlementDetailId ? "Settlement" : isProfileRoute ? "Profile" : tabs.find((tab) => tab.key === activeContentTab)?.label ?? "Home";
   const toggleTheme = () => setTheme((current) => (current === "dark" ? "light" : "dark"));
   const openModal = (type: ModalType, item?: string) => setModal({ type, item });
@@ -4673,7 +4675,7 @@ const Index = () => {
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} categories={data.categories} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} settlements={data.settlements} summary={summary} categories={data.categories} currentUserId={user.id} groups={data.groups} friends={data.friends} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "ledger" && <BudgetLedgerView ledgers={data.ledgers} currentUserId={user.id} profile={profile} refresh={refresh} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "ledger" && <BudgetLedgerView ledgers={data.ledgers} currentUserId={user.id} profile={profile} refresh={refresh} initialLedgerId={ledgerDetailId} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "profile" && <ProfileView userId={user.id} profile={profile} email={user.email} createdAt={user.created_at} theme={theme} onThemeToggle={toggleTheme} onSave={saveProfile} openModal={openModal} />}
         {/* <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p> */}
       </div>

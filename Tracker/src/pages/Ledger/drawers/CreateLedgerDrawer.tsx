@@ -18,6 +18,7 @@ import type { LedgerType, BudgetType } from "../types";
 import { Field, Textarea, SelectField } from "../components/Fields";
 import { LedgerIconPicker } from "../components/LedgerIconPicker";
 import { DEFAULT_LEDGER_ICON } from "../components/LedgerIcon";
+import { Checkbox } from "@/components/ui/checkbox";
 import { logLedgerActivity } from "../hooks";
 
 // ── Main component ───────────────────────────────────────────
@@ -48,6 +49,10 @@ export const CreateLedgerDrawer = ({
   const [icon, setIcon] = useState<string>(DEFAULT_LEDGER_ICON);
   const [submitting, setSubmitting] = useState(false);
 
+  const [addedParticipants, setAddedParticipants] = useState<{id: string, username: string, fullName: string | null}[]>([]);
+  const [emailInvitesCount, setEmailInvitesCount] = useState(0);
+  const [selectedBudgetAdminId, setSelectedBudgetAdminId] = useState<string | null>(null);
+
   // Created ledger state (used in invite step)
   const [createdLedgerId, setCreatedLedgerId] = useState<string | null>(null);
   const [shareLink, setShareLink] = useState<string | null>(null);
@@ -67,6 +72,9 @@ export const CreateLedgerDrawer = ({
     setInitialBudget("");
     setIcon(DEFAULT_LEDGER_ICON);
     setSubmitting(false);
+    setAddedParticipants([]);
+    setEmailInvitesCount(0);
+    setSelectedBudgetAdminId(null);
     setCreatedLedgerId(null);
     setShareLink(null);
     setCopied(false);
@@ -75,8 +83,19 @@ export const CreateLedgerDrawer = ({
     setGeneratingLink(false);
   };
 
-  const handleOpenChange = (o: boolean) => {
-    if (!o) reset();
+  const handleOpenChange = async (o: boolean) => {
+    if (!o) {
+      if (step === "invite" && createdLedgerId) {
+        const totalMembers = addedParticipants.length + emailInvitesCount;
+        if (totalMembers < 2) {
+          await (supabase.from("ledgers" as never) as any).delete().eq("id", createdLedgerId);
+          toast({ title: "Ledger discarded", description: "At least 2 participants are required for a shared ledger.", variant: "destructive" });
+        } else if (selectedBudgetAdminId) {
+          await (supabase.from("ledgers" as never) as any).update({ budget_admin_id: selectedBudgetAdminId }).eq("id", createdLedgerId);
+        }
+      }
+      reset();
+    }
     onOpenChange(o);
   };
 
@@ -107,7 +126,7 @@ export const CreateLedgerDrawer = ({
           ledger_type: ledgerType,
           budget_type: budgetType,
           owner_id: currentUserId,
-          budget_admin_id: currentUserId,
+          budget_admin_id: currentUserId, // Default to creator, can be changed in step 2
           total_savings: 0,
           icon,
         } as never)
@@ -139,7 +158,16 @@ export const CreateLedgerDrawer = ({
         } as never)) as unknown as { error: Error | null };
       if (bErr) throw bErr;
 
-      // 4. Log activity
+      // 4. Fetch creator profile and setup step 2 state
+      const { data: creatorProfile } = await supabase.from('profiles').select('username, full_name').eq('id', currentUserId).maybeSingle();
+      if (creatorProfile) {
+        setAddedParticipants([{ id: currentUserId, username: creatorProfile.username || 'You', fullName: creatorProfile.full_name }]);
+      } else {
+        setAddedParticipants([{ id: currentUserId, username: 'You', fullName: null }]);
+      }
+      setSelectedBudgetAdminId(currentUserId);
+
+      // 5. Log activity
       await logLedgerActivity(ledgerId, currentUserId, "ledger_created", {
         entityType: "ledger",
         entityId: ledgerId,
@@ -230,6 +258,7 @@ export const CreateLedgerDrawer = ({
 
       toast({ title: "Invite sent!", description: `Invited ${inviteEmail.trim()}` });
       setInviteEmail("");
+      setEmailInvitesCount(prev => prev + 1);
     } catch (error) {
       toast({
         title: "Failed to send invite",
@@ -285,6 +314,7 @@ export const CreateLedgerDrawer = ({
       if (error) throw error;
       
       toast({ title: "User added successfully", description: `${foundUser.full_name || foundUser.username} was added to the ledger.` });
+      setAddedParticipants(prev => [...prev, { id: foundUser.user_id, username: foundUser.username || '', fullName: foundUser.full_name }]);
       setInviteUsername("");
     } catch (e: any) {
       toast({ title: "Failed to add user", description: e.message || "Network error.", variant: "destructive" });
@@ -294,6 +324,17 @@ export const CreateLedgerDrawer = ({
   };
 
   const handleDone = async () => {
+    const totalMembers = addedParticipants.length + emailInvitesCount;
+    if (totalMembers < 2) {
+      toast({ title: "At least 2 participants required", description: "Please add more members or send an email invite.", variant: "destructive" });
+      return;
+    }
+    
+    if (selectedBudgetAdminId) {
+      await (supabase.from("ledgers" as never) as any).update({ budget_admin_id: selectedBudgetAdminId }).eq("id", createdLedgerId);
+    }
+    
+    // Call handleOpenChange directly to run cleanup / reset but it won't delete since totalMembers >= 2
     handleOpenChange(false);
     await onSuccess();
   };
@@ -459,6 +500,39 @@ export const CreateLedgerDrawer = ({
                   </Button>
                 </div>
               </div>
+              {/* Added Participants */}
+              {addedParticipants.length > 0 && (
+                <div className="space-y-3 pt-4 border-t border-border/50">
+                  <p className="text-sm font-bold text-foreground">Added Participants</p>
+                  <div className="space-y-2">
+                    {addedParticipants.map(p => (
+                      <div key={p.id} className="flex items-center justify-between p-3 rounded-xl border border-border bg-elevated/50">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs uppercase shrink-0">
+                            {(p.fullName || p.username).substring(0, 2)}
+                          </div>
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {p.fullName || p.username} {p.id === currentUserId && "(You)"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label htmlFor={`admin-${p.id}`} className="text-xs text-muted-foreground cursor-pointer select-none">
+                            Budget Admin
+                          </label>
+                          <input 
+                            type="radio" 
+                            id={`admin-${p.id}`} 
+                            name="budgetAdmin" 
+                            checked={selectedBudgetAdminId === p.id} 
+                            onChange={() => setSelectedBudgetAdminId(p.id)} 
+                            className="size-4 text-primary focus:ring-primary border-muted cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

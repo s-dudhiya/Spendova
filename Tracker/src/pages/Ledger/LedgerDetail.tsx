@@ -1022,18 +1022,18 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
   const ActiveIcon = getLedgerIcon(ledger.icon);
 
   return (
-    <div className="space-y-5 pt-4 pb-32">
+    <div className="space-y-5 pt-0 pb-32">
       {/* ── Header ── */}
-      <header className="flex items-center gap-3 py-2">
+      <header className="flex items-center gap-2.5 py-2">
         <button
           type="button"
           onClick={onBack}
-          className="grid size-10 shrink-0 place-items-center rounded-full text-primary hover:bg-primary/10"
+          className="grid size-9 shrink-0 place-items-center rounded-full text-primary hover:bg-primary/10 -ml-2"
         >
           <ArrowLeft className="size-5" />
         </button>
         
-        <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
+        <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-primary/10 text-primary">
           <ActiveIcon className="size-5" />
         </div>
 
@@ -1043,7 +1043,7 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
           </h1>
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <p className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-              {ledger.ledger_type === "shared" ? `${invites.length + 1} MEMBERS` : "PERSONAL"}
+              {ledger.ledger_type === "shared" ? `${ledger.ledger_members.length} MEMBERS` : "PERSONAL"}
             </p>
             <span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-bold uppercase text-success">
               {ledger.budget_type === "monthly" ? "Monthly" : "One-Time"}
@@ -1126,11 +1126,6 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
         >
           <UserPlus className="mr-2 size-4" />
           Invite Members
-          {invites.length > 0 && (
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 grid min-h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-black leading-none text-primary-foreground shadow-primary-action">
-              {invites.length}
-            </span>
-          )}
         </Button>
       )}
 
