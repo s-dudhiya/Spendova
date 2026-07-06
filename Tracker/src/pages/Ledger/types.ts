@@ -5,7 +5,8 @@
 export type LedgerType = "personal" | "shared";
 export type BudgetType = "monthly" | "one_time";
 export type LedgerRole = "owner" | "admin" | "member";
-export type ExpenseStatus = "pending" | "approved" | "paid" | "rejected";
+export type ExpenseStatus = "pending" | "paid";
+export type ExpenseFilter = "all" | "pending" | "paid";
 export type InviteType = "email" | "link";
 
 export interface LedgerMemberProfile {
@@ -31,6 +32,7 @@ export interface LedgerRow {
   budget_type: BudgetType;
   total_savings: number;
   owner_id: string;
+  budget_admin_id?: string;
   is_archived: boolean;
   created_at: string;
   updated_at: string | null;
@@ -135,7 +137,6 @@ export interface LedgerBudgetSummary {
   totalBudget: number;
   paidExpenses: number;
   pendingExpenses: number;
-  approvedExpenses: number;
   availableBudget: number;
   expectedAvailable: number;
   totalSavings: number;
@@ -150,17 +151,9 @@ export const EXPENSE_STATUS_CONFIG: Record<
     label: "Pending",
     className: "bg-warning/15 text-warning",
   },
-  approved: {
-    label: "Approved",
-    className: "bg-primary/15 text-primary",
-  },
   paid: {
     label: "Paid",
     className: "bg-success/15 text-success",
-  },
-  rejected: {
-    label: "Rejected",
-    className: "bg-destructive/15 text-destructive",
   },
 };
 

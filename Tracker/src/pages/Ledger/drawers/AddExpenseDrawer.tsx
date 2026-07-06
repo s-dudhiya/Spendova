@@ -19,6 +19,9 @@ import { Field, Textarea } from "../components/Fields";
 import { ImageUpload } from "@/components/ImageUpload";
 import { useExpenseCategories } from "@/hooks/useExpenseCategories";
 import { CategoryPicker } from "@/components/CategoryPicker";
+import type { LedgerMemberRow } from "../types";
+import { AppSelect } from "../components/Filters";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface AddExpenseDrawerProps {
   open: boolean;
@@ -37,6 +40,7 @@ interface AddExpenseDrawerProps {
     proof_path: string | null;
     created_at?: string;
   } | null;
+  members?: LedgerMemberRow[];
 }
 
 export const AddExpenseDrawer = ({
@@ -46,6 +50,7 @@ export const AddExpenseDrawer = ({
   currentUserId,
   onSuccess,
   editExpense,
+  members = [],
 }: AddExpenseDrawerProps) => {
   const { toast } = useToast();
   const isEdit = Boolean(editExpense);
@@ -78,6 +83,8 @@ export const AddExpenseDrawer = ({
   const [submitting, setSubmitting] = useState(false);
   const [autoNameCategoryId, setAutoNameCategoryId] = useState<string | null>(null);
   const [date, setDate] = useState(editExpense?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
+  const [markAsPending, setMarkAsPending] = useState(false);
+  const [paidByUserId, setPaidByUserId] = useState<string>(currentUserId);
 
   const displayCategories = isShared
     ? sharedHook.categories
@@ -118,6 +125,8 @@ export const AddExpenseDrawer = ({
       setProofFile(null);
       setProofPreview(null);
       setAutoNameCategoryId(null);
+      setMarkAsPending(false);
+      setPaidByUserId(currentUserId);
     }
     onOpenChange(o);
   };
@@ -183,6 +192,8 @@ export const AddExpenseDrawer = ({
           month: currentMonth,
           year: currentYear,
           date: parsedDate.toISOString(),
+          status: isShared ? "pending" : (markAsPending ? "pending" : "paid"),
+          user_id: isShared ? paidByUserId : currentUserId,
           linked_expense_id: editExpense?.linked_expense_id,
         },
         proofFile
@@ -249,6 +260,20 @@ export const AddExpenseDrawer = ({
               onChange={(e) => setAmount(e.target.value)} 
             />
 
+            {isShared ? (
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-foreground ml-1">Paid by</label>
+                <AppSelect
+                  value={paidByUserId}
+                  onChange={setPaidByUserId}
+                  options={members.map((m) => ({
+                    value: m.user_id,
+                    label: m.profiles?.full_name || m.profiles?.username || "Unknown",
+                  }))}
+                />
+              </div>
+            ) : null}
+
             <Field 
               label="Date" 
               type="date" 
@@ -271,6 +296,15 @@ export const AddExpenseDrawer = ({
               previewUrl={proofPreview}
               onChange={handleProofChange}
             />
+
+            {!isShared && (
+              <div className="flex items-center space-x-2 pt-2 ml-1">
+                <Checkbox id="markPending" checked={markAsPending} onCheckedChange={(c) => setMarkAsPending(Boolean(c))} />
+                <label htmlFor="markPending" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  Mark as pending (needs approval/payment later)
+                </label>
+              </div>
+            )}
           </form>
         </div>
 

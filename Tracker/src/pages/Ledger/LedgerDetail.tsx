@@ -21,6 +21,7 @@ import {
   PlusCircle,
   ShoppingCart,
   RefreshCw,
+  MoreHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +38,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -551,7 +558,7 @@ interface SettingsDrawerProps {
   currentUserId: string;
   userRole: LedgerRole;
   onBack: () => void;
-  onRefreshList: () => Promise<void>;
+  onRefreshList: (options?: { silent?: boolean }) => Promise<void>;
   onSuccess: () => Promise<void>;
 }
 
@@ -599,6 +606,20 @@ const SettingsDrawer = ({
     }
   };
 
+  const makeBudgetAdmin = async (userId: string) => {
+    try {
+      const { error } = (await supabase
+        .from("ledgers" as never)
+        .update({ budget_admin_id: userId } as never)
+        .eq("id" as never, ledger.id as never)) as unknown as { error: Error | null };
+      if (error) throw error;
+      toast({ title: "Budget admin updated" });
+      await onRefreshList({ silent: true });
+    } catch (e) {
+      toast({ title: "Failed to update budget admin", variant: "destructive" });
+    }
+  };
+
   const removeMember = async (userId: string, name: string) => {
     if (!isOwner) return;
     setDeletingExpenseId(userId);
@@ -611,6 +632,7 @@ const SettingsDrawer = ({
       if (error) throw error;
       await logLedgerActivity(ledger.id, currentUserId, "member_removed", { entityType: "member" });
       toast({ title: `${name} removed from ledger` });
+      await onRefreshList({ silent: true });
       await onSuccess();
     } catch (e) {
       toast({ title: "Failed to remove member", variant: "destructive" });
@@ -655,30 +677,57 @@ const SettingsDrawer = ({
                 <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                   Members ({ledger.ledger_members.length})
                 </p>
-                {ledger.ledger_members.map((m) => (
-                  <div key={m.user_id} className="flex items-center justify-between gap-3 rounded-2xl bg-elevated p-3">
-                    <div className="flex items-center gap-3">
-                      <span className="grid size-9 place-items-center rounded-full bg-card text-sm font-black text-primary">
-                        {displayName(m.profiles).charAt(0).toUpperCase()}
-                      </span>
-                      <div>
-                        <p className="text-sm font-bold text-foreground">{displayName(m.profiles)}</p>
-                        <p className="text-xs capitalize text-muted-foreground">{m.role}</p>
+                {ledger.ledger_members.map((m) => {
+                  const isBudgetAdmin = ledger.budget_admin_id === m.user_id;
+                  const canManage = isOwner || userRole === "admin";
+                  
+                  return (
+                    <div key={m.user_id} className="flex items-center justify-between gap-3 rounded-2xl bg-elevated p-3">
+                      <div className="flex items-center gap-3">
+                        <span className="grid size-9 place-items-center rounded-full bg-card text-sm font-black text-primary">
+                          {displayName(m.profiles).charAt(0).toUpperCase()}
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-bold text-foreground">{displayName(m.profiles)}</p>
+                          </div>
+                          <p className="text-xs capitalize text-muted-foreground">
+                            {m.role}{isBudgetAdmin ? ", budget admin" : ""}
+                          </p>
+                        </div>
                       </div>
+                      
+                      {canManage && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="icon" variant="ghost" className="size-8 rounded-full">
+                              <MoreHorizontal className="size-4 text-muted-foreground" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48 rounded-2xl">
+                            {!isBudgetAdmin && (
+                              <DropdownMenuItem 
+                                onClick={() => makeBudgetAdmin(m.user_id)}
+                                className="font-semibold py-2"
+                              >
+                                Make Budget Admin
+                              </DropdownMenuItem>
+                            )}
+                            {isOwner && m.user_id !== currentUserId && (
+                              <DropdownMenuItem
+                                className="text-destructive font-semibold py-2 focus:bg-destructive/10 focus:text-destructive"
+                                disabled={deletingExpenseId === m.user_id}
+                                onClick={() => removeMember(m.user_id, displayName(m.profiles))}
+                              >
+                                Remove Member
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </div>
-                    {isOwner && m.user_id !== currentUserId && (
-                      <Button
-                        size="sm"
-                        variant="quiet"
-                        disabled={deletingExpenseId === m.user_id}
-                        onClick={() => removeMember(m.user_id, displayName(m.profiles))}
-                      >
-                        <UserMinus className="size-4" />
-                        {deletingExpenseId === m.user_id ? "Removing…" : "Remove"}
-                      </Button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -755,7 +804,7 @@ interface LedgerDetailProps {
   ledger: LedgerRow;
   currentUserId: string;
   onBack: () => void;
-  onRefreshList: () => Promise<void>;
+  onRefreshList: (options?: { silent?: boolean }) => Promise<void>;
 }
 
 type ExpenseFilter = "all" | "pending" | "approved" | "paid" | "rejected";
@@ -882,15 +931,11 @@ export const LedgerDetail = ({
     : expenses;
 
   const summary = computeBudgetSummary(filteredAdditions, filteredExpenses, Number(ledger.total_savings || 0));
-
-  const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const monthLabel = isMonthly ? `${MONTH_NAMES_SHORT[currentMonth - 1]} ${currentYear}` : undefined;
 
   // Filter expenses for timeline
-  const visibleExpenses =
-    filter === "all"
-      ? filteredExpenses
-      : filteredExpenses.filter((e) => e.status === filter);
+  const pendingCount = expenses.filter((e) => e.status === "pending").length;
 
   // Expense card click
   const handleExpenseClick = (expense: LedgerExpenseRow) => {
@@ -966,13 +1011,11 @@ export const LedgerDetail = ({
     return true;
   };
 
-  const filteredExpenses = expenses.filter((e) => {
+  const visibleExpenses = expenses.filter((e) => {
     if (filter !== "all" && e.status !== filter) return false;
     if (!applyDateFilter(e.created_at, dateFilter, dateStart, dateEnd)) return false;
     return true;
   });
-
-  const pendingCount = expenses.filter((e) => e.status === "pending").length;
   
   const activeFilterCount = (filter !== "all" ? 1 : 0) + (dateFilter !== "all" ? 1 : 0);
 
@@ -1175,6 +1218,7 @@ export const LedgerDetail = ({
         ledger={ledger}
         currentUserId={currentUserId}
         onSuccess={refresh}
+        members={ledger.ledger_members}
       />
 
       <AddExpenseDrawer
@@ -1184,6 +1228,7 @@ export const LedgerDetail = ({
         currentUserId={currentUserId}
         onSuccess={async () => { setEditExpense(null); await refresh(); }}
         editExpense={editExpense}
+        members={ledger.ledger_members}
       />
 
       <ApproveExpenseDrawer
@@ -1192,6 +1237,7 @@ export const LedgerDetail = ({
         expense={reviewExpense}
         ledgerId={ledger.id}
         currentUserId={currentUserId}
+        budgetAdminId={ledger.budget_admin_id}
         onSuccess={async () => { setReviewExpense(null); await refresh(); }}
       />
 
@@ -1238,9 +1284,7 @@ export const LedgerDetail = ({
           options={[
             { value: "all", label: "All" },
             { value: "pending", label: "Pending" },
-            { value: "approved", label: "Approved" },
             { value: "paid", label: "Paid" },
-            { value: "rejected", label: "Rejected" },
           ]} 
         />
         

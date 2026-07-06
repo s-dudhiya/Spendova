@@ -138,6 +138,8 @@ export function useLedgerExpenseMutation(ledger: LedgerRow, currentUserId: strin
       month: number | null;
       year: number | null;
       date: string | null;
+      status?: "pending" | "paid";
+      user_id?: string;
       linked_expense_id?: string | null;
     },
     proofFile?: File | null
@@ -147,14 +149,14 @@ export function useLedgerExpenseMutation(ledger: LedgerRow, currentUserId: strin
     const { data, error } = await (supabase.rpc("sync_ledger_expense" as never, {
       p_action: action,
       p_ledger_id: ledger.id,
-      p_user_id: currentUserId,
+      p_user_id: payload.user_id || currentUserId,
       p_expense_id: payload.id || null,
       p_title: payload.title,
       p_amount: payload.amount,
       p_category: payload.category || null,
       p_category_id: payload.category_id || null,
       p_notes: payload.notes || null,
-      p_status: "pending",
+      p_status: payload.status || "pending",
       p_month: payload.month || null,
       p_year: payload.year || null,
       p_created_at: payload.date || null,
@@ -254,7 +256,6 @@ export function useLedgersDashboard(ledgers: LedgerRow[]): UseLedgersDashboardRe
     totalBudget: 0,
     paidExpenses: 0,
     pendingExpenses: 0,
-    approvedExpenses: 0,
     availableBudget: 0,
     expectedAvailable: 0,
     totalSavings: 0,
@@ -270,7 +271,6 @@ export function useLedgersDashboard(ledgers: LedgerRow[]): UseLedgersDashboardRe
         totalBudget: 0,
         paidExpenses: 0,
         pendingExpenses: 0,
-        approvedExpenses: 0,
         availableBudget: 0,
         expectedAvailable: 0,
         totalSavings: 0,
@@ -316,7 +316,6 @@ export function useLedgersDashboard(ledgers: LedgerRow[]): UseLedgersDashboardRe
         totalBudget: 0,
         paidExpenses: 0,
         pendingExpenses: 0,
-        approvedExpenses: 0,
         availableBudget: 0,
         expectedAvailable: 0,
         totalSavings: 0,
@@ -344,7 +343,6 @@ export function useLedgersDashboard(ledgers: LedgerRow[]): UseLedgersDashboardRe
         newGlobalSummary.totalBudget += summary.totalBudget;
         newGlobalSummary.paidExpenses += summary.paidExpenses;
         newGlobalSummary.pendingExpenses += summary.pendingExpenses;
-        newGlobalSummary.approvedExpenses += summary.approvedExpenses;
         newGlobalSummary.availableBudget += summary.availableBudget;
         newGlobalSummary.expectedAvailable += summary.expectedAvailable;
         newGlobalSummary.totalSavings += summary.totalSavings;

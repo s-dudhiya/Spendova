@@ -70,19 +70,15 @@ export const computeBudgetSummary = (
   const pendingExpenses = expenses
     .filter((e) => e.status === "pending")
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
-  const approvedExpenses = expenses
-    .filter((e) => e.status === "approved")
-    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
   const availableBudget = Math.max(totalBudget - paidExpenses, 0);
   const expectedAvailable = Math.max(
-    totalBudget - paidExpenses - pendingExpenses - approvedExpenses,
+    totalBudget - paidExpenses - pendingExpenses,
     0
   );
   return {
     totalBudget,
     paidExpenses,
     pendingExpenses,
-    approvedExpenses,
     availableBudget,
     expectedAvailable,
     totalSavings,

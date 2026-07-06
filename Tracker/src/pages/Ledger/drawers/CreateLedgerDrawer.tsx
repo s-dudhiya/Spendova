@@ -103,6 +103,7 @@ export const CreateLedgerDrawer = ({
           ledger_type: ledgerType,
           budget_type: budgetType,
           owner_id: currentUserId,
+          budget_admin_id: currentUserId,
           total_savings: 0,
         } as never)
         .select("id")

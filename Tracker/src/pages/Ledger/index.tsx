@@ -38,7 +38,7 @@ const LedgerCard = ({ ledger, summary, onClick }: LedgerCardProps) => {
   // Progress bar calculation
   let progress = 0;
   if (summary && summary.totalBudget > 0) {
-    progress = Math.min(Math.round(((summary.paidExpenses + summary.pendingExpenses + summary.approvedExpenses) / summary.totalBudget) * 100), 100);
+    progress = Math.min(Math.round(((summary.paidExpenses + summary.pendingExpenses) / summary.totalBudget) * 100), 100);
   }
 
   return (
@@ -77,7 +77,7 @@ const LedgerCard = ({ ledger, summary, onClick }: LedgerCardProps) => {
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Spent</span>
-          <span className="text-sm font-black text-foreground">{money((summary?.paidExpenses ?? 0) + (summary?.approvedExpenses ?? 0))}</span>
+          <span className="text-sm font-black text-foreground">{money((summary?.paidExpenses ?? 0))}</span>
         </div>
         <div className="flex flex-col gap-1 text-right">
           <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Available</span>
@@ -176,7 +176,7 @@ interface BudgetLedgerViewProps {
   ledgers: LedgerRow[];
   currentUserId: string;
   profile: { full_name?: string | null; username?: string | null } | null;
-  refresh: () => Promise<void>;
+  refresh: (options?: { silent?: boolean }) => Promise<void>;
 }
 
 export const BudgetLedgerView = ({

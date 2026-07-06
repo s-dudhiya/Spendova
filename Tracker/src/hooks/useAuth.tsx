@@ -261,10 +261,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const profileResult = await withTimeout(supabase
         .from('profiles')
-        .select('email_verified')
+        .select('*')
         .eq('user_id', data.user.id)
         .maybeSingle(), 5000, "profile verification lookup");
-      profileData = profileResult.data;
+      profileData = (profileResult as any).data;
       profileError = profileResult.error;
     } catch (error) {
       console.error("Profile verification lookup failed", error);
@@ -281,7 +281,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (profileData && profileData.email_verified === false && !customSignupPending) {
       const { error: repairError } = await supabase
         .from('profiles')
-        .update({ email_verified: true })
+        .update({ email_verified: true } as any)
         .eq('user_id', data.user.id);
       if (repairError) console.error("Profile verification repair failed", repairError);
     }

@@ -45,17 +45,16 @@ export const BudgetCards = ({
     totalBudget,
     paidExpenses,
     pendingExpenses,
-    approvedExpenses,
     availableBudget,
     expectedAvailable,
     totalSavings,
   } = summary;
 
-  const hasPending = pendingExpenses + approvedExpenses > 0;
+  const hasPending = pendingExpenses > 0;
   
   let progress = 0;
   if (totalBudget > 0) {
-    progress = Math.min(Math.round(((paidExpenses + pendingExpenses + approvedExpenses) / totalBudget) * 100), 100);
+    progress = Math.min(Math.round(((paidExpenses + pendingExpenses) / totalBudget) * 100), 100);
   }
 
   return (
@@ -97,7 +96,7 @@ export const BudgetCards = ({
         <div className="flex flex-col gap-0.5 text-left">
           <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Pending</span>
           <span className={`spendova-money-value text-sm font-bold ${hasPending ? "text-warning" : "text-muted-foreground"}`}>
-            {money(pendingExpenses + approvedExpenses)}
+            {money(pendingExpenses)}
           </span>
         </div>
         <div className={`flex flex-col gap-0.5 ${budgetType === "monthly" ? "text-center" : "text-right"}`}>

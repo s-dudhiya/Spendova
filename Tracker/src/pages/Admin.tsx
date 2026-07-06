@@ -546,7 +546,9 @@ const AdminDashboard = () => {
                   ["Investigating", feedbackStats.investigating, Search],
                   ["Resolved", feedbackStats.resolved, CheckCircle2],
                   ["Critical", feedbackStats.critical, AlertTriangle],
-                ].map(([label, value, Icon]) => (
+                ].map(([label, value, IconComponent]) => {
+                  const Icon = IconComponent as React.ElementType;
+                  return (
                   <div key={String(label)} className="rounded-2xl border border-border bg-elevated p-3 shadow-soft">
                     <div className="flex items-center justify-between gap-2 text-xs font-semibold text-muted-foreground">
                       <span>{String(label)}</span>
@@ -554,7 +556,8 @@ const AdminDashboard = () => {
                     </div>
                     <p className="mt-1 text-2xl font-bold text-foreground">{String(value)}</p>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </CardHeader>
             <CardContent className="space-y-4">

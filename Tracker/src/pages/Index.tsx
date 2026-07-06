@@ -901,7 +901,7 @@ function useSpendovaData(userId?: string) {
           .order("name", { ascending: true }), 8000, "expense categories fetch"),
         withTimeout(supabase
           .from("ledgers" as never)
-          .select("id, name, description, ledger_type, budget_type, total_savings, owner_id, is_archived, created_at, updated_at, ledger_members(id, user_id, role, joined_at, profiles!ledger_members_user_id_fkey(user_id, full_name, username))")
+          .select("id, name, description, ledger_type, budget_type, total_savings, owner_id, budget_admin_id, is_archived, created_at, updated_at, ledger_members(id, user_id, role, joined_at, profiles!ledger_members_user_id_fkey(user_id, full_name, username))")
           .eq("is_archived" as never, false as never)
           .order("created_at", { ascending: false }), 8000, "ledgers fetch"),
       ]);

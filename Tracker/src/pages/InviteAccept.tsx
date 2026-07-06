@@ -44,7 +44,7 @@ export default function InviteAccept() {
       const { data, error: loadError } = await withTimeout(supabase
         .rpc("lookup_group_invite" as never, { invite_token: token } as never), 8000, "invite lookup");
 
-      const loadedInvite = Array.isArray(data) ? data[0] as unknown as GroupInvite | undefined : data as unknown as GroupInvite | undefined;
+      const loadedInvite = (data && Array.isArray(data)) ? (data[0] as unknown as GroupInvite | undefined) : (data as unknown as GroupInvite | undefined);
       if (loadError || !loadedInvite) {
         setStatus("error");
         setError("Invite not found, expired, or already used.");
