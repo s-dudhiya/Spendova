@@ -353,9 +353,8 @@ export const CreateLedgerDrawer = ({
           </DrawerDescription>
         </DrawerHeader>
 
-        <div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
-          {step === "form" ? (
-            <div className="space-y-5 pb-3">
+        {step === "form" ? (
+          <div className="min-h-0 overflow-y-auto overscroll-contain pr-1 space-y-5 pb-3">
               <Field
                 id="cl-name"
                 label="Ledger Name *"
@@ -534,8 +533,8 @@ export const CreateLedgerDrawer = ({
                 </div>
               )}
             </div>
-          )}
-        </div>
+            </div>
+        )}
 
         {/* Footer */}
         <div className="grid grid-cols-[1fr_min-content] items-end gap-3 border-t border-border/60 bg-card py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
