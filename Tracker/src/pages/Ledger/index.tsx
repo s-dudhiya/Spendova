@@ -18,6 +18,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BeautifulEmptyState } from "@/components/BeautifulEmptyState";
 
 import type { LedgerRow, LedgerActivityRow } from "./types";
 import { LedgerDetail } from "./LedgerDetail";
@@ -156,19 +157,13 @@ const ActivityRow = ({ activity, ledger }: { activity: LedgerActivityRow; ledger
 // ── Empty State ───────────────────────────────────────────────
 
 const LedgerEmptyState = ({ onCreate }: { onCreate: () => void }) => (
-  <div className="rounded-[1.25rem] bg-elevated p-6 text-center shadow-soft">
-    <div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary">
-      <Wallet className="size-7" />
-    </div>
-    <p className="mt-4 text-base font-black text-foreground">No ledgers yet</p>
-    <p className="mt-1 text-sm font-medium text-muted-foreground">
-      Create a ledger to start tracking budgets and expenses.
-    </p>
-    <Button variant="quiet" className="mt-4" onClick={onCreate}>
-      <Plus className="size-4" />
-      Create your first ledger
-    </Button>
-  </div>
+  <BeautifulEmptyState
+    icon="🗂️"
+    title="No ledgers yet"
+    subtitle="Create a ledger to start tracking shared or personal budgets."
+    actionLabel="Create Ledger"
+    onAction={onCreate}
+  />
 );
 
 // ── Main BudgetLedgerView ─────────────────────────────────────

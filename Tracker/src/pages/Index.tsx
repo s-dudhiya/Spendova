@@ -75,6 +75,10 @@ import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-e
 import { getSpendingChartAverageLabel, getSpendingChartAxisLabels, getSpendingChartSummary, type SpendingChartBucketUnit } from "@/lib/spending-chart";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 import { BudgetLedgerView } from "./Ledger";
+import { triggerHaptic } from "@/utils/haptics";
+import { UniversalAddDrawer } from "@/components/drawers/UniversalAddDrawer";
+import { BeautifulEmptyState } from "@/components/BeautifulEmptyState";
+import { AddExpenseDrawer as LedgerAddExpenseDrawer } from "./Ledger/drawers/AddExpenseDrawer";
 
 type TabKey = "home" | "split" | "personal" | "ledger";
 type ContentKey = TabKey | "profile";
@@ -98,6 +102,8 @@ type ModalType =
   | "group-expense"
   | "choose-friend-expense"
   | "choose-group-expense"
+  | "choose-ledger-expense"
+  | "ledger-expense-drawer"
   | "friend-details"
   | "add-friend"
   | "remove-friend"
@@ -106,6 +112,7 @@ type ModalType =
   | "logout"
   | "delete-account"
   | "saved"
+  | "universal-add"
   | null;
 
 type ModalState = { type: ModalType; item?: string };
@@ -1629,7 +1636,15 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
           <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
         </div>
         <div className="space-y-3">
-          {personalExpenses.length === 0 ? <EmptyCard text="No personal expenses yet." /> : visibleExpenses.length === 0 ? <FilterEmptyState onClear={clearFilters} /> : visibleExpenses.map((expense) => {
+          {personalExpenses.length === 0 ? (
+            <BeautifulEmptyState
+              icon="💳"
+              title="No personal expenses"
+              subtitle="Track your daily un-split expenses here."
+              actionLabel="Add Expense"
+              onAction={() => openModal("add-expense")}
+            />
+          ) : visibleExpenses.length === 0 ? <FilterEmptyState onClear={clearFilters} /> : visibleExpenses.map((expense) => {
             const display = getPersonalExpenseDisplay(expense, currentUserId, groups, friends, expenses, settlements);
             return (
               <article key={expense.id} className="rounded-2xl bg-card p-4 shadow-soft">
@@ -1791,19 +1806,28 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
         <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You owe</p><p className="spendova-money-value mt-1 text-lg font-bold text-warning sm:text-xl">{money(filteredSplitSummary.owe)}</p></div>
       </section>
 
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Button onClick={() => subTab === "friends" ? openModal(data.friends.length === 0 ? "add-friend" : data.friends.length === 1 ? "add-expense" : "choose-friend-expense", data.friends[0]?.user_id) : openModal(data.groups.length === 0 ? "create-group" : data.groups.length === 1 ? "group-expense" : "choose-group-expense", data.groups[0]?.id)} className="h-12 shadow-primary-action">
-          <Plus />{subTab === "friends" ? "Add Expense" : "Add Group Expense"}
-        </Button>
-        {subTab === "friends" ? (
+      {subTab === "friends" ? (
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Button onClick={() => openModal(data.friends.length === 0 ? "add-friend" : data.friends.length === 1 ? "add-expense" : "choose-friend-expense", data.friends[0]?.user_id)} className="h-12 shadow-primary-action">
+            <Plus />Add Expense
+          </Button>
           <div className="grid grid-cols-2 gap-2">
             <Button onClick={() => openModal("add-friend")} variant="quiet" className="h-12"><UserPlus />Add Friend</Button>
             <Button onClick={openFriendRequests} variant="quiet" className="relative h-12">Requests<CountBadge count={requestCount} className="ring-background" /></Button>
           </div>
-        ) : (
-          <Button onClick={() => openModal("create-group")} variant="quiet" className="h-12"><Plus />Create Group</Button>
-        )}
-      </section>
+        </section>
+      ) : (
+        <section className="grid grid-cols-2 gap-3">
+          <Button onClick={() => openModal("create-group")} variant="outline" className="h-12 border-primary bg-transparent text-primary hover:bg-primary/10 text-xs font-bold sm:text-sm">
+            <Plus className="mr-1 size-4 shrink-0" />
+            <span className="truncate">Create Group</span>
+          </Button>
+          <Button onClick={() => openModal(data.groups.length === 0 ? "create-group" : data.groups.length === 1 ? "group-expense" : "choose-group-expense", data.groups[0]?.id)} className="h-12 shadow-primary-action text-xs font-bold sm:text-sm">
+            <Plus className="mr-1 size-4 shrink-0" />
+            <span className="truncate">Add Group Expense</span>
+          </Button>
+        </section>
+      )}
 
       {subTab === "friends" ? (
         <section>
@@ -1816,7 +1840,15 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
             <input value={query} onChange={(e) => setQuery(e.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Search friends" />
           </div>
           <div className="space-y-3">
-            {filteredFriends.length === 0 ? (data.friends.length === 0 ? <EmptyCard text="Add friends to start splitting expenses" /> : <FilterEmptyState onClear={clearFilters} />) : filteredFriends.map(({ friend, net }) => {
+            {filteredFriends.length === 0 ? (data.friends.length === 0 ? (
+              <BeautifulEmptyState
+                icon="🤝"
+                title="No friends yet"
+                subtitle="Add friends to start splitting expenses easily."
+                actionLabel="Add Friend"
+                onAction={() => openModal("add-friend")}
+              />
+            ) : <FilterEmptyState onClear={clearFilters} />) : filteredFriends.map(({ friend, net }) => {
               return (
               <button key={friend.user_id} onClick={() => openDetail("friend", friend.user_id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
                 <div className="flex min-w-0 items-center gap-3">
@@ -1840,7 +1872,15 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
               <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
             </div>
             <div className="space-y-3">
-              {data.groups.length === 0 ? <EmptyCard text="Create a group to split shared expenses" /> : filteredGroups.length === 0 ? <FilterEmptyState onClear={clearFilters} /> : filteredGroups.map(({ group, net }) => {
+              {data.groups.length === 0 ? (
+                <BeautifulEmptyState
+                  icon="🏠"
+                  title="No groups yet"
+                  subtitle="Create a group to split shared expenses with friends or family."
+                  actionLabel="Create Group"
+                  onAction={() => openModal("create-group")}
+                />
+              ) : filteredGroups.length === 0 ? <FilterEmptyState onClear={clearFilters} /> : filteredGroups.map(({ group, net }) => {
                 return (
                   <button onClick={() => openDetail("group", group.id)} key={group.id} className="w-full rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
                     <div className="flex items-center justify-between gap-3">
@@ -4264,6 +4304,26 @@ const ActionModal = ({
     navigate("/login", { replace: true });
   };
 
+  if (type === "universal-add") return null;
+
+  if (type === "ledger-expense-drawer" && modal.item) {
+    const ledger = data.ledgers.find((l) => l.id === modal.item);
+    if (!ledger) return null;
+    return (
+      <LedgerAddExpenseDrawer
+        open={true}
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+        ledger={ledger}
+        currentUserId={currentUserId}
+        onSuccess={async () => {
+          await closeAndRefresh();
+        }}
+      />
+    );
+  }
+
   return (
     <Dialog open={type !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] w-[calc(100vw_-_1.5rem)] max-w-[calc(100vw_-_1.5rem)] grid-rows-[auto,minmax(0,1fr)] gap-4 overflow-hidden rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:w-full sm:max-w-md sm:p-6">
@@ -4280,7 +4340,7 @@ const ActionModal = ({
 
           {type === "choose-friend-expense" && <PickerList items={data.friends.map((item) => ({ id: item.user_id, title: displayName(item), subtitle: `@${item.username || "user"}` }))} emptyText="Add friends to start splitting expenses" onPick={(id) => openModal("add-expense", id)} />}
           {type === "choose-group-expense" && <PickerList items={data.groups.map((item) => ({ id: item.id, title: item.name, subtitle: `${item.group_members.length} members` }))} emptyText="Create a group to split shared expenses" onPick={(id) => openModal("group-expense", id)} />}
-
+          {type === "choose-ledger-expense" && <PickerList items={data.ledgers.map((item) => ({ id: item.id, title: item.name, subtitle: item.ledger_type === "shared" ? "Shared Budget" : "Personal Budget" }))} emptyText="Create a ledger to track expenses" onPick={(id) => openModal("ledger-expense-drawer", id)} />}
           {(type === "create-group" || type === "edit-group") && <CreateGroupForm friends={data.friends} group={type === "edit-group" ? group : undefined} onSubmit={saveGroup} onCancel={onClose} />}
 
           {type === "group-details" && group && (
@@ -4680,13 +4740,38 @@ const Index = () => {
         {/* <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p> */}
       </div>
       <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-3xl px-4 pb-4">
-        <div className="grid grid-cols-4 rounded-[1.4rem] border border-border/80 bg-card p-2 shadow-panel backdrop-blur">
-          {tabs.map((tab) => {
+        <div className="grid grid-cols-5 gap-1 rounded-[1.4rem] border border-border/80 bg-card p-2 shadow-panel backdrop-blur">
+          {tabs.slice(0, 2).map((tab) => {
             const Icon = tab.icon;
             const active = activeContentTab === tab.key;
             return (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`flex flex-col items-center gap-1 rounded-2xl px-1 py-2 text-[11px] font-bold transition-all ${active ? "bg-primary text-primary-foreground shadow-primary-action" : "text-muted-foreground hover:text-foreground"}`}>
-                <Icon className="size-5" />
+              <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[11px] font-bold transition-colors ${active ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}>
+                <Icon className={`size-5 transition-transform ${active ? "scale-110" : ""}`} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+          
+          <div className="flex h-full items-center justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic();
+                openModal("universal-add");
+              }}
+              className="flex size-[3.25rem] items-center justify-center rounded-full bg-primary text-primary-foreground shadow-primary-action transition-transform active:scale-95"
+              aria-label="Add Expense"
+            >
+              <Plus className="size-7" />
+            </button>
+          </div>
+          
+          {tabs.slice(2).map((tab) => {
+            const Icon = tab.icon;
+            const active = activeContentTab === tab.key;
+            return (
+              <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[11px] font-bold transition-colors ${active ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}>
+                <Icon className={`size-5 transition-transform ${active ? "scale-110" : ""}`} />
                 <span>{tab.label}</span>
               </button>
             );
@@ -4694,6 +4779,25 @@ const Index = () => {
         </div>
       </nav>
       <SupportCoffeeWidget />
+      
+      <UniversalAddDrawer
+        open={modal.type === "universal-add"}
+        onOpenChange={(open) => {
+          if (!open) setModal({ type: null });
+        }}
+        onSelectOption={(option) => {
+          if (option === "personal") {
+            setTimeout(() => setModal({ type: "add-expense" }), 150);
+          } else if (option === "friend") {
+            setTimeout(() => setModal({ type: data.friends.length === 1 ? "add-expense" : "choose-friend-expense", item: data.friends.length === 1 ? data.friends[0].user_id : undefined }), 150);
+          } else if (option === "group") {
+            setTimeout(() => setModal({ type: data.groups.length === 1 ? "group-expense" : "choose-group-expense", item: data.groups.length === 1 ? data.groups[0].id : undefined }), 150);
+          } else if (option === "ledger") {
+            setTimeout(() => setModal({ type: data.ledgers?.length === 1 ? "choose-ledger-expense" : "choose-ledger-expense", item: data.ledgers?.length === 1 ? data.ledgers[0].id : undefined }), 150);
+          }
+        }}
+      />
+
       <ActionModal modal={modal} data={data} currentUserId={user.id} currentProfile={profile} onClose={() => setModal({ type: null })} refresh={refresh} openModal={openModal} />
     </div>
   );
