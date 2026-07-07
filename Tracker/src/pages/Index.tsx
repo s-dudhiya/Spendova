@@ -19,6 +19,7 @@ import {
   Filter,
   Fingerprint,
   Home,
+  Inbox,
   Link as LinkIcon,
   MessageSquare,
   MoreVertical,
@@ -1809,14 +1810,20 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
       </section>
 
       {subTab === "friends" ? (
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Button onClick={() => openModal(data.friends.length === 0 ? "add-friend" : data.friends.length === 1 ? "add-expense" : "choose-friend-expense", data.friends[0]?.user_id)} className="h-12 shadow-primary-action">
-            <Plus />Add Expense
+        <section className="flex gap-2">
+          <Button onClick={() => openModal(data.friends.length === 0 ? "add-friend" : data.friends.length === 1 ? "add-expense" : "choose-friend-expense", data.friends[0]?.user_id)} className="h-12 flex-1 min-w-0 rounded-full px-2 text-xs font-bold shadow-primary-action sm:px-4 sm:text-sm">
+            <Plus className="mr-1 size-4 shrink-0" />
+            <span className="truncate">Add Expense</span>
           </Button>
-          <div className="grid grid-cols-2 gap-2">
-            <Button onClick={() => openModal("add-friend")} variant="quiet" className="h-12"><UserPlus />Add Friend</Button>
-            <Button onClick={openFriendRequests} variant="quiet" className="relative h-12">Requests<CountBadge count={requestCount} className="ring-background" /></Button>
-          </div>
+          <Button onClick={() => openModal("add-friend")} variant="quiet" className="h-12 shrink-0 rounded-full border border-border/60 px-3 text-[11px] font-bold sm:px-4 sm:text-xs">
+            <UserPlus className="mr-1 size-3.5 shrink-0" />
+            <span>Add Friend</span>
+          </Button>
+          <Button onClick={openFriendRequests} variant="quiet" className="relative h-12 shrink-0 rounded-full border border-border/60 px-3 text-[11px] font-bold sm:px-4 sm:text-xs">
+            <Inbox className="mr-1 size-3.5 shrink-0" />
+            <span>Requests</span>
+            <CountBadge count={requestCount} className="ring-background" />
+          </Button>
         </section>
       ) : (
         <section className="grid grid-cols-2 gap-3">
@@ -2622,7 +2629,7 @@ const SettlementDetailView = ({ settlement, currentUserId, onBack, onDelete }: {
   );
 };
 
-const NotificationsList = ({ data, currentUserId }: { data: AppData; currentUserId: string }) => {
+const NotificationsList = ({ data, currentUserId, openModal }: { data: AppData; currentUserId: string; openModal: (type: ModalType, id?: string | null) => void }) => {
   const items = data.notifications.slice(0, 10);
   if (!items.length) return <EmptyCard text="No notifications yet." />;
   return (
@@ -2636,6 +2643,11 @@ const NotificationsList = ({ data, currentUserId }: { data: AppData; currentUser
               <p className="shrink-0 text-[11px] font-bold text-muted-foreground">{timeAgo(item.created_at)}</p>
             </div>
             <p className="mt-1 text-xs font-medium leading-5 text-muted-foreground">{item.message}</p>
+            {item.type === "friend_request_received" && data.incomingRequests.some(req => req.id === item.entity_id) && (
+              <Button onClick={() => openModal("friend-requests")} variant="outline" size="sm" className="mt-3 h-8 w-full rounded-xl text-[11px] font-bold">
+                Review Request
+              </Button>
+            )}
           </div>
         </div>
       ))}
@@ -4413,7 +4425,7 @@ const ActionModal = ({
           {type === "remove-friend" && friend && <ConfirmBox text={`Remove ${displayName(friend)} from your friends?`} action="Remove" destructive onCancel={onClose} onConfirm={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeRefreshAndReturnToSplitList("friends"); }} />}
           {type === "logout" && <ConfirmBox text="This will return you to the signed-out state." action="Logout" destructive onCancel={onClose} onConfirm={async () => { await signOut(); onClose(); }} />}
           {type === "delete-account" && <ConfirmBox title="Delete account?" text="This will permanently delete your account and related data. This action cannot be undone." action="Delete Account" destructive onCancel={onClose} onConfirm={deleteAccount} />}
-          {type === "notifications" && <NotificationsList data={data} currentUserId={currentUserId} />}
+          {type === "notifications" && <NotificationsList data={data} currentUserId={currentUserId} openModal={openModal} />}
           {type === "chart-details" && <SpendingDetails expenses={data.expenses} currentUserId={currentUserId} />}
           {type === "saved" && <EmptyCard text="Saved." />}
         </div>
