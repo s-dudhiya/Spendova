@@ -4761,10 +4761,10 @@ const Index = () => {
                 triggerHaptic();
                 openModal("universal-add");
               }}
-              className="flex size-[3.25rem] items-center justify-center rounded-full bg-primary text-primary-foreground shadow-primary-action transition-transform active:scale-95"
+              className="flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-primary-action transition-transform active:scale-95"
               aria-label="Add Expense"
             >
-              <Plus className="size-7" />
+              <Plus className="size-6" />
             </button>
           </div>
           
