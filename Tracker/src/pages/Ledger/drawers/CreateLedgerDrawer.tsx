@@ -533,7 +533,6 @@ export const CreateLedgerDrawer = ({
                 </div>
               )}
             </div>
-            </div>
         )}
 
         {/* Footer */}
