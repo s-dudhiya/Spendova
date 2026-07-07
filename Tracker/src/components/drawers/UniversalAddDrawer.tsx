@@ -4,7 +4,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { User, Users, Home, Wallet, ChevronRight } from "lucide-react";
+import { User, Users, Home, Wallet, ChevronRight, Split } from "lucide-react";
 
 export type UniversalAddOption = "personal" | "friend" | "group" | "ledger";
 
@@ -28,7 +28,7 @@ export function UniversalAddDrawer({ open, onOpenChange, onSelectOption }: Unive
       id: "friend" as const,
       title: "Split with Friend",
       desc: "Add an expense to split with a friend",
-      icon: Users,
+      icon: Split,
       color: "text-primary",
       bg: "bg-primary/10",
     },
@@ -36,7 +36,7 @@ export function UniversalAddDrawer({ open, onOpenChange, onSelectOption }: Unive
       id: "group" as const,
       title: "Group Expense",
       desc: "Add an expense to a Split group",
-      icon: Home,
+      icon: Users,
       color: "text-primary",
       bg: "bg-primary/10",
     },
