@@ -1136,7 +1136,7 @@ function getPersonalExpenseDisplay(expense: ExpenseRow, currentUserId: string, g
   };
 }
 
-type DebtBalance = { fromUserId: string; toUserId: string; fromName: string; toName: string; amount: number };
+type DebtBalance = { fromUserId: string; toUserId: string; fromName: string; toName: string; amount: number; groupId?: string | null; contextName?: string; isAggregate?: boolean; aggregateBalances?: DebtBalance[] };
 
 function getProfileName(userId: string, profiles: Record<string, string>, currentUserId?: string) {
   if (currentUserId && userId === currentUserId) return "You";
@@ -1592,8 +1592,8 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
   );
   const filteredPersonalSummary = getSummary(visibleExpenses, currentUserId, settlements);
   const filteredPersonalBalances = buildDebtBalances(visibleExpenses, settlements, { currentUserId });
-  const youOweRows = filteredPersonalBalances.filter((balance) => balance.fromUserId === currentUserId).map((balance) => ({ name: balance.toName, amount: balance.amount }));
-  const youGetRows = filteredPersonalBalances.filter((balance) => balance.toUserId === currentUserId).map((balance) => ({ name: balance.fromName, amount: balance.amount }));
+  const youOweRows = filteredPersonalBalances.filter((balance) => balance.fromUserId === currentUserId).map((balance) => ({ name: balance.toName, amount: balance.amount, settleId: balance.toUserId }));
+  const youGetRows = filteredPersonalBalances.filter((balance) => balance.toUserId === currentUserId).map((balance) => ({ name: balance.fromName, amount: balance.amount, settleId: balance.fromUserId }));
   const youOweTotal = youOweRows.reduce((sum, row) => sum + row.amount, 0);
   const youGetTotal = youGetRows.reduce((sum, row) => sum + row.amount, 0);
   const youOweAmountClass = youOweTotal > 0.009 ? "text-warning" : "text-muted-foreground";
@@ -1689,8 +1689,21 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
         <div className="max-h-[55dvh] overflow-y-auto overscroll-contain rounded-2xl bg-elevated/70">
           {detailRows.map((row, index) => (
             <div key={`${row.name}-${index}`} className={`flex items-center justify-between gap-3 px-4 py-3 text-sm ${index < detailRows.length - 1 ? "border-b border-border/60" : ""}`}>
-              <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
-              <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
+              <div className="flex-1 min-w-0 flex items-center justify-between mr-2">
+                <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
+                <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
+              </div>
+              <Button 
+                onClick={() => {
+                  setBalanceDetail(null);
+                  setTimeout(() => openModal("settle-up", row.settleId), 150);
+                }} 
+                size="sm" 
+                variant="outline" 
+                className="h-7 px-3 text-xs font-bold shrink-0 rounded-lg bg-background"
+              >
+                Settle
+              </Button>
             </div>
           ))}
           <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm">
@@ -2024,7 +2037,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
         title: "Settlement",
         detail: `${settlement.from_user_id === currentUserId ? "You" : displayName(friend)} paid ${settlement.to_user_id === currentUserId ? "you" : displayName(friend)} ${money(settlement.amount)}${settlement.note ? ` • ${settlement.note}` : ""}`,
         amount: settlement.amount,
-        impact: settlement.from_user_id === currentUserId ? -Number(settlement.amount) : Number(settlement.amount),
+        impact: settlement.from_user_id === currentUserId ? Number(settlement.amount) : -Number(settlement.amount),
         remainingImpact: 0,
         status: "paid" as const,
         paidById: settlement.from_user_id,
@@ -2187,11 +2200,12 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
                 <div className="p-4"><FilterEmptyState onClear={clearFilters} /></div>
               ) : filteredActivity.map((item, index) => {
                 const Icon = item.icon;
-                const impactClass = item.impact > 0 ? "text-success" : item.impact < 0 ? "text-destructive" : "text-muted-foreground";
+                const isPositiveDisplay = item.kind === "settlement" ? item.paidById !== currentUserId : item.impact > 0;
+                const impactClass = isPositiveDisplay ? "text-success" : (item.impact < 0 || item.kind === "settlement") ? "text-foreground" : "text-muted-foreground";
                 const statusLabel = item.status === "paid" ? "Paid" : item.status === "partial" ? "Partial" : "Pending";
                 const statusClass = item.status === "paid" ? "bg-success/15 text-success" : item.status === "partial" ? "bg-primary/10 text-primary" : "bg-warning/15 text-warning";
-                const iconBgClass = item.kind === "settlement" ? "bg-success/15" : item.impact < 0 ? "bg-warning/15" : "bg-primary/10";
-                const iconTextClass = item.kind === "settlement" ? "text-success" : item.impact < 0 ? "text-warning" : "text-primary";
+                const iconBgClass = item.kind === "settlement" ? "bg-success/15" : !isPositiveDisplay ? "bg-warning/15" : "bg-primary/10";
+                const iconTextClass = item.kind === "settlement" ? "text-success" : !isPositiveDisplay ? "text-warning" : "text-primary";
                 return (
                   <div
                     key={`${item.kind}-${item.id}`}
@@ -2213,7 +2227,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <div className="text-right">
-                        <p className={`text-sm font-bold ${impactClass}`}>{item.impact > 0 ? "+" : item.impact < 0 ? "-" : ""}{money(Math.abs(item.impact))}</p>
+                        <p className={`text-sm font-bold ${impactClass}`}>{isPositiveDisplay ? "+" : ""}{money(Math.abs(item.impact))}</p>
                         {item.kind === "expense" ? (
                           <div className="mt-1 flex flex-col items-end gap-1">
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${statusClass}`}>{statusLabel}</span>
@@ -3716,75 +3730,99 @@ const PickerList = ({ items, emptyText, onPick }: { items: Array<{ id: string; t
   </div>
 );
 
-const SettleForm = ({ group, settlement, balances, currentUserId, onSubmit, onCancel }: { group?: GroupRow; settlement?: SplitSettlementRow; balances: DebtBalance[]; currentUserId: string; onSubmit: (payload: SettlementPayload, proofFile?: File | null) => Promise<void>; onCancel: () => void }) => {
-  const [selectedSuggestionKey, setSelectedSuggestionKey] = useState<string | null>(null);
+const SettleForm = ({ group, settlement, balances, currentUserId, onSubmit, onCancel }: { group?: GroupRow; settlement?: SplitSettlementRow; balances: DebtBalance[]; currentUserId: string; onSubmit: (payloads: SettlementPayload[], proofFile?: File | null) => Promise<void>; onCancel: () => void }) => {
+  const [selectedSuggestionKeys, setSelectedSuggestionKeys] = useState<string[]>([]);
   const [date, setDate] = useState(settlement?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
   const [note, setNote] = useState(settlement?.note || "");
   const [submitting, setSubmitting] = useState(false);
-  const [pendingPayload, setPendingPayload] = useState<SettlementPayload | null>(null);
+  const [pendingPayloads, setPendingPayloads] = useState<SettlementPayload[] | null>(null);
   const visibleBalances = useMemo(
     () => balances.filter((balance) => balance.fromUserId === currentUserId || balance.toUserId === currentUserId),
     [balances, currentUserId],
   );
-  const selectedSuggestion = visibleBalances.find((balance) => `${balance.fromUserId}-${balance.toUserId}` === selectedSuggestionKey);
-  const canSubmit = Boolean(selectedSuggestion) && !submitting;
-  const pickSuggestion = (balance: DebtBalance) => {
-    setSelectedSuggestionKey(`${balance.fromUserId}-${balance.toUserId}`);
+  
+  const selectedBalances = visibleBalances.filter((balance) => selectedSuggestionKeys.includes(`${balance.fromUserId}-${balance.toUserId}-${balance.groupId || "personal"}`));
+  const canSubmit = selectedBalances.length > 0 && !submitting;
+  
+  const toggleSelection = (balance: DebtBalance) => {
+    const key = `${balance.fromUserId}-${balance.toUserId}-${balance.groupId || "personal"}`;
+    setSelectedSuggestionKeys((prev) => 
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+  
+  const toggleAll = () => {
+    if (selectedSuggestionKeys.length === visibleBalances.length) {
+      setSelectedSuggestionKeys([]);
+    } else {
+      setSelectedSuggestionKeys(visibleBalances.map(b => `${b.fromUserId}-${b.toUserId}-${b.groupId || "personal"}`));
+    }
   };
 
   useEffect(() => {
-    if (!selectedSuggestionKey) return;
-    if (visibleBalances.some((balance) => `${balance.fromUserId}-${balance.toUserId}` === selectedSuggestionKey)) return;
-    setSelectedSuggestionKey(null);
-  }, [selectedSuggestionKey, visibleBalances]);
+    // Clean up invalid selections if balances change
+    setSelectedSuggestionKeys(prev => {
+      const valid = prev.filter(k => visibleBalances.some(b => `${b.fromUserId}-${b.toUserId}-${b.groupId || "personal"}` === k));
+      if (valid.length !== prev.length) return valid;
+      return prev;
+    });
+  }, [visibleBalances]);
 
-  const buildPayload = () => selectedSuggestion ? {
-    settlementId: settlement?.id,
-    from_user_id: selectedSuggestion.fromUserId,
-    to_user_id: selectedSuggestion.toUserId,
-    amount: selectedSuggestion.amount,
-    group_id: group?.id || settlement?.group_id || null,
-    note: note.trim() || null,
-    created_at: new Date(date).toISOString(),
-  } : null;
+  const buildPayloads = (): SettlementPayload[] | null => {
+    if (selectedBalances.length === 0) return null;
+    
+    return selectedBalances.map(b => ({
+      settlementId: settlement?.id,
+      from_user_id: b.fromUserId,
+      to_user_id: b.toUserId,
+      amount: b.amount,
+      group_id: b.groupId || group?.id || settlement?.group_id || null,
+      note: note.trim() || null,
+      created_at: new Date(date).toISOString(),
+    }));
+  };
 
   return (
     <>
     <form className="space-y-4" onSubmit={async (event) => {
       event.preventDefault();
-      if (!selectedSuggestion || submitting) return;
-      const payload = buildPayload();
-      if (payload) setPendingPayload(payload);
+      if (selectedBalances.length === 0 || submitting) return;
+      const payloads = buildPayloads();
+      if (payloads && payloads.length > 0) setPendingPayloads(payloads);
     }}>
       <p className="text-sm font-semibold text-muted-foreground">
-        {selectedSuggestion ? "Review settlement details and confirm." : "Choose a settlement below to continue."}
+        {selectedBalances.length > 0 ? "Review settlement details and confirm." : "Choose expenses to settle."}
       </p>
       {visibleBalances.length > 0 && (
         <div className="space-y-3 rounded-2xl border border-primary/15 bg-elevated p-3 shadow-soft">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-bold uppercase tracking-wide text-foreground">Recommended settlement</p>
-            <span className="text-[11px] font-bold text-primary">Tap to select</span>
+          <div className="flex items-center justify-between gap-3 px-1">
+            <p className="text-xs font-bold uppercase tracking-wide text-foreground">Pending Settlements</p>
+            {visibleBalances.length > 1 && (
+              <button type="button" onClick={toggleAll} className="text-[11px] font-bold text-primary active:opacity-70">
+                {selectedSuggestionKeys.length === visibleBalances.length ? "Deselect all" : "Select all"}
+              </button>
+            )}
           </div>
           <div className="space-y-2">
             {visibleBalances.map((balance) => {
-              const suggestionKey = `${balance.fromUserId}-${balance.toUserId}`;
-              const selected = selectedSuggestionKey === suggestionKey;
+              const suggestionKey = `${balance.fromUserId}-${balance.toUserId}-${balance.groupId || "personal"}`;
+              const selected = selectedSuggestionKeys.includes(suggestionKey);
               return (
                 <button
                   key={suggestionKey}
                   type="button"
-                  onClick={() => pickSuggestion(balance)}
+                  onClick={() => toggleSelection(balance)}
                   className={`flex min-h-[64px] w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition-all active:scale-[0.99] ${selected ? "border-primary bg-primary/10 shadow-primary-action" : "border-border/70 bg-background hover:border-primary/40 hover:bg-primary/5"}`}
                   aria-pressed={selected}
                 >
                   <span className="min-w-0">
                     <span className="block font-black text-foreground">{balance.fromName} pay {balance.toName}</span>
-                    <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">{selected ? "Selected for confirmation" : "Tap to select this settlement"}</span>
+                    <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">{balance.contextName || (selected ? "Selected to settle" : "Tap to select")}</span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
                     <span className="text-base font-black text-primary">{money(balance.amount)}</span>
-                    <span className={`grid size-8 place-items-center rounded-full ${selected ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"}`}>
-                      {selected ? <Check className="size-4" /> : <ArrowRight className="size-4" />}
+                    <span className={`grid size-6 place-items-center rounded-md border-2 ${selected ? "bg-primary border-primary text-primary-foreground" : "border-primary/30 text-transparent"}`}>
+                      <Check className="size-3.5" />
                     </span>
                   </span>
                 </button>
@@ -3793,44 +3831,62 @@ const SettleForm = ({ group, settlement, balances, currentUserId, onSubmit, onCa
           </div>
         </div>
       )}
-      {selectedSuggestion ? (
-        <div className="space-y-3 rounded-2xl border border-success/20 bg-success/10 p-4">
-          <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-full bg-success text-success-foreground">
-              <Check className="size-4" />
-            </span>
-            <div>
-              <p className="text-sm font-black text-foreground">Settlement Summary</p>
-              <p className="text-xs font-semibold text-muted-foreground">System-calculated and ready to confirm</p>
+      {selectedBalances.length > 0 ? (() => {
+        let net = 0;
+        let fromUserName = currentUserId;
+        let toUserName = currentUserId;
+        selectedBalances.forEach(b => {
+          if (b.fromUserId === currentUserId) net -= b.amount;
+          else net += b.amount;
+          if (b.fromUserId === currentUserId) {
+            fromUserName = b.fromName;
+            toUserName = b.toName;
+          } else {
+            toUserName = b.fromName;
+            fromUserName = b.toName;
+          }
+        });
+        const isCurrentUserPaying = net <= 0;
+        const absNet = Math.abs(net);
+        return (
+          <div className="space-y-3 rounded-2xl border border-success/20 bg-success/10 p-4">
+            <div className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-full bg-success text-success-foreground">
+                <Check className="size-4" />
+              </span>
+              <div>
+                <p className="text-sm font-black text-foreground">Settlement Summary</p>
+                <p className="text-xs font-semibold text-muted-foreground">{selectedBalances.length} expenses selected</p>
+              </div>
+            </div>
+            <div className="grid gap-2 text-sm">
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-background/70 px-3 py-2">
+                <span className="font-semibold text-muted-foreground">Net Amount</span>
+                <span className="font-black text-foreground">{money(absNet)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-background/70 px-3 py-2">
+                <span className="font-semibold text-muted-foreground">Payment Flow</span>
+                <span className="text-right font-black text-foreground">{isCurrentUserPaying ? fromUserName : toUserName} pay {isCurrentUserPaying ? toUserName : fromUserName}</span>
+              </div>
             </div>
           </div>
-          <div className="grid gap-2 text-sm">
-            <div className="flex items-center justify-between gap-3 rounded-xl bg-background/70 px-3 py-2">
-              <span className="font-semibold text-muted-foreground">Amount</span>
-              <span className="font-black text-foreground">{money(selectedSuggestion.amount)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-xl bg-background/70 px-3 py-2">
-              <span className="font-semibold text-muted-foreground">Payment Flow</span>
-              <span className="text-right font-black text-foreground">{selectedSuggestion.fromName} pay {selectedSuggestion.toName}</span>
-            </div>
-          </div>
-        </div>
-      ) : null}
+        );
+      })() : null}
       {settlement ? <Field label="Date" type="date" value={date} onChange={setDate} /> : null}
       <Textarea label="Note (optional)" placeholder="Paid by UPI, cash..." value={note} onChange={setNote} />
-      <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button type="submit" className="flex-1" disabled={!canSubmit}>{submitting ? "Saving..." : selectedSuggestion ? "Confirm Settlement" : "Select settlement first"}</Button></div>
+      <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button type="submit" className="flex-1" disabled={!canSubmit}>{submitting ? "Saving..." : selectedBalances.length > 0 ? "Confirm Settlement" : "Select expenses first"}</Button></div>
     </form>
     <PaymentProofPrompt
-      open={Boolean(pendingPayload)}
+      open={Boolean(pendingPayloads)}
       description="Optional screenshot"
       submitting={submitting}
-      onCancel={() => setPendingPayload(null)}
+      onCancel={() => setPendingPayloads(null)}
       onContinue={async (file) => {
-        if (!pendingPayload || submitting) return;
+        if (!pendingPayloads || submitting) return;
         setSubmitting(true);
         try {
-          await onSubmit(pendingPayload, file);
-          setPendingPayload(null);
+          await onSubmit(pendingPayloads, file);
+          setPendingPayloads(null);
         } finally {
           setSubmitting(false);
         }
@@ -3872,7 +3928,22 @@ const ActionModal = ({
   const friend = data.friends.find((item) => item.user_id === modal.item) || data.friends.find((item) => item.user_id === settlementFriendId);
   const groupExpenses = group ? data.expenses.filter((item) => item.group_id === group.id) : [];
   const balances = group ? computeGroupBalances(data.expenses, data.settlements, group, currentUserId) : [];
-  const friendBalances = friend ? buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null }) : [];
+    const friendBalances = useMemo(() => {
+    if (!friend) return [];
+    
+    // 1. Fetch personal balances
+    const personalBalances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null })
+      .map(b => ({ ...b, groupId: null, contextName: "Personal split" }));
+      
+    // 2. Fetch group balances for all shared groups
+    const sharedGroups = data.groups.filter(g => g.group_members.some(m => m.user_id === friend.user_id));
+    const groupBalances = sharedGroups.flatMap(g => 
+      buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: g.id })
+        .map(b => ({ ...b, groupId: g.id, contextName: `${g.name} split` }))
+    );
+    
+    return [...personalBalances, ...groupBalances].filter(b => b.amount > 0.009);
+  }, [friend, data.expenses, data.settlements, data.groups, currentUserId]);
 
   const title =
     type === "add-expense" ? "Add expense" :
@@ -4100,30 +4171,54 @@ const ActionModal = ({
     }
   };
 
-  const saveSettlement = async (payload: SettlementPayload, proofFile?: File | null) => {
+  const saveSettlement = async (payloads: SettlementPayload[], proofFile?: File | null) => {
+    if (!payloads || payloads.length === 0) return;
+    
     let proofPath: string | null = null;
     let proofUploaded = false;
+    
     try {
       if (proofFile) {
-        proofPath = await uploadPaymentProof(currentUserId, payload.group_id || "friend-settlement", proofFile);
+        proofPath = await uploadPaymentProof(currentUserId, payloads[0].group_id || "friend-settlement", proofFile);
         proofUploaded = true;
       }
-      const { data: settlementId, error } = await supabase.rpc("record_split_settlement" as never, {
-        p_from_user_id: payload.from_user_id,
-        p_to_user_id: payload.to_user_id,
-        p_amount: payload.amount,
-        p_group_id: payload.group_id || null,
-        p_expense_id: null,
-        p_note: payload.note || null,
-      } as never);
-      if (error) {
-        await removeUploadedPaymentProof(proofPath);
-        proofPath = null;
-        throw error;
+      
+      let firstSettlementId: string | null = null;
+      
+      for (let i = 0; i < payloads.length; i++) {
+        const payload = payloads[i];
+        const { data: settlementId, error } = await supabase.rpc("record_split_settlement" as never, {
+          p_from_user_id: payload.from_user_id,
+          p_to_user_id: payload.to_user_id,
+          p_amount: payload.amount,
+          p_group_id: payload.group_id || null,
+          p_expense_id: null,
+          p_note: payload.note || null,
+        } as never);
+        
+        if (error) {
+          throw error;
+        }
+        
+        if (i === 0 && settlementId) {
+          firstSettlementId = settlementId;
+        }
+        
+        notifySharedAction({
+          type: payload.group_id ? "group_settled" : "split_settled",
+          recipients: [payload.from_user_id, payload.to_user_id],
+          title: payload.group_id ? "Group settlement completed" : "Split settled",
+          message: `${actorName} recorded a ${money(payload.amount)} settlement.`,
+          entity_type: "settlement",
+          entity_id: null,
+          amount: payload.amount,
+          group_name: payload.group_id ? data.groups.find((item) => item.id === payload.group_id)?.name : null,
+        });
       }
-      if (proofPath) {
+      
+      if (proofPath && firstSettlementId) {
         try {
-          await attachPaymentProofToSettlement(settlementId, proofPath);
+          await attachPaymentProofToSettlement(firstSettlementId, proofPath);
         } catch (proofError) {
           await removeUploadedPaymentProof(proofPath);
           proofPath = null;
@@ -4136,17 +4231,8 @@ const ActionModal = ({
       toast({ title: isProofError ? "Proof upload failed" : "Settlement failed", description: isProofError ? getPaymentProofErrorMessage(error) : getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
       throw error;
     }
-    notifySharedAction({
-      type: payload.group_id ? "group_settled" : "split_settled",
-      recipients: [payload.from_user_id, payload.to_user_id],
-      title: payload.group_id ? "Group settlement completed" : "Split settled",
-      message: `${actorName} recorded a ${money(payload.amount)} settlement.`,
-      entity_type: "settlement",
-      entity_id: null,
-      amount: payload.amount,
-      group_name: payload.group_id ? data.groups.find((item) => item.id === payload.group_id)?.name : null,
-    });
-    toast({ title: "Settlement saved", description: "Balances were updated." });
+    
+    toast({ title: payloads.length > 1 ? "Settlements saved" : "Settlement saved", description: "Balances were updated." });
     await closeAndRefresh();
   };
 
