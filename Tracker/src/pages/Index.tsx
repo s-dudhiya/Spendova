@@ -4742,42 +4742,47 @@ const Index = () => {
         {/* <p className="pt-10 text-center text-xs font-medium text-muted-foreground">© 2026 Spendova. All rights reserved.</p> */}
       </div>
       <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-3xl px-4 pb-4">
-        <div className="grid grid-cols-5 gap-1 rounded-[1.4rem] border border-border/80 bg-card p-2 shadow-panel backdrop-blur">
-          {tabs.slice(0, 2).map((tab) => {
-            const Icon = tab.icon;
-            const active = activeContentTab === tab.key;
-            return (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[11px] font-bold transition-colors ${active ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}>
-                <Icon className={`size-5 transition-transform ${active ? "scale-110" : ""}`} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-          
-          <div className="flex h-full items-center justify-center">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic();
-                openModal("universal-add");
-              }}
-              className="flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-primary-action transition-transform active:scale-95"
-              aria-label="Add Expense"
-            >
-              <Plus className="size-6" />
-            </button>
+        <div className="flex items-center justify-center">
+          {/* Left Pill */}
+          <div className="flex flex-1 items-center justify-around rounded-[1.4rem] border border-border/80 bg-card p-1 shadow-panel backdrop-blur">
+            {tabs.slice(0, 2).map((tab) => {
+              const Icon = tab.icon;
+              const active = activeContentTab === tab.key;
+              return (
+                <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`flex w-full flex-col items-center justify-center gap-1 rounded-2xl py-1.5 text-[11px] font-bold transition-colors ${active ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}>
+                  <Icon className={`size-5 transition-transform ${active ? "scale-110" : ""}`} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
           
-          {tabs.slice(2).map((tab) => {
-            const Icon = tab.icon;
-            const active = activeContentTab === tab.key;
-            return (
-              <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`flex flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-[11px] font-bold transition-colors ${active ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}>
-                <Icon className={`size-5 transition-transform ${active ? "scale-110" : ""}`} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+          {/* Center Button */}
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic();
+              openModal("universal-add");
+            }}
+            className="z-10 -mx-3 flex size-[4.25rem] shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-primary-action transition-transform active:scale-95"
+            aria-label="Add Expense"
+          >
+            <Plus className="size-8" />
+          </button>
+          
+          {/* Right Pill */}
+          <div className="flex flex-1 items-center justify-around rounded-[1.4rem] border border-border/80 bg-card p-1 shadow-panel backdrop-blur">
+            {tabs.slice(2).map((tab) => {
+              const Icon = tab.icon;
+              const active = activeContentTab === tab.key;
+              return (
+                <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`flex w-full flex-col items-center justify-center gap-1 rounded-2xl py-1.5 text-[11px] font-bold transition-colors ${active ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}>
+                  <Icon className={`size-5 transition-transform ${active ? "scale-110" : ""}`} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </nav>
       <SupportCoffeeWidget />
