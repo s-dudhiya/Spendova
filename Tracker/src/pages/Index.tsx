@@ -2630,12 +2630,35 @@ const SettlementDetailView = ({ settlement, currentUserId, onBack, onDelete }: {
 };
 
 const NotificationsList = ({ data, currentUserId, openModal }: { data: AppData; currentUserId: string; openModal: (type: ModalType, id?: string | null) => void }) => {
+  const navigate = useNavigate();
   const items = data.notifications.slice(0, 10);
   if (!items.length) return <EmptyCard text="No notifications yet." />;
+
+  const handleNotificationClick = (item: NotificationRow) => {
+    if (item.type === "friend_request_received" && data.incomingRequests.some(req => req.id === item.entity_id)) {
+      openModal("friend-requests");
+      return;
+    }
+    
+    if (item.entity_type === "expense" && item.entity_id) {
+      navigate(`/split/expense/${item.entity_id}`);
+      openModal(null);
+    } else if (item.entity_type === "settlement" && item.entity_id) {
+      navigate(`/split/settlement/${item.entity_id}`);
+      openModal(null);
+    } else if (item.entity_type === "group" && item.entity_id) {
+      navigate(`/split/group/${item.entity_id}`);
+      openModal(null);
+    } else if (item.entity_type === "ledger" && item.entity_id) {
+      navigate(`/ledger/${item.entity_id}`);
+      openModal(null);
+    }
+  };
+
   return (
     <div className="overflow-hidden rounded-2xl bg-elevated/70">
       {items.map((item, index) => (
-        <div key={item.id} className={`flex gap-3 px-4 py-3 text-sm ${index < items.length - 1 ? "border-b border-border/60" : ""}`}>
+        <div key={item.id} onClick={() => handleNotificationClick(item)} className={`flex cursor-pointer gap-3 px-4 py-3 text-sm transition-colors hover:bg-background/50 ${index < items.length - 1 ? "border-b border-border/60" : ""}`}>
           <span className={`mt-1 size-2 shrink-0 rounded-full ${item.is_read ? "bg-muted-foreground/30" : "bg-primary shadow-primary-action"}`} />
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
@@ -2644,7 +2667,7 @@ const NotificationsList = ({ data, currentUserId, openModal }: { data: AppData; 
             </div>
             <p className="mt-1 text-xs font-medium leading-5 text-muted-foreground">{item.message}</p>
             {item.type === "friend_request_received" && data.incomingRequests.some(req => req.id === item.entity_id) && (
-              <Button onClick={() => openModal("friend-requests")} variant="outline" size="sm" className="mt-3 h-8 w-full rounded-xl text-[11px] font-bold">
+              <Button onClick={(e) => { e.stopPropagation(); openModal("friend-requests"); }} variant="outline" size="sm" className="mt-3 h-8 w-full rounded-xl text-[11px] font-bold">
                 Review Request
               </Button>
             )}
