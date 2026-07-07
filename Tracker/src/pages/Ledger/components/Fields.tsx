@@ -23,7 +23,7 @@ export const Field = ({
     {label}
     <input
       type={type}
-      className="mt-2 block min-h-11 w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring focus:ring-offset-0 disabled:opacity-50"
+      className="mt-2 block min-h-11 min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring focus:ring-offset-0 disabled:opacity-50"
       {...props}
     />
     {hint && <div className="mt-1.5 text-xs font-medium text-muted-foreground">{hint}</div>}
