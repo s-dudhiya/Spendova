@@ -158,7 +158,7 @@ const ActivityRow = ({ activity, ledger }: { activity: LedgerActivityRow; ledger
 
 const LedgerEmptyState = ({ onCreate }: { onCreate: () => void }) => (
   <BeautifulEmptyState
-    icon="🗂️"
+    icon={Wallet}
     title="No ledgers yet"
     subtitle="Create a ledger to start tracking shared or personal budgets."
     actionLabel="Create Ledger"

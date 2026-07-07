@@ -2,7 +2,7 @@ import React from "react";
 import { Button } from "./ui/button";
 
 interface BeautifulEmptyStateProps {
-  icon: string;
+  icon?: React.ElementType;
   title: string;
   subtitle: string;
   actionLabel?: string;
@@ -10,21 +10,23 @@ interface BeautifulEmptyStateProps {
 }
 
 export function BeautifulEmptyState({
-  icon,
+  icon: Icon,
   title,
   subtitle,
   actionLabel,
   onAction,
 }: BeautifulEmptyStateProps) {
   return (
-    <div className="flex min-h-[300px] flex-col items-center justify-center rounded-3xl border border-dashed border-border/60 bg-card p-8 text-center shadow-sm">
-      <div className="mb-4 grid size-16 place-items-center rounded-full bg-elevated text-3xl shadow-soft">
-        {icon}
-      </div>
-      <h3 className="mb-1 text-lg font-bold text-foreground">{title}</h3>
-      <p className="mb-6 max-w-[250px] text-sm text-muted-foreground">{subtitle}</p>
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card p-8 text-center shadow-sm">
+      {Icon && (
+        <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Icon className="size-6" />
+        </div>
+      )}
+      <h3 className="mb-1 text-base font-bold text-foreground">{title}</h3>
+      <p className="mb-5 max-w-[250px] text-sm text-muted-foreground">{subtitle}</p>
       {actionLabel && onAction && (
-        <Button onClick={onAction} className="rounded-full px-6 shadow-primary-action">
+        <Button onClick={onAction} variant="outline" className="rounded-full shadow-sm">
           {actionLabel}
         </Button>
       )}

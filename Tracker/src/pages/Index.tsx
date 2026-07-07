@@ -34,11 +34,13 @@ import {
   TrendingDown,
   TrendingUp,
   User,
+  Users,
   UserMinus,
   UserPlus,
   UtensilsCrossed,
   Upload,
   WalletCards,
+  Receipt,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1638,7 +1640,7 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
         <div className="space-y-3">
           {personalExpenses.length === 0 ? (
             <BeautifulEmptyState
-              icon="💳"
+              icon={Receipt}
               title="No personal expenses"
               subtitle="Track your daily un-split expenses here."
               actionLabel="Add Expense"
@@ -1842,7 +1844,7 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
           <div className="space-y-3">
             {filteredFriends.length === 0 ? (data.friends.length === 0 ? (
               <BeautifulEmptyState
-                icon="🤝"
+                icon={Users}
                 title="No friends yet"
                 subtitle="Add friends to start splitting expenses easily."
                 actionLabel="Add Friend"
@@ -1874,7 +1876,7 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
             <div className="space-y-3">
               {data.groups.length === 0 ? (
                 <BeautifulEmptyState
-                  icon="🏠"
+                  icon={Home}
                   title="No groups yet"
                   subtitle="Create a group to split shared expenses with friends or family."
                   actionLabel="Create Group"
