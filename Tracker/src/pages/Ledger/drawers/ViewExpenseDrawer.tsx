@@ -121,7 +121,7 @@ export const ViewExpenseDrawer = ({
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent className="mx-auto grid h-[88dvh] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-[2.5rem] border-border bg-background px-0 pb-0">
+      <DrawerContent className="mx-auto flex flex-col max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl overflow-hidden rounded-t-[2.5rem] border-border bg-background px-0 pb-0">
         <DrawerHeader className="sr-only">
           <DrawerTitle>Expense Details</DrawerTitle>
           <DrawerDescription>Paid by {name}</DrawerDescription>
