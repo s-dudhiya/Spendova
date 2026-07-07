@@ -1107,6 +1107,16 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
+          {ledger.ledger_type === "shared" && (
+            <button
+              type="button"
+              onClick={() => setInviteOpen(true)}
+              className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10"
+              aria-label="Invite Members"
+            >
+              <UserPlus className="size-4" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
@@ -1153,34 +1163,23 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
       </section>
 
       {/* ── Quick Actions ── */}
-      <section className={`grid grid-cols-1 gap-3 min-[420px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]`}>
+      <section className="grid grid-cols-2 gap-3">
           <Button
-            className="h-[52px] w-full rounded-2xl shadow-primary-action"
+            className="h-[52px] w-full rounded-2xl shadow-primary-action text-xs font-bold sm:text-sm"
             onClick={() => setAddExpenseOpen(true)}
           >
-            <Plus className="mr-1 size-4" />
-            Add Expense
+            <Plus className="mr-1 size-4 shrink-0" />
+            <span className="truncate">Add Expense</span>
           </Button>
           <Button
             variant="outline"
-            className="h-[52px] w-full rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary"
+            className="h-[52px] w-full rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary text-xs font-bold sm:text-sm"
             onClick={() => setAddBudgetOpen(true)}
           >
-            <Plus className="mr-1 size-4" />
-            Add Budget
+            <Plus className="mr-1 size-4 shrink-0" />
+            <span className="truncate">Add Budget</span>
           </Button>
         </section>
-
-      {ledger.ledger_type === "shared" && (
-        <Button
-          variant="quiet"
-          className="relative h-11 w-full rounded-2xl text-primary hover:bg-primary/10"
-          onClick={() => setInviteOpen(true)}
-        >
-          <UserPlus className="mr-2 size-4" />
-          Invite Members
-        </Button>
-      )}
 
       {/* ── Activity Timeline ── */}
       {activities && activities.length > 0 && (
