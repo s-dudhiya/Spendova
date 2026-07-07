@@ -681,7 +681,7 @@ const BellButton = ({ count, onClick, size = "md" }: { count: number; onClick: (
 
 const FilterSheet = ({ open, onOpenChange, title, onClear, children }: { open: boolean; onOpenChange: (open: boolean) => void; title: string; onClear: () => void; children: ReactNode }) => (
   <Drawer open={open} onOpenChange={onOpenChange}>
-    <DrawerContent className="mx-auto grid h-[88dvh] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-0">
+    <DrawerContent className="mx-auto flex flex-col max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-0">
       <DrawerHeader className="px-0 pb-3 pt-4 text-left">
         <DrawerTitle>{title}</DrawerTitle>
         <DrawerDescription>Filters update the list immediately.</DrawerDescription>
