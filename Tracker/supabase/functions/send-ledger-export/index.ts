@@ -2,8 +2,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import nodemailer from 'npm:nodemailer'
+import { PDFDocument, rgb, StandardFonts } from 'https://esm.sh/pdf-lib@1.17.1'
 import { cleanMailHeader, emailTemplate, escapeHtml, fromAddress, stripHtml, withAutomatedFooterText } from '../_shared/email-template.ts'
-
+import { SPENDOVA_LOGO_BASE64 } from '../_shared/logo.ts'
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -86,28 +87,122 @@ serve(async (req) => {
             return acc;
         }, {})
 
-        // Generate CSV
-        const header = ['Title', 'Amount', 'Category', 'Paid By', 'Status', 'Date', 'Notes']
-        const csvRows = [header.map(escapeCsv).join(',')]
+        // Generate PDF using pdf-lib (Edge compatible) with Beautiful Table Design
+        const pdfDoc = await PDFDocument.create();
+        let page = pdfDoc.addPage();
+        const { width, height } = page.getSize();
+        
+        const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-        const expenses = ledger.ledger_expenses || []
-        expenses.forEach((exp: any) => {
-            csvRows.push([
-                exp.title,
-                exp.amount,
-                exp.category,
-                profileMap[exp.user_id] || 'Unknown',
-                exp.status,
-                exp.created_at ? new Date(exp.created_at).toLocaleDateString() : '',
-                exp.notes
-            ].map(escapeCsv).join(','))
-        })
+        // Header / Brand Logo
+        try {
+            const logoImageBytes = Uint8Array.from(atob(SPENDOVA_LOGO_BASE64), c => c.charCodeAt(0));
+            const logoImage = await pdfDoc.embedPng(logoImageBytes);
+            const scaledLogo = logoImage.scaleToFit(220, 50); 
+            page.drawImage(logoImage, {
+                x: (width - scaledLogo.width) / 2, // Centered
+                y: height - 80,
+                width: scaledLogo.width,
+                height: scaledLogo.height,
+            });
+        } catch (e) {
+            const textWidth = boldFont.widthOfTextAtSize("Spendova", 28);
+            page.drawText("Spendova", { x: (width - textWidth) / 2, y: height - 70, size: 28, font: boldFont, color: rgb(0.43, 0.16, 0.85) });
+        }
+        
+        const logoY = height - 80;
 
-        const csvContent = csvRows.join('\n')
-        // Deno uses strict base64 encoding; encode text into Uint8Array then to base64
-        const textEncoder = new TextEncoder()
-        const uint8Array = textEncoder.encode(csvContent)
-        const base64Csv = btoa(String.fromCharCode(...uint8Array))
+        // Report Title
+        page.drawText(`Ledger Export: ${ledger.name}`, { x: 40, y: logoY - 50, size: 18, font: boldFont, color: rgb(0.1, 0.1, 0.15) });
+        page.drawText(`Exported on ${new Date().toLocaleDateString()}`, { x: 40, y: logoY - 70, size: 11, font: font, color: rgb(0.4, 0.4, 0.45) });
+
+        const expenses = ledger.ledger_expenses || [];
+        
+        // Custom Table Drawing Function
+        let y = logoY - 120;
+        const columns = ['Date', 'Title', 'Amount', 'Category', 'Paid By', 'Status'];
+        const colWidths = [70, 110, 70, 80, 90, 60];
+        const tableWidth = colWidths.reduce((a, b) => a + b, 0);
+        const rowHeight = 24;
+
+        // Modern Header Background
+        page.drawRectangle({ x: 35, y: y - 8, width: tableWidth + 10, height: 28, color: rgb(0.96, 0.95, 0.99) });
+        page.drawLine({ start: { x: 35, y: y - 8 }, end: { x: 35 + tableWidth + 10, y: y - 8 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
+        page.drawLine({ start: { x: 35, y: y + 20 }, end: { x: 35 + tableWidth + 10, y: y + 20 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
+
+        let startX = 40;
+        columns.forEach((col, i) => {
+            page.drawText(col, { x: startX, y: y + 2, size: 10, font: boldFont, color: rgb(0.3, 0.15, 0.6) });
+            startX += colWidths[i];
+        });
+        
+        y -= rowHeight;
+
+        // Table Body
+        if (expenses.length === 0) {
+            page.drawText("No expenses recorded in this ledger.", { x: 40, y, size: 9, font: font });
+        } else {
+            expenses.forEach((exp: any, rowIndex: number) => {
+                if (y < 50) {
+                    page = pdfDoc.addPage();
+                    y = height - 50;
+                    // Redraw header on new page
+                    page.drawRectangle({ x: 35, y: y - 8, width: tableWidth + 10, height: 28, color: rgb(0.96, 0.95, 0.99) });
+                    page.drawLine({ start: { x: 35, y: y - 8 }, end: { x: 35 + tableWidth + 10, y: y - 8 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
+                    page.drawLine({ start: { x: 35, y: y + 20 }, end: { x: 35 + tableWidth + 10, y: y + 20 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
+                    let hx = 40;
+                    columns.forEach((col, i) => {
+                        page.drawText(col, { x: hx, y: y + 2, size: 10, font: boldFont, color: rgb(0.3, 0.15, 0.6) });
+                        hx += colWidths[i];
+                    });
+                    y -= rowHeight;
+                }
+
+                // Striped Background
+                if (rowIndex % 2 === 0) {
+                    page.drawRectangle({ x: 35, y: y - 8, width: tableWidth + 10, height: rowHeight, color: rgb(0.98, 0.98, 0.99) });
+                }
+                
+                // Bottom border for the row
+                page.drawLine({ start: { x: 35, y: y - 8 }, end: { x: 35 + tableWidth + 10, y: y - 8 }, color: rgb(0.92, 0.92, 0.94), thickness: 1 });
+
+                const row = [
+                    exp.created_at ? new Date(exp.created_at).toLocaleDateString() : '',
+                    (exp.title || 'Unknown').substring(0, 18),
+                    `$${Number(exp.amount).toFixed(2)}`,
+                    (exp.category || '').substring(0, 15),
+                    (profileMap[exp.user_id] || 'Unknown').substring(0, 15),
+                    exp.status
+                ];
+                
+                let cx = 40;
+                row.forEach((cell, i) => {
+                    page.drawText(cell, { x: cx, y: y + 2, size: 9, font: font, color: rgb(0.2, 0.2, 0.25) });
+                    cx += colWidths[i];
+                });
+                y -= rowHeight;
+            });
+        }
+
+        const pages = pdfDoc.getPages();
+        for (let i = 0; i < pages.length; i++) {
+            const p = pages[i];
+            const { width, height } = p.getSize();
+            p.drawLine({ start: { x: 40, y: 40 }, end: { x: width - 40, y: 40 }, color: rgb(0.9, 0.88, 0.95), thickness: 1 });
+            p.drawText("Spendova", { x: 40, y: 25, size: 9, font: boldFont, color: rgb(0.4, 0.4, 0.45) });
+            p.drawText("System-generated document", { x: 95, y: 25, size: 8, font: font, color: rgb(0.5, 0.5, 0.55) });
+            p.drawText(`Page ${i + 1} of ${pages.length}`, { x: width - 90, y: 25, size: 9, font: font, color: rgb(0.4, 0.4, 0.45) });
+        }
+
+        const pdfBytes = await pdfDoc.save();
+        
+        // Base64 encode for Deno safely (avoiding max call stack with String.fromCharCode(...pdfBytes))
+        let binaryString = "";
+        for (let i = 0; i < pdfBytes.length; i++) {
+            binaryString += String.fromCharCode(pdfBytes[i]);
+        }
+        const base64Pdf = btoa(binaryString);
 
         // Send Email
         const SMTP_HOST = Deno.env.get('SMTP_HOST') || 'smtp.gmail.com';
@@ -147,8 +242,8 @@ serve(async (req) => {
                 footer: 'Spendova export'
             }),
             attachments: [{
-                filename: `${ledger.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_export.csv`,
-                content: base64Csv,
+                filename: `${ledger.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_export.pdf`,
+                content: base64Pdf,
                 encoding: 'base64'
             }]
         }
