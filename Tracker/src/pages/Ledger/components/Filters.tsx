@@ -69,6 +69,14 @@ export const FilterDateField = ({ label, value, onChange }: { label: string; val
       <input
         type="date"
         value={value}
+        data-vaul-no-drag
+        onClick={(e) => {
+          try {
+            if ("showPicker" in e.target) {
+              (e.target as HTMLInputElement).showPicker();
+            }
+          } catch (err) {}
+        }}
         onChange={(event) => onChange(event.target.value)}
         className={`block h-10 w-full min-w-0 rounded-full border border-input bg-background px-3 text-left text-xs font-medium outline-none [color-scheme:light] focus:ring-2 focus:ring-inset focus:ring-ring dark:[color-scheme:dark] text-foreground`}
       />
@@ -82,7 +90,6 @@ export const defaultDateFilterOptions = [
   { value: "this_week", label: "This week" },
   { value: "this_month", label: "This month" },
   { value: "previous_month", label: "Previous month" },
-  { value: "this_year", label: "This year" },
   { value: "custom", label: "Custom date" },
 ];
 

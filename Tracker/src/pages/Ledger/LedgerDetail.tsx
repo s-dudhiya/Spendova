@@ -943,22 +943,86 @@ export const LedgerDetail = ({
     await Promise.all([refresh(), onRefreshList()]);
   }, [rolloverInfo, budgetAdditions, expenses, ledger.id, refresh, onRefreshList, toast]);
 
+  const applyDateFilter = (dateString: string | undefined | null, dFilter: string, customStart?: string, customEnd?: string) => {
+    if (dFilter === "all") return true;
+    if (!dateString) return false;
+    const date = new Date(dateString);
+    const now = new Date();
+    if (Number.isNaN(date.getTime())) return false;
+    
+    if (dFilter === "custom") {
+      const start = customStart ? new Date(`${customStart}T00:00:00`) : null;
+      const end = customEnd ? new Date(`${customEnd}T23:59:59`) : null;
+      if (start && date < start) return false;
+      if (end && date > end) return false;
+      return true;
+    }
+    
+    if (dFilter === "today") return date.toDateString() === now.toDateString();
+    
+    if (dFilter === "this_week") {
+      const start = new Date(now);
+      start.setDate(now.getDate() - now.getDay()); 
+      start.setHours(0, 0, 0, 0);
+      return date >= start;
+    }
+    
+    if (dFilter === "this_month") {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      return date >= start && date <= end;
+    }
+    
+    if (dFilter === "previous_month") {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+      return date >= start && date <= end;
+    }
+    
+    return true;
+  };
+
+  const visibleExpenses = useMemo(() => {
+    return expenses.filter((e) => {
+      if (filter !== "all" && e.status !== filter) return false;
+      if (categoryFilter !== "all" && (e.category || "Uncategorized") !== categoryFilter) return false;
+      if (!applyDateFilter(e.created_at, dateFilter, dateStart, dateEnd)) return false;
+      return true;
+    });
+  }, [expenses, filter, categoryFilter, dateFilter, dateStart, dateEnd]);
+
   // Compute budget summary
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
   const currentYear = now.getFullYear();
 
   const isMonthly = ledger.budget_type === "monthly";
-  const filteredAdditions = isMonthly
-    ? budgetAdditions.filter((a) => a.month === currentMonth && a.year === currentYear)
-    : budgetAdditions;
-  const filteredExpenses = isMonthly
-    ? expenses.filter((e) => e.month === currentMonth && e.year === currentYear)
-    : expenses;
+  const filteredAdditions = budgetAdditions.filter((a) => {
+    if (!isMonthly) return true;
+    if (dateFilter === "all") return true;
+    const now = new Date();
+    let targetMonth = now.getMonth() + 1;
+    let targetYear = now.getFullYear();
+    if (dateFilter === "previous_month") {
+      targetMonth = now.getMonth() === 0 ? 12 : now.getMonth();
+      targetYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    }
+    // For "this_week", "today", "custom", we fallback to the current month's budget
+    // since budget additions are strictly monthly.
+    return a.month === targetMonth && a.year === targetYear;
+  });
 
-  const summary = computeBudgetSummary(filteredAdditions, filteredExpenses, Number(ledger.total_savings || 0));
+  const summary = computeBudgetSummary(filteredAdditions, visibleExpenses, Number(ledger.total_savings || 0));
 const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const monthLabel = isMonthly ? `${MONTH_NAMES_SHORT[currentMonth - 1]} ${currentYear}` : undefined;
+  let monthLabel = isMonthly ? `${MONTH_NAMES_SHORT[currentMonth - 1]} ${currentYear}` : undefined;
+  if (isMonthly) {
+    if (dateFilter === "all") monthLabel = "All Time";
+    else if (dateFilter === "previous_month") {
+      const pMonth = now.getMonth() === 0 ? 12 : now.getMonth();
+      const pYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+      monthLabel = `${MONTH_NAMES_SHORT[pMonth - 1]} ${pYear}`;
+    }
+  }
 
   // Filter expenses for timeline
   const pendingCount = expenses.filter((e) => e.status === "pending").length;
@@ -1012,58 +1076,6 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
     await refresh();
   };
 
-  const applyDateFilter = (dateString: string | undefined | null, dFilter: string, customStart?: string, customEnd?: string) => {
-    if (dFilter === "all") return true;
-    if (!dateString) return false;
-    const date = new Date(dateString);
-    const now = new Date();
-    if (Number.isNaN(date.getTime())) return false;
-    
-    if (dFilter === "custom") {
-      const start = customStart ? new Date(`${customStart}T00:00:00`) : null;
-      const end = customEnd ? new Date(`${customEnd}T23:59:59`) : null;
-      if (start && date < start) return false;
-      if (end && date > end) return false;
-      return true;
-    }
-    
-    if (dFilter === "today") return date.toDateString() === now.toDateString();
-    
-    if (dFilter === "this_week") {
-      const start = new Date(now);
-      start.setDate(now.getDate() - now.getDay()); 
-      start.setHours(0, 0, 0, 0);
-      return date >= start;
-    }
-    
-    if (dFilter === "this_month") {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-      return date >= start && date <= end;
-    }
-    
-    if (dFilter === "previous_month") {
-      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
-      return date >= start && date <= end;
-    }
-    
-    if (dFilter === "this_year") {
-      const start = new Date(now.getFullYear(), 0, 1);
-      return date >= start;
-    }
-    
-    return true;
-  };
-
-  const visibleExpenses = useMemo(() => {
-    return expenses.filter((e) => {
-      if (filter !== "all" && e.status !== filter) return false;
-      if (categoryFilter !== "all" && (e.category || "Uncategorized") !== categoryFilter) return false;
-      if (!applyDateFilter(e.created_at, dateFilter, dateStart, dateEnd)) return false;
-      return true;
-    });
-  }, [expenses, filter, categoryFilter, dateFilter, dateStart, dateEnd]);
 
   const availableCategories = useMemo(() => {
     const cats = new Set<string>();
@@ -1255,14 +1267,14 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
                 <CircleDollarSign className="size-7" />
               </div>
               <p className="mt-4 text-base font-black text-foreground">
-                {filter === "all" ? "No expenses yet" : `No ${filter} expenses`}
+                {activeFilterCount > 0 ? "No expenses found" : "No expenses yet"}
               </p>
               <p className="mt-1 text-sm font-medium text-muted-foreground">
-                {filter === "all"
-                  ? "Add your first expense to start tracking this budget."
-                  : "Try changing the filter to see other expenses."}
+                {activeFilterCount > 0
+                  ? "Try changing your filters to see other expenses."
+                  : "Add your first expense to start tracking this budget."}
               </p>
-              {filter === "all" && (
+              {activeFilterCount === 0 && (
                 <Button onClick={() => setAddExpenseOpen(true)} variant="quiet" className="mt-4">
                   <Plus />Add Expense
                 </Button>

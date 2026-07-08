@@ -615,7 +615,7 @@ const SectionHeader = ({ title, action, onAction }: { title: string; action?: st
   </div>
 );
 
-type DateFilter = "all" | "today" | "week" | "month" | "year" | "custom";
+type DateFilter = "all" | "today" | "week" | "month" | "previous_month" | "custom";
 type AmountSort = "newest" | "oldest" | "amount-desc" | "amount-asc";
 
 const filterByDate = (value: string | null | undefined, filter: DateFilter, customStart?: string, customEnd?: string) => {
@@ -633,9 +633,19 @@ const filterByDate = (value: string | null | undefined, filter: DateFilter, cust
   }
   if (filter === "today") return date.toDateString() === now.toDateString();
   const start = new Date(now);
-  if (filter === "week") start.setDate(now.getDate() - 7);
-  if (filter === "month") start.setMonth(now.getMonth() - 1);
-  if (filter === "year") start.setFullYear(now.getFullYear() - 1);
+  if (filter === "week") {
+    start.setDate(now.getDate() - now.getDay()); // Sunday
+    start.setHours(0, 0, 0, 0);
+  } else if (filter === "month") {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+  } else if (filter === "previous_month") {
+    const pMonth = now.getMonth() === 0 ? 12 : now.getMonth();
+    const pYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    const prevStart = new Date(pYear, pMonth - 1, 1, 0, 0, 0, 0);
+    const prevEnd = new Date(pYear, pMonth, 0, 23, 59, 59, 999);
+    return date >= prevStart && date <= prevEnd;
+  }
   return date >= start;
 };
 
@@ -734,7 +744,7 @@ const dateFilterOptions = [
   { value: "today", label: "Today" },
   { value: "week", label: "This week" },
   { value: "month", label: "This month" },
-  { value: "year", label: "This year" },
+  { value: "previous_month", label: "Previous month" },
   { value: "custom", label: "Custom date" },
 ];
 
@@ -745,6 +755,14 @@ const FilterDateField = ({ label, value, onChange }: { label: string; value: str
       <input
         type="date"
         value={value}
+        data-vaul-no-drag
+        onClick={(e) => {
+          try {
+            if ("showPicker" in e.target) {
+              (e.target as HTMLInputElement).showPicker();
+            }
+          } catch (err) {}
+        }}
         onChange={(event) => onChange(event.target.value)}
         className={`block h-10 w-full min-w-0 rounded-full border border-input bg-background px-3 text-left text-xs font-medium outline-none [color-scheme:light] focus:ring-2 focus:ring-inset focus:ring-ring dark:[color-scheme:dark] ${value ? "text-foreground" : "text-transparent"}`}
       />
@@ -2174,8 +2192,8 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
 
       <section className="grid grid-cols-2 gap-3">
         <Button onClick={() => openModal("add-expense", friend.user_id)} className="h-11 rounded-2xl shadow-primary-action"><Plus />Add Expense</Button>
-        <Button onClick={() => net !== 0 && openModal("settle-up", friend.user_id)} disabled={net === 0} variant="outline" className="h-11 rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary">
-          <Check />{net === 0 ? "Settled" : `Settle ${money(Math.abs(net))}`}
+        <Button onClick={() => filteredNet !== 0 && openModal("settle-up", friend.user_id)} disabled={filteredNet === 0} variant="outline" className="h-11 rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary">
+          <Check />{filteredNet === 0 ? "Settled" : `Settle ${money(Math.abs(filteredNet))}`}
         </Button>
       </section>
 
@@ -2743,12 +2761,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const groupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), getExpenseTimelineCreatedAt);
   const groupCategories = scopedCategories(data.categories, "group", currentUserId, group.id);
   const groupSettlements = data.settlements.filter((settlement) => settlement.group_id === group.id && isSettlementParticipant(settlement, currentUserId));
-  const balances = computeGroupBalances(data.expenses, data.settlements, group, currentUserId);
-  const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
-  const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
-  const net = owedToMe - iOwe;
-  const balanceChipText = net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled";
-  const balanceChipClass = net > 0 ? "bg-success/15 text-success" : net < 0 ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground";
+  // Balances calculation moved down to use filtered data
   const isOwner = group.created_by === currentUserId;
   const memberMap = Object.fromEntries(group.group_members.map((member) => [member.user_id, member]));
   const getExpenseStatus = (expense: ExpenseRow) => {
@@ -2851,7 +2864,15 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
     filters.sort === "oldest" ? "oldest" : "newest",
   );
   const filteredGroupExpenses = filteredGroupActivity.filter((item): item is Extract<GroupActivityItem, { kind: "expense" }> => item.kind === "expense").map((item) => item.expense);
+  const filteredGroupSettlements = filteredGroupActivity.filter((item): item is Extract<GroupActivityItem, { kind: "settlement" }> => item.kind === "settlement").map((item) => item.settlement);
   const filteredTotalSpent = filteredGroupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  
+  const balances = computeGroupBalances(filteredGroupExpenses, filteredGroupSettlements, group, currentUserId);
+  const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+  const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
+  const net = owedToMe - iOwe;
+  const balanceChipText = net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled";
+  const balanceChipClass = net > 0 ? "bg-success/15 text-success" : net < 0 ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground";
 
   return (
     <>
