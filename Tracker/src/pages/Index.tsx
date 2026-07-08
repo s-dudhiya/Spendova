@@ -4787,9 +4787,15 @@ const Index = () => {
 
   const setActiveTab = (tab: TabKey) => {
     setActiveTabState(tab);
-    if (tab === "split") navigate("/split");
-    else if (tab === "ledger" && (location.pathname.startsWith("/split") || isProfileRoute)) navigate("/dashboard");
-    else if (location.pathname.startsWith("/split") || isProfileRoute) navigate("/dashboard");
+    if (tab === "split") {
+      navigate("/split");
+    } else if (
+      location.pathname.startsWith("/split") ||
+      isProfileRoute ||
+      location.pathname.startsWith("/ledger/")
+    ) {
+      navigate("/dashboard");
+    }
   };
 
   const activeContentTab: ContentKey = isProfileRoute ? "profile" : isSplitRoute ? "split" : isLedgerRoute ? "ledger" : activeTab;
