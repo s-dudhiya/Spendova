@@ -762,17 +762,24 @@ const DateFilterControls = ({
   onDateChange: (value: string) => void;
   onStartChange: (value: string) => void;
   onEndChange: (value: string) => void;
-}) => (
-  <div className="space-y-2.5">
-    <FilterField label="Date" value={value} onChange={onDateChange} options={dateFilterOptions} />
-    {value === "custom" ? (
-      <div className="grid grid-cols-2 gap-2">
-        <Field type="date" label="From" value={start || ""} onChange={onStartChange} />
-        <Field type="date" label="To" value={end || ""} onChange={onEndChange} />
-      </div>
-    ) : null}
-  </div>
-);
+}) => {
+  const threeMonthsAgo = new Date();
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  threeMonthsAgo.setDate(1);
+  const minFilterDate = threeMonthsAgo.toISOString().split("T")[0];
+  
+  return (
+    <div className="space-y-2.5">
+      <FilterField label="Date" value={value} onChange={onDateChange} options={dateFilterOptions} />
+      {value === "custom" ? (
+        <div className="grid grid-cols-2 gap-2">
+          <Field type="date" label="From" value={start || ""} min={minFilterDate} max={new Date().toISOString().split("T")[0]} onChange={onStartChange} />
+          <Field type="date" label="To" value={end || ""} min={minFilterDate} max={new Date().toISOString().split("T")[0]} onChange={onEndChange} />
+        </div>
+      ) : null}
+    </div>
+  );
+};
 
 const FilterEmptyState = ({ onClear, isDefault, onViewAll }: { onClear: () => void; isDefault?: boolean; onViewAll?: () => void }) => (
   <div className="rounded-2xl border border-dashed border-border bg-card p-6 text-center">
@@ -798,6 +805,8 @@ const Field = ({
   onChange,
   type = "text",
   hint,
+  min,
+  max,
 }: {
   label: string;
   placeholder?: string;
@@ -805,13 +814,15 @@ const Field = ({
   onChange: (value: string) => void;
   type?: string;
   hint?: string;
+  min?: string;
+  max?: string;
 }) => {
   const isDateEmpty = type === "date" && !value;
   return (
     <label className="block text-sm font-semibold text-foreground">
       {label}
       <div className="relative mt-2">
-        <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className={`block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring ${isDateEmpty ? "text-transparent" : ""}`} placeholder={placeholder} />
+        <input type={type} value={value} min={min} max={max} onChange={(event) => onChange(event.target.value)} className={`block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring ${isDateEmpty ? "text-transparent" : ""}`} placeholder={placeholder} />
         {isDateEmpty && <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-normal text-muted-foreground">{placeholder || "Select date"}</span>}
       </div>
       {hint ? <span className="mt-1 block text-xs font-medium text-muted-foreground">{hint}</span> : null}
@@ -3550,6 +3561,11 @@ const ExpenseForm = ({
     }
   };
 
+  const minDate = new Date();
+  minDate.setMonth(minDate.getMonth() - (new Date().getDate() > 3 ? 0 : 1));
+  minDate.setDate(1);
+  const minExpenseDate = minDate.toISOString().split("T")[0];
+
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <CategoryPicker
@@ -3562,7 +3578,7 @@ const ExpenseForm = ({
       />
       <Field label="Expense name" placeholder="Dinner, groceries..." value={name} onChange={handleNameChange} hint="Selecting a category can fill this if you leave it blank." />
       <Field label="Amount" type="number" placeholder="0" value={amount} onChange={setAmount} />
-      <Field label="Date" type="date" value={date} onChange={setDate} />
+      <Field label="Date" type="date" value={date} min={minExpenseDate} max={new Date().toISOString().split("T")[0]} onChange={setDate} />
       {splitOn && (
         <label className="block text-sm font-semibold text-foreground">
           Who paid

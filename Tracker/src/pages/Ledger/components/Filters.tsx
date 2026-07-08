@@ -62,7 +62,7 @@ export const FilterField = ({ label, value, onChange, options }: { label: string
   </label>
 );
 
-export const FilterDateField = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => {
+export const FilterDateField = ({ label, value, onChange, min, max }: { label: string; value: string; onChange: (value: string) => void; min?: string; max?: string }) => {
   const isDateEmpty = !value;
   return (
     <label className="block text-sm font-semibold text-foreground">
@@ -71,6 +71,8 @@ export const FilterDateField = ({ label, value, onChange }: { label: string; val
         <input
           type="date"
           value={value}
+          min={min}
+          max={max}
           onChange={(event) => onChange(event.target.value)}
           className={`block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring ${isDateEmpty ? "text-transparent" : ""}`}
         />
@@ -109,14 +111,21 @@ export const DateFilterControls = ({
   onStartChange: (value: string) => void;
   onEndChange: (value: string) => void;
   options?: Array<{ value: string; label: string }>;
-}) => (
-  <div className="space-y-2.5">
-    <FilterField label="Date" value={value} onChange={onDateChange} options={options} />
-    {value === "custom" ? (
-      <div className="grid grid-cols-2 gap-2">
-        <FilterDateField label="From" value={start || ""} onChange={onStartChange} />
-        <FilterDateField label="To" value={end || ""} onChange={onEndChange} />
-      </div>
-    ) : null}
-  </div>
-);
+}) => {
+  const threeMonthsAgo = new Date();
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  threeMonthsAgo.setDate(1);
+  const minFilterDate = threeMonthsAgo.toISOString().split("T")[0];
+
+  return (
+    <div className="space-y-2.5">
+      <FilterField label="Date" value={value} onChange={onDateChange} options={options} />
+      {value === "custom" ? (
+        <div className="grid grid-cols-2 gap-2">
+          <FilterDateField label="From" value={start || ""} min={minFilterDate} max={new Date().toISOString().split("T")[0]} onChange={onStartChange} />
+          <FilterDateField label="To" value={end || ""} min={minFilterDate} max={new Date().toISOString().split("T")[0]} onChange={onEndChange} />
+        </div>
+      ) : null}
+    </div>
+  );
+};

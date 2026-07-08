@@ -282,6 +282,8 @@ export const AddExpenseDrawer = ({
               label="Date" 
               type="date" 
               value={date} 
+              min={new Date(new Date().getFullYear(), new Date().getMonth() - (new Date().getDate() > 3 ? 0 : 1), 1).toISOString().split("T")[0]}
+              max={new Date().toISOString().split("T")[0]}
               onChange={(e) => setDate(e.target.value)} 
             />
 
