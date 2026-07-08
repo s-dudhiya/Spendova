@@ -29,6 +29,17 @@ serve(async (req) => {
         // We will just verify it's a valid request.
 
         const now = new Date()
+        
+        // --- 3-DAY BUFFER CHECK ---
+        // If it is before the 4th of the month, do not process anything. 
+        // This allows users 3 full days to log expenses for the previous month.
+        if (now.getDate() < 4) {
+            return new Response(JSON.stringify({ success: true, message: "Within 3-day buffer. Processing paused." }), {
+                status: 200,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
         const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
         const previousMonthString = previousMonth.toISOString().split('T')[0]
         const previousMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
