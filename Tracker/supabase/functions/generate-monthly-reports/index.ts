@@ -49,12 +49,14 @@ serve(async (req) => {
 
         // Fetch up to 10 users who haven't been processed for the previous month
         const { data: usersToProcess, error: usersError } = await supabaseAdmin
-            .from('profiles')
-            .select('user_id, full_name, username')
-            .limit(10)
+            .rpc('get_unprocessed_users', {
+                p_month_date: previousMonthString,
+                p_limit: 10
+            });
 
         if (usersError || !usersToProcess) {
-            throw new Error('Failed to fetch users')
+            console.error(usersError);
+            throw new Error('Failed to fetch unprocessed users')
         }
 
         let processedCount = 0;
