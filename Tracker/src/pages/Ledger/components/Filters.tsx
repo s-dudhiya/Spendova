@@ -63,24 +63,14 @@ export const FilterField = ({ label, value, onChange, options }: { label: string
 );
 
 export const FilterDateField = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => (
-  <label className="block min-w-0 text-xs font-semibold text-muted-foreground">
-    <span className="mb-1 block">{label}</span>
-    <span className="relative block">
-      <input
-        type="date"
-        value={value}
-        data-vaul-no-drag
-        onClick={(e) => {
-          try {
-            if ("showPicker" in e.target) {
-              (e.target as HTMLInputElement).showPicker();
-            }
-          } catch (err) {}
-        }}
-        onChange={(event) => onChange(event.target.value)}
-        className={`block h-10 w-full min-w-0 rounded-full border border-input bg-background px-3 text-left text-xs font-medium outline-none [color-scheme:light] focus:ring-2 focus:ring-inset focus:ring-ring dark:[color-scheme:dark] text-foreground`}
-      />
-    </span>
+  <label className="block text-sm font-semibold text-foreground">
+    {label}
+    <input
+      type="date"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="mt-2 block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
+    />
   </label>
 );
 

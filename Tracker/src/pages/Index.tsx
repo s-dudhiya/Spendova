@@ -748,33 +748,6 @@ const dateFilterOptions = [
   { value: "custom", label: "Custom date" },
 ];
 
-const FilterDateField = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => (
-  <label className="block min-w-0 text-xs font-semibold text-muted-foreground">
-    <span className="mb-1 block">{label}</span>
-    <span className="relative block">
-      <input
-        type="date"
-        value={value}
-        data-vaul-no-drag
-        onClick={(e) => {
-          try {
-            if ("showPicker" in e.target) {
-              (e.target as HTMLInputElement).showPicker();
-            }
-          } catch (err) {}
-        }}
-        onChange={(event) => onChange(event.target.value)}
-        className={`block h-10 w-full min-w-0 rounded-full border border-input bg-background px-3 text-left text-xs font-medium outline-none [color-scheme:light] focus:ring-2 focus:ring-inset focus:ring-ring dark:[color-scheme:dark] ${value ? "text-foreground" : "text-transparent"}`}
-      />
-      {!value ? (
-        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs font-medium text-muted-foreground">
-          Select date
-        </span>
-      ) : null}
-    </span>
-  </label>
-);
-
 const DateFilterControls = ({
   value,
   start,
@@ -794,8 +767,8 @@ const DateFilterControls = ({
     <FilterField label="Date" value={value} onChange={onDateChange} options={dateFilterOptions} />
     {value === "custom" ? (
       <div className="grid grid-cols-2 gap-2">
-        <FilterDateField label="From" value={start || ""} onChange={onStartChange} />
-        <FilterDateField label="To" value={end || ""} onChange={onEndChange} />
+        <Field type="date" label="From" value={start || ""} onChange={onStartChange} />
+        <Field type="date" label="To" value={end || ""} onChange={onEndChange} />
       </div>
     ) : null}
   </div>
