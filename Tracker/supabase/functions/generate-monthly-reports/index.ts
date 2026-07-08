@@ -433,7 +433,7 @@ serve(async (req) => {
                             footer: 'Spendova Automated Reports'
                         }),
                         attachments: [{
-                            filename: `Spendova_Report_${previousMonth.toLocaleString('default', { month: 'long', year: 'numeric' }).replace(' ', '_')}.pdf`,
+                            filename: `${previousMonth.toLocaleString('default', { month: 'long' })}_MonthlyReport.pdf`,
                             content: pdfBase64,
                             encoding: 'base64'
                         }]

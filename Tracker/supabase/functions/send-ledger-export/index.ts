@@ -242,7 +242,7 @@ serve(async (req) => {
                 footer: 'Spendova export'
             }),
             attachments: [{
-                filename: `${ledger.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_export.pdf`,
+                filename: `${ledger.name.replace(/[^a-z0-9]/gi, '_')}_LedgerReport.pdf`,
                 content: base64Pdf,
                 encoding: 'base64'
             }]
