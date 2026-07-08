@@ -62,17 +62,27 @@ export const FilterField = ({ label, value, onChange, options }: { label: string
   </label>
 );
 
-export const FilterDateField = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => (
-  <label className="block text-sm font-semibold text-foreground">
-    {label}
-    <input
-      type="date"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className="mt-2 block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
-    />
-  </label>
-);
+export const FilterDateField = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => {
+  const isDateEmpty = !value;
+  return (
+    <label className="block text-sm font-semibold text-foreground">
+      {label}
+      <div className="relative mt-2">
+        <input
+          type="date"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className={`block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring ${isDateEmpty ? "text-transparent" : ""}`}
+        />
+        {isDateEmpty && (
+          <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-normal text-muted-foreground">
+            Select date
+          </span>
+        )}
+      </div>
+    </label>
+  );
+};
 
 export const defaultDateFilterOptions = [
   { value: "all", label: "All dates" },

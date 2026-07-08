@@ -801,13 +801,19 @@ const Field = ({
   onChange: (value: string) => void;
   type?: string;
   hint?: string;
-}) => (
-  <label className="block text-sm font-semibold text-foreground">
-    {label}
-    <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder={placeholder} />
-    {hint ? <span className="mt-1 block text-xs font-medium text-muted-foreground">{hint}</span> : null}
-  </label>
-);
+}) => {
+  const isDateEmpty = type === "date" && !value;
+  return (
+    <label className="block text-sm font-semibold text-foreground">
+      {label}
+      <div className="relative mt-2">
+        <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className={`block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring ${isDateEmpty ? "text-transparent" : ""}`} placeholder={placeholder} />
+        {isDateEmpty && <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-normal text-muted-foreground">{placeholder || "Select date"}</span>}
+      </div>
+      {hint ? <span className="mt-1 block text-xs font-medium text-muted-foreground">{hint}</span> : null}
+    </label>
+  );
+};
 
 const Textarea = ({ label, placeholder, value, onChange }: { label: string; placeholder?: string; value: string; onChange: (value: string) => void }) => (
   <label className="block text-sm font-semibold text-foreground">
