@@ -1566,7 +1566,7 @@ const DashboardLoadingFallback = () => {
 
 const PersonalView = ({ expenses, settlements, summary, categories, currentUserId, groups, friends, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; summary: ReturnType<typeof getSummary>; categories: ExpenseCategoryRow[]; currentUserId: string; groups: GroupRow[]; friends: FriendProfile[]; openModal: (type: ModalType, item?: string) => void }) => {
   const { toast } = useToast();
-  const defaultFilters = { status: "all", date: "all", dateStart: "", dateEnd: "", sort: "newest", category: "all" };
+  const defaultFilters = { status: "all", date: "month", dateStart: "", dateEnd: "", sort: "newest", category: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [balanceDetail, setBalanceDetail] = useState<"owe" | "get" | null>(null);
   const [filters, setFilters] = useState(defaultFilters);
@@ -1991,7 +1991,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
   const [actionItem, setActionItem] = useState<FriendActivityItem | null>(null);
   const [quickSettleItem, setQuickSettleItem] = useState<FriendActivityItem | null>(null);
   const [quickSettling, setQuickSettling] = useState(false);
-  const defaultFilters = { type: "all", status: "all", date: "all", dateStart: "", dateEnd: "", sort: "newest", paidBy: "anyone" };
+  const defaultFilters = { type: "all", status: "all", date: "month", dateStart: "", dateEnd: "", sort: "newest", paidBy: "anyone" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
   const balances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null });
@@ -2734,7 +2734,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const [settlingExpenseId, setSettlingExpenseId] = useState<string | null>(null);
   const [participantsExpense, setParticipantsExpense] = useState<ExpenseRow | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
-  const defaultFilters = { status: "all", paidBy: "anyone", date: "all", dateStart: "", dateEnd: "", sort: "newest", splitType: "all", category: "all" };
+  const defaultFilters = { status: "all", paidBy: "anyone", date: "month", dateStart: "", dateEnd: "", sort: "newest", splitType: "all", category: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
   const groupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), getExpenseTimelineCreatedAt);
