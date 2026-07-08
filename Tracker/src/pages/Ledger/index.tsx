@@ -30,6 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { LedgerRow, LedgerActivityRow } from "./types";
 import { LedgerDetail } from "./LedgerDetail";
 import { CreateLedgerDrawer } from "./drawers/CreateLedgerDrawer";
+import { FilterSheet, FilterField, FilterTrigger } from "./components/Filters";
 import { money, timeAgo } from "./utils";
 import { useLedgersDashboard, type DashboardLedgerSummary } from "./hooks";
 
@@ -137,7 +138,17 @@ export const BudgetLedgerView = ({
   const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(initialLedgerId || null);
   const [createOpen, setCreateOpen] = useState(false);
   const [sortType, setSortType] = useState<"recent" | "oldest" | "az" | "za">("recent");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterType, setFilterType] = useState<"all" | "personal" | "shared">("all");
+  const [filterBudget, setFilterBudget] = useState<"all" | "monthly" | "one-time">("all");
   const { toast } = useToast();
+
+  const clearFilters = () => {
+    setFilterType("all");
+    setFilterBudget("all");
+  };
+
+  const activeFilterCount = (filterType !== "all" ? 1 : 0) + (filterBudget !== "all" ? 1 : 0);
 
   useEffect(() => {
     if (initialLedgerId !== undefined) {
@@ -168,7 +179,10 @@ export const BudgetLedgerView = ({
     );
   }
 
-  const activeLedgers = [...ledgers].sort((a, b) => {
+  const activeLedgers = [...ledgers]
+    .filter((ledger) => filterType === "all" || ledger.ledger_type === filterType)
+    .filter((ledger) => filterBudget === "all" || ledger.budget_type === filterBudget)
+    .sort((a, b) => {
     if (sortType === "recent") {
       return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
     } else if (sortType === "oldest") {
@@ -251,13 +265,7 @@ export const BudgetLedgerView = ({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <button 
-              type="button" 
-              onClick={() => toast({ title: "Coming soon", description: "Advanced filtering will be available soon." })}
-              className="outline-none"
-            >
-              <Filter className="size-4 text-primary" />
-            </button>
+            <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
           </div>
         </div>
 
@@ -293,6 +301,29 @@ export const BudgetLedgerView = ({
           await refreshDashboard();
         }}
       />
+
+      <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Ledger filters" onClear={clearFilters}>
+        <FilterField 
+          label="Ledger Type" 
+          value={filterType} 
+          onChange={(v) => setFilterType(v as any)} 
+          options={[
+            { value: "all", label: "All types" },
+            { value: "personal", label: "Personal" },
+            { value: "shared", label: "Shared" }
+          ]} 
+        />
+        <FilterField 
+          label="Budget Frequency" 
+          value={filterBudget} 
+          onChange={(v) => setFilterBudget(v as any)} 
+          options={[
+            { value: "all", label: "All frequencies" },
+            { value: "monthly", label: "Monthly" },
+            { value: "one-time", label: "One-time" }
+          ]} 
+        />
+      </FilterSheet>
     </main>
   );
 };
