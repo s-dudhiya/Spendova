@@ -19,6 +19,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BeautifulEmptyState } from "@/components/BeautifulEmptyState";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useToast } from "@/hooks/use-toast";
 
 import type { LedgerRow, LedgerActivityRow } from "./types";
 import { LedgerDetail } from "./LedgerDetail";
@@ -129,6 +136,8 @@ export const BudgetLedgerView = ({
   const navigate = useNavigate();
   const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(initialLedgerId || null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [sortType, setSortType] = useState<"recent" | "oldest" | "az" | "za">("recent");
+  const { toast } = useToast();
 
   useEffect(() => {
     if (initialLedgerId !== undefined) {
@@ -159,7 +168,18 @@ export const BudgetLedgerView = ({
     );
   }
 
-  const activeLedgers = ledgers;
+  const activeLedgers = [...ledgers].sort((a, b) => {
+    if (sortType === "recent") {
+      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+    } else if (sortType === "oldest") {
+      return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+    } else if (sortType === "az") {
+      return a.name.localeCompare(b.name);
+    } else if (sortType === "za") {
+      return b.name.localeCompare(a.name);
+    }
+    return 0;
+  });
 
   return (
     <main className="space-y-6 pb-20">
@@ -210,10 +230,34 @@ export const BudgetLedgerView = ({
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-black tracking-tight text-foreground">Your Ledgers</h2>
           <div className="flex items-center gap-3">
-            <button type="button" className="flex items-center gap-1 text-xs font-bold text-primary">
-              Recent <ChevronDown className="size-3" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className="flex items-center gap-1 text-xs font-bold text-primary outline-none">
+                  {sortType === "recent" ? "Recent" : sortType === "oldest" ? "Oldest" : sortType === "az" ? "A to Z" : "Z to A"} <ChevronDown className="size-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40 rounded-2xl">
+                <DropdownMenuItem onClick={() => setSortType("recent")} className="font-semibold py-2">
+                  Recent
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortType("oldest")} className="font-semibold py-2">
+                  Oldest
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortType("az")} className="font-semibold py-2">
+                  A to Z
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSortType("za")} className="font-semibold py-2">
+                  Z to A
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <button 
+              type="button" 
+              onClick={() => toast({ title: "Coming soon", description: "Advanced filtering will be available soon." })}
+              className="outline-none"
+            >
+              <Filter className="size-4 text-primary" />
             </button>
-            <Filter className="size-4 text-primary" />
           </div>
         </div>
 
