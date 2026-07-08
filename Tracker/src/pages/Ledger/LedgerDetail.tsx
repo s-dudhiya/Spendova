@@ -1086,7 +1086,7 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
     return Array.from(cats).sort();
   }, [expenses]);
   
-  const activeFilterCount = (filter !== "all" ? 1 : 0) + (categoryFilter !== "all" ? 1 : 0) + (dateFilter !== "all" ? 1 : 0);
+  const activeFilterCount = (filter !== "all" ? 1 : 0) + (categoryFilter !== "all" ? 1 : 0) + (dateFilter !== "this_month" ? 1 : 0);
   const ActiveIcon = getLedgerIcon(ledger.icon);
 
   return (
@@ -1267,16 +1267,25 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
                 <CircleDollarSign className="size-7" />
               </div>
               <p className="mt-4 text-base font-black text-foreground">
-                {activeFilterCount > 0 ? "No expenses found" : "No expenses yet"}
+                {activeFilterCount > 0 ? "No expenses found" : "No expenses added for this month till now"}
               </p>
               <p className="mt-1 text-sm font-medium text-muted-foreground">
                 {activeFilterCount > 0
                   ? "Try changing your filters to see other expenses."
-                  : "Add your first expense to start tracking this budget."}
+                  : "Add your first expense for this month to start tracking."}
               </p>
-              {activeFilterCount === 0 && (
-                <Button onClick={() => setAddExpenseOpen(true)} variant="quiet" className="mt-4">
-                  <Plus />Add Expense
+              {activeFilterCount === 0 ? (
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-center">
+                  <Button onClick={() => setAddExpenseOpen(true)} variant="quiet">
+                    <Plus />Add Expense
+                  </Button>
+                  <Button onClick={() => setDateFilter("all")} variant="quiet">
+                    View past expenses
+                  </Button>
+                </div>
+              ) : (
+                <Button onClick={() => { setFilter("all"); setCategoryFilter("all"); setDateFilter("this_month"); }} variant="quiet" className="mt-4">
+                  Clear filters
                 </Button>
               )}
             </div>

@@ -774,10 +774,14 @@ const DateFilterControls = ({
   </div>
 );
 
-const FilterEmptyState = ({ onClear }: { onClear: () => void }) => (
+const FilterEmptyState = ({ onClear, isDefault, onViewAll }: { onClear: () => void; isDefault?: boolean; onViewAll?: () => void }) => (
   <div className="rounded-2xl border border-dashed border-border bg-card p-6 text-center">
-    <p className="text-sm font-medium text-muted-foreground">No results match your filters.</p>
-    <Button type="button" variant="quiet" className="mt-4" onClick={onClear}>Clear filters</Button>
+    <p className="text-sm font-medium text-muted-foreground">
+      {isDefault ? "No expenses added for this month till now." : "No results match your filters."}
+    </p>
+    <Button type="button" variant="quiet" className="mt-4" onClick={isDefault && onViewAll ? onViewAll : onClear}>
+      {isDefault ? "View past expenses" : "Clear filters"}
+    </Button>
   </div>
 );
 
@@ -1395,6 +1399,7 @@ const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal
   const rangedExpenses = expenses.filter((expense) => filterByDate(expense.created_at, range, rangeStart, rangeEnd));
   const filteredExpenses = rangedExpenses.filter((expense) => status === "all" || expense.status === status);
   const summary = getSummary(filteredExpenses, userId, settlements);
+  const allTimeSummary = getSummary(expenses, userId, settlements);
   const recent = filteredExpenses.slice(0, 4);
   const today = new Date();
   const yesterday = new Date(today);
@@ -1446,20 +1451,20 @@ const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal
             <p className="pt-0.5 text-sm font-semibold text-muted-foreground">Net balance</p>
             <span title="Compared with yesterday" className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${trendClass}`} aria-label={`${trendLabel} compared with yesterday`}><TrendIcon className="size-3.5" />{trendLabel}</span>
           </div>
-          <p className="mt-2 text-4xl font-black leading-tight tracking-tight text-foreground sm:text-5xl">{money(Math.abs(summary.net))}</p>
+          <p className="mt-2 text-4xl font-black leading-tight tracking-tight text-foreground sm:text-5xl">{money(Math.abs(allTimeSummary.net))}</p>
           <p className="mt-1 max-w-[18rem] text-sm font-medium leading-5 text-muted-foreground sm:max-w-none">Across personal expenses and shared balances</p>
         </div>
         <div className="mt-7 flex w-full items-start justify-between gap-4">
           <button onClick={() => openModal("chart-details")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
             <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
               <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">You Get</span>
-              <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-success sm:text-lg">{money(summary.totalLent)}</span>
+              <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-success sm:text-lg">{money(allTimeSummary.totalLent)}</span>
             </span>
           </button>
           <button onClick={() => openModal("chart-details")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
             <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
               <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">You Owe</span>
-              <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-warning sm:text-lg">{money(summary.totalOwed)}</span>
+              <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-warning sm:text-lg">{money(allTimeSummary.totalOwed)}</span>
             </span>
           </button>
         </div>
@@ -1518,7 +1523,7 @@ const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal
 
       <section>
         <div className="mb-3 flex items-center justify-between gap-3"><div><h2 className="text-base font-black tracking-tight text-foreground">Recent activity</h2><p className="mt-0.5 text-xs font-medium text-muted-foreground">Latest spending and split updates</p></div><FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} /></div>
-        <div className="space-y-3">{recent.length === 0 ? (expenses.length === 0 ? <EmptyCard text="No activity yet." /> : <FilterEmptyState onClear={clear} />) : recent.map((expense) => { const share = getExpenseShare(expense, userId); return <div key={expense.id} className="flex items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-soft"><div className="min-w-0"><h3 className="truncate font-bold text-foreground">{expense.category || "Expense"}</h3><CategoryBadge label={categoryLabel(expense, categories)} /><p className="mt-1 text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p></div><div className="shrink-0 text-right"><p className="font-black text-foreground">{money(share)}</p><StatusPill status={expense.status || "pending"} /></div></div>; })}</div>
+        <div className="space-y-3">{recent.length === 0 ? (expenses.length === 0 ? <EmptyCard text="No activity yet." /> : <FilterEmptyState onClear={clear} isDefault={range === "month"} onViewAll={() => setRange("all")} />) : recent.map((expense) => { const share = getExpenseShare(expense, userId); return <div key={expense.id} className="flex items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-soft"><div className="min-w-0"><h3 className="truncate font-bold text-foreground">{expense.category || "Expense"}</h3><CategoryBadge label={categoryLabel(expense, categories)} /><p className="mt-1 text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p></div><div className="shrink-0 text-right"><p className="font-black text-foreground">{money(share)}</p><StatusPill status={expense.status || "pending"} /></div></div>; })}</div>
       </section>
 
       <Drawer open={chartFiltersOpen} onOpenChange={setChartFiltersOpen}>
@@ -1588,9 +1593,9 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
     (expense) => Number(getPersonalExpenseDisplay(expense, currentUserId, groups, friends, expenses, settlements).amount || 0),
   );
   const filteredPersonalSummary = getSummary(visibleExpenses, currentUserId, settlements);
-  const filteredPersonalBalances = buildDebtBalances(visibleExpenses, settlements, { currentUserId });
-  const youOweRows = filteredPersonalBalances.filter((balance) => balance.fromUserId === currentUserId).map((balance) => ({ name: balance.toName, amount: balance.amount, settleId: balance.toUserId }));
-  const youGetRows = filteredPersonalBalances.filter((balance) => balance.toUserId === currentUserId).map((balance) => ({ name: balance.fromName, amount: balance.amount, settleId: balance.fromUserId }));
+  const allTimePersonalBalances = buildDebtBalances(personalExpenses, settlements, { currentUserId });
+  const youOweRows = allTimePersonalBalances.filter((balance) => balance.fromUserId === currentUserId).map((balance) => ({ name: balance.toName, amount: balance.amount, settleId: balance.toUserId }));
+  const youGetRows = allTimePersonalBalances.filter((balance) => balance.toUserId === currentUserId).map((balance) => ({ name: balance.fromName, amount: balance.amount, settleId: balance.fromUserId }));
   const youOweTotal = youOweRows.reduce((sum, row) => sum + row.amount, 0);
   const youGetTotal = youGetRows.reduce((sum, row) => sum + row.amount, 0);
   const youOweAmountClass = youOweTotal > 0.009 ? "text-warning" : "text-muted-foreground";
@@ -1644,7 +1649,7 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
               actionLabel="Add Expense"
               onAction={() => openModal("add-expense")}
             />
-          ) : visibleExpenses.length === 0 ? <FilterEmptyState onClear={clearFilters} /> : visibleExpenses.map((expense) => {
+          ) : visibleExpenses.length === 0 ? <FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} /> : visibleExpenses.map((expense) => {
             const display = getPersonalExpenseDisplay(expense, currentUserId, groups, friends, expenses, settlements);
             return (
               <article key={expense.id} className="rounded-2xl bg-card p-4 shadow-soft">
@@ -1867,7 +1872,7 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
                 actionLabel="Add Friend"
                 onAction={() => openModal("add-friend")}
               />
-            ) : <FilterEmptyState onClear={clearFilters} />) : filteredFriends.map(({ friend, net }) => {
+            ) : <FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} />) : filteredFriends.map(({ friend, net }) => {
               return (
               <button key={friend.user_id} onClick={() => openDetail("friend", friend.user_id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
                 <div className="flex min-w-0 items-center gap-3">
@@ -1899,7 +1904,7 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
                   actionLabel="Create Group"
                   onAction={() => openModal("create-group")}
                 />
-              ) : filteredGroups.length === 0 ? <FilterEmptyState onClear={clearFilters} /> : filteredGroups.map(({ group, net }) => {
+              ) : filteredGroups.length === 0 ? <FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} /> : filteredGroups.map(({ group, net }) => {
                 return (
                   <button onClick={() => openDetail("group", group.id)} key={group.id} className="w-full rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
                     <div className="flex items-center justify-between gap-3">
@@ -2194,7 +2199,7 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
             <div className="relative">
               <span className="absolute left-9 top-8 bottom-8 w-px bg-border/70" aria-hidden="true" />
               {filteredActivity.length === 0 ? (
-                <div className="p-4"><FilterEmptyState onClear={clearFilters} /></div>
+                <div className="p-4"><FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} /></div>
               ) : filteredActivity.map((item, index) => {
                 const Icon = item.icon;
                 const isPositiveDisplay = item.kind === "settlement" ? item.paidById !== currentUserId : item.impact > 0;
@@ -2846,7 +2851,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const filteredGroupSettlements = filteredGroupActivity.filter((item): item is Extract<GroupActivityItem, { kind: "settlement" }> => item.kind === "settlement").map((item) => item.settlement);
   const filteredTotalSpent = filteredGroupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
   
-  const balances = computeGroupBalances(filteredGroupExpenses, filteredGroupSettlements, group, currentUserId);
+  const balances = computeGroupBalances(groupExpenses, groupSettlements, group, currentUserId);
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const net = owedToMe - iOwe;
@@ -2937,7 +2942,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
             <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
           </div>
           <div className="space-y-3">
-            {groupActivity.length === 0 ? <EmptyCard text="No group expenses yet. Add your first expense" /> : filteredGroupActivity.length === 0 ? <FilterEmptyState onClear={clearFilters} /> : filteredGroupActivity.map((item) => {
+            {groupActivity.length === 0 ? <EmptyCard text="No group expenses yet. Add your first expense" /> : filteredGroupActivity.length === 0 ? <FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} /> : filteredGroupActivity.map((item) => {
               if (item.kind === "settlement") {
                 const settlement = item.settlement;
                 const fromName = settlement.from_user_id === currentUserId ? "You" : displayName(settlement.from_profile || memberMap[settlement.from_user_id]?.profiles);
