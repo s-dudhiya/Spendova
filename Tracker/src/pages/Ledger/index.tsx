@@ -97,63 +97,6 @@ const LedgerCard = ({ ledger, summary, onClick }: LedgerCardProps) => {
   );
 };
 
-// ── Activity Row ───────────────────────────────────────────────
-
-const ActivityRow = ({ activity, ledger }: { activity: LedgerActivityRow; ledger?: LedgerRow }) => {
-  let icon = <PlusCircle className="size-4" />;
-  let iconBg = "bg-primary/15 text-primary";
-  let amountClass = "text-foreground";
-  let amountPrefix = "+";
-  let amountStr = "";
-
-  const isExpense = activity.action === "expense_submitted" || activity.action === "expense_paid" || activity.action === "expense_approved";
-  const isRollover = activity.action === "monthly_rollover";
-  
-  if (isExpense) {
-    icon = <ShoppingCart className="size-4" />;
-    iconBg = "bg-primary/15 text-primary";
-    amountClass = "text-foreground";
-    amountPrefix = "";
-  } else if (isRollover) {
-    icon = <RefreshCw className="size-4" />;
-    iconBg = "bg-primary/15 text-primary";
-    amountClass = "text-foreground";
-  }
-
-  if (activity.metadata && typeof activity.metadata.amount === "number") {
-    amountStr = money(activity.metadata.amount);
-  }
-
-  let title = activity.action;
-  if (isExpense && activity.metadata?.title) {
-    title = `${activity.profiles?.full_name || activity.profiles?.username || "User"} added ${activity.metadata.title}`;
-  } else if (activity.action === "budget_added") {
-    title = "Budget increased";
-  } else if (isRollover) {
-    title = "Monthly rollover completed";
-  }
-
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-soft">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className={`grid size-10 shrink-0 place-items-center rounded-full ${iconBg}`}>
-          {icon}
-        </span>
-        <div className="min-w-0">
-          <h3 className="truncate font-bold text-foreground">{title}</h3>
-          <p className="mt-1 truncate text-sm text-muted-foreground">{ledger?.name || "Unknown Ledger"}</p>
-        </div>
-      </div>
-      <div className="shrink-0 text-right">
-        <p className={`font-black ${amountClass}`}>
-          {amountPrefix}{amountStr}
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">{timeAgo(activity.created_at)}</p>
-      </div>
-    </div>
-  );
-};
-
 // ── Empty State ───────────────────────────────────────────────
 
 const LedgerEmptyState = ({ onCreate }: { onCreate: () => void }) => (
@@ -292,24 +235,6 @@ export const BudgetLedgerView = ({
           </div>
         )}
       </section>
-
-      {/* ── Recent Activity ── */}
-      {recentActivity.length > 0 && (
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-black tracking-tight text-foreground">Recent activity</h2>
-          </div>
-          <div className="space-y-3">
-            {recentActivity.map((activity) => (
-              <ActivityRow 
-                key={activity.id} 
-                activity={activity} 
-                ledger={ledgers.find(l => l.id === activity.ledger_id)} 
-              />
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* ── Create Ledger Drawer ── */}
       <CreateLedgerDrawer

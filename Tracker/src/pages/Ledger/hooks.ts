@@ -72,7 +72,7 @@ export function useLedgerDetail(
 
           supabase
             .from("ledger_activity" as never)
-            .select("id, ledger_id, user_id, action, metadata, created_at, profiles!ledger_activity_user_id_fkey(full_name, username)")
+            .select("id, ledger_id, actor_id, action, entity_type, entity_id, metadata, created_at, profiles!ledger_activity_actor_id_fkey(full_name, username)")
             .eq("ledger_id", ledgerId)
             .order("created_at", { ascending: false })
             .limit(10),

@@ -861,6 +861,7 @@ export const LedgerDetail = ({
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"expenses" | "activity">("expenses");
 
   // Monthly rollover
   const [rolloverOpen, setRolloverOpen] = useState(false);
@@ -1181,75 +1182,106 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
           </Button>
         </section>
 
-      {/* ── Activity Timeline ── */}
-      {activities && activities.length > 0 && (
+      {/* ── Tabs ── */}
+      <div className="mt-6 mb-2 flex bg-elevated rounded-full p-1 border border-border shadow-inner max-w-sm mx-auto">
+        <button
+          onClick={() => setActiveTab("expenses")}
+          className={`flex-1 rounded-full py-2.5 text-xs font-bold transition-all ${
+            activeTab === "expenses"
+              ? "bg-primary text-primary-foreground shadow-primary-action"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Expenses
+        </button>
+        <button
+          onClick={() => setActiveTab("activity")}
+          className={`flex-1 rounded-full py-2.5 text-xs font-bold transition-all ${
+            activeTab === "activity"
+              ? "bg-primary text-primary-foreground shadow-primary-action"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Activity
+        </button>
+      </div>
+
+      {activeTab === "activity" && (
         <section className="pt-2">
-          <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-            Activity
-          </h2>
-          <div className="space-y-3">
-            {activities.slice(0, 3).map((activity) => (
-              <ActivityRow key={activity.id} activity={activity} ledger={ledger} />
-            ))}
-          </div>
+          {activities && activities.length > 0 ? (
+            <div className="space-y-3">
+              {activities.slice(0, 10).map((activity) => (
+                <ActivityRow key={activity.id} activity={activity} ledger={ledger} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.25rem] bg-elevated p-6 text-center shadow-soft">
+              <div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary">
+                <History className="size-7" />
+              </div>
+              <p className="mt-4 text-base font-black text-foreground">No recent activity</p>
+              <p className="mt-1 text-sm font-medium text-muted-foreground">Actions like adding budget and settling up will appear here.</p>
+            </div>
+          )}
         </section>
       )}
 
-      {/* ── Expense Timeline ── */}
-      <section className="pt-2">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-[11px] font-bold uppercase tracking-wide text-foreground">
-            Expense History
-            {pendingCount > 0 && isOwnerOrAdmin && (
-              <span className="ml-2 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-bold text-warning">
-                {pendingCount} pending
-              </span>
-            )}
-          </h2>
-          <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
-        </div>
+      {activeTab === "expenses" && (
+        <section className="pt-2">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-[11px] font-bold uppercase tracking-wide text-foreground">
+              Expense History
+              {pendingCount > 0 && isOwnerOrAdmin && (
+                <span className="ml-2 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-bold text-warning">
+                  {pendingCount} pending
+                </span>
+              )}
+            </h2>
+            <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
+          </div>
 
-        {loading && expenses.length === 0 ? (
-          <div className="flex h-32 items-center justify-center">
-            <Loader2 className="size-7 animate-spin text-muted-foreground" />
-          </div>
-        ) : visibleExpenses.length === 0 ? (
-          <div className="rounded-[1.25rem] bg-elevated p-6 text-center shadow-soft">
-            <div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary">
-              <CircleDollarSign className="size-7" />
+          {loading && expenses.length === 0 ? (
+            <div className="flex h-32 items-center justify-center">
+              <Loader2 className="size-7 animate-spin text-muted-foreground" />
             </div>
-            <p className="mt-4 text-base font-black text-foreground">
-              {filter === "all" ? "No expenses yet" : `No ${filter} expenses`}
-            </p>
-            <p className="mt-1 text-sm font-medium text-muted-foreground">
-              {filter === "all"
-                ? "Add your first expense to start tracking this budget."
-                : "Try changing the filter to see other expenses."}
-            </p>
-            {filter === "all" && (
-              <Button onClick={() => setAddExpenseOpen(true)} variant="quiet" className="mt-4">
-                <Plus />Add Expense
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {visibleExpenses.map((expense) => (
-              <div key={expense.id} className="relative">
-                <ExpenseCard
-                  expense={expense}
-                  currentUserId={currentUserId}
-                  userRole={userRole}
-                  isBudgetAdmin={ledger.budget_admin_id === currentUserId}
-                  onClick={handleExpenseClick}
-                  onEdit={handleExpenseEditClick}
-                  onApprove={handleExpenseApproveClick}
-                />
+          ) : visibleExpenses.length === 0 ? (
+            <div className="rounded-[1.25rem] bg-elevated p-6 text-center shadow-soft">
+              <div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary">
+                <CircleDollarSign className="size-7" />
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+              <p className="mt-4 text-base font-black text-foreground">
+                {filter === "all" ? "No expenses yet" : `No ${filter} expenses`}
+              </p>
+              <p className="mt-1 text-sm font-medium text-muted-foreground">
+                {filter === "all"
+                  ? "Add your first expense to start tracking this budget."
+                  : "Try changing the filter to see other expenses."}
+              </p>
+              {filter === "all" && (
+                <Button onClick={() => setAddExpenseOpen(true)} variant="quiet" className="mt-4">
+                  <Plus />Add Expense
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {visibleExpenses.map((expense) => (
+                <div key={expense.id} className="relative">
+                  <ExpenseCard
+                    expense={expense}
+                    currentUserId={currentUserId}
+                    userRole={userRole}
+                    isBudgetAdmin={ledger.budget_admin_id === currentUserId}
+                    onClick={handleExpenseClick}
+                    onEdit={handleExpenseEditClick}
+                    onApprove={handleExpenseApproveClick}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* â”€â”€ Modals & Drawers â”€â”€ */}
       <AddExpenseDrawer
