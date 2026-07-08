@@ -170,7 +170,7 @@ serve(async (req) => {
                 const row = [
                     exp.created_at ? new Date(exp.created_at).toLocaleDateString() : '',
                     (exp.title || 'Unknown').substring(0, 18),
-                    `$${Number(exp.amount).toFixed(2)}`,
+                    `Rs.${Number(exp.amount).toFixed(2)}`,
                     (exp.category || '').substring(0, 15),
                     (profileMap[exp.user_id] || 'Unknown').substring(0, 15),
                     exp.status

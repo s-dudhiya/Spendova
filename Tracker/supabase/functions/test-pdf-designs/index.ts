@@ -72,11 +72,11 @@ serve(async (req) => {
         y -= rowHeight;
 
         const dummyLedgerData = [
-            [new Date().toLocaleDateString(), "Flight Tickets", "$1200.00", "Travel", "John Doe", "paid"],
-            [new Date().toLocaleDateString(), "Hotel Booking", "$850.50", "Accommodation", "Jane Smith", "paid"],
-            [new Date().toLocaleDateString(), "Dinner at Beach", "$120.00", "Food", "John Doe", "unpaid"],
-            [new Date().toLocaleDateString(), "Scuba Diving", "$300.00", "Activity", "Jane Smith", "paid"],
-            [new Date().toLocaleDateString(), "Taxi to Airport", "$45.00", "Transport", "John Doe", "unpaid"]
+            [new Date().toLocaleDateString(), "Flight Tickets", "Rs.1200.00", "Travel", "John Doe", "paid"],
+            [new Date().toLocaleDateString(), "Hotel Booking", "Rs.850.50", "Accommodation", "Jane Smith", "paid"],
+            [new Date().toLocaleDateString(), "Dinner at Beach", "Rs.120.00", "Food", "John Doe", "unpaid"],
+            [new Date().toLocaleDateString(), "Scuba Diving", "Rs.300.00", "Activity", "Jane Smith", "paid"],
+            [new Date().toLocaleDateString(), "Taxi to Airport", "Rs.45.00", "Transport", "John Doe", "unpaid"]
         ];
 
         dummyLedgerData.forEach((row, rowIndex) => {
@@ -152,7 +152,7 @@ serve(async (req) => {
         ];
 
         monthlyPage.drawText("Monthly Summary", { x: 40, y: y2, size: 14, font: boldFont, color: rgb(0.1, 0.1, 0.15) });
-        monthlyPage.drawText(`Total Spent: $${totalSpent.toFixed(2)}`, { x: w2 - 200, y: y2, size: 14, font: boldFont, color: rgb(0.43, 0.16, 0.85) });
+        monthlyPage.drawText(`Total Spent: Rs.${totalSpent.toFixed(2)}`, { x: w2 - 200, y: y2, size: 14, font: boldFont, color: rgb(0.43, 0.16, 0.85) });
         
         y2 -= 25;
         const maxAmount = Math.max(...categoryStats.map(s => s.amount));
@@ -167,7 +167,7 @@ serve(async (req) => {
             // Actual colored bar
             monthlyPage.drawRectangle({ x: 130, y: y2 - 2, width: barWidth, height: 12, color: stat.color });
             
-            monthlyPage.drawText(`$${stat.amount.toFixed(2)}`, { x: 135 + maxBarWidth, y: y2, size: 9, font: boldFont, color: stat.color });
+            monthlyPage.drawText(`Rs.${stat.amount.toFixed(2)}`, { x: 135 + maxBarWidth, y: y2, size: 9, font: boldFont, color: stat.color });
             y2 -= 18;
         });
 
@@ -199,15 +199,45 @@ serve(async (req) => {
             // Using a distinct blue/purple for the time trend
             monthlyPage.drawRectangle({ x: 130, y: y2 - 2, width: barWidth, height: 12, color: rgb(0.3, 0.15, 0.6) });
             
-            monthlyPage.drawText(`$${stat.amount.toFixed(2)}`, { x: 135 + maxBarWidthYtd, y: y2, size: 9, font: boldFont, color: rgb(0.3, 0.15, 0.6) });
+            monthlyPage.drawText(`Rs.${stat.amount.toFixed(2)}`, { x: 135 + maxBarWidthYtd, y: y2, size: 9, font: boldFont, color: rgb(0.3, 0.15, 0.6) });
             y2 -= 18;
         });
 
-        y2 -= 30; // Space before table
+        y2 -= 30; // Space before top 5
+        
+        // ----------------------------------------------------
+        // TOP 5 HIGHEST SPENDS
+        // ----------------------------------------------------
+        if (y2 < 120) {
+            monthlyPage = monthlyPdf.addPage();
+            y2 = h2 - 50;
+        }
+        monthlyPage.drawText("Top Highest Spends", { x: 40, y: y2, size: 12, font: boldFont, color: rgb(0.1, 0.1, 0.15) });
+        y2 -= 20;
+        
+        const top5Expenses = [
+            { title: "Weekly Walmart run", category: "Groceries", amount: 120.50 },
+            { title: "Electric Bill", category: "Utilities", amount: 85.00 },
+            { title: "Lunch with colleagues", category: "Dining Out", amount: 45.00 }
+        ].sort((a, b) => b.amount - a.amount).slice(0, 5);
+        
+        top5Expenses.forEach((exp, i) => {
+            monthlyPage.drawText(`${i + 1}.`, { x: 40, y: y2, size: 9, font: boldFont, color: rgb(0.4, 0.4, 0.45) });
+            monthlyPage.drawText(exp.title, { x: 55, y: y2, size: 9, font: font, color: rgb(0.2, 0.2, 0.25) });
+            monthlyPage.drawText(`Rs.${exp.amount.toFixed(2)}`, { x: 220, y: y2, size: 9, font: boldFont, color: rgb(0.43, 0.16, 0.85) });
+            monthlyPage.drawText(exp.category, { x: 300, y: y2, size: 9, font: font, color: rgb(0.5, 0.5, 0.55) });
+            y2 -= 15;
+        });
+
+        y2 -= 25; // Space before table
 
         // ----------------------------------------------------
         // EXPENSES TABLE
         // ----------------------------------------------------
+        if (y2 < 100) {
+            monthlyPage = monthlyPdf.addPage();
+            y2 = h2 - 50;
+        }
         monthlyPage.drawRectangle({ x: 35, y: y2 - 8, width: mTableWidth + 10, height: 28, color: rgb(0.96, 0.95, 0.99) });
         monthlyPage.drawLine({ start: { x: 35, y: y2 - 8 }, end: { x: 35 + mTableWidth + 10, y: y2 - 8 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
         monthlyPage.drawLine({ start: { x: 35, y: y2 + 20 }, end: { x: 35 + mTableWidth + 10, y: y2 + 20 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
@@ -220,12 +250,26 @@ serve(async (req) => {
         y2 -= mRowHeight;
 
         const dummyExpenses = [
-            [new Date().toLocaleDateString(), "Groceries", "$120.50", "Weekly Walmart run"],
-            [new Date().toLocaleDateString(), "Utilities", "$85.00", "Electric Bill"],
-            [new Date().toLocaleDateString(), "Dining Out", "$45.00", "Lunch with colleagues"]
+            [new Date().toLocaleDateString(), "Groceries", "Rs.120.50", "Weekly Walmart run"],
+            [new Date().toLocaleDateString(), "Utilities", "Rs.85.00", "Electric Bill"],
+            [new Date().toLocaleDateString(), "Dining Out", "Rs.45.00", "Lunch with colleagues"]
         ];
 
         dummyExpenses.forEach((row, rowIndex) => {
+            if (y2 < 90) {
+                monthlyPage = monthlyPdf.addPage();
+                y2 = h2 - 50;
+                monthlyPage.drawRectangle({ x: 35, y: y2 - 8, width: mTableWidth + 10, height: 28, color: rgb(0.96, 0.95, 0.99) });
+                monthlyPage.drawLine({ start: { x: 35, y: y2 - 8 }, end: { x: 35 + mTableWidth + 10, y: y2 - 8 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
+                monthlyPage.drawLine({ start: { x: 35, y: y2 + 20 }, end: { x: 35 + mTableWidth + 10, y: y2 + 20 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
+                let cx = 40;
+                mCols.forEach((col, i) => {
+                    monthlyPage.drawText(col, { x: cx, y: y2 + 2, size: 10, font: boldFont, color: rgb(0.3, 0.15, 0.6) });
+                    cx += mWidths[i];
+                });
+                y2 -= mRowHeight;
+            }
+
             if (rowIndex % 2 === 0) {
                 monthlyPage.drawRectangle({ x: 35, y: y2 - 8, width: mTableWidth + 10, height: mRowHeight, color: rgb(0.98, 0.98, 0.99) });
             }
@@ -249,6 +293,11 @@ serve(async (req) => {
         const debtWidths = [120, 220, 150];
         const debtTableWidth = debtWidths.reduce((a, b) => a + b, 0);
 
+        if (y2 < 120) {
+            monthlyPage = monthlyPdf.addPage();
+            y2 = h2 - 50;
+        }
+        
         monthlyPage.drawRectangle({ x: 35, y: y2 - 8, width: debtTableWidth + 10, height: 28, color: rgb(0.98, 0.92, 0.92) });
         monthlyPage.drawLine({ start: { x: 35, y: y2 - 8 }, end: { x: 35 + debtTableWidth + 10, y: y2 - 8 }, color: rgb(0.9, 0.8, 0.8), thickness: 1 });
         monthlyPage.drawLine({ start: { x: 35, y: y2 + 20 }, end: { x: 35 + debtTableWidth + 10, y: y2 + 20 }, color: rgb(0.9, 0.8, 0.8), thickness: 1 });
@@ -261,13 +310,27 @@ serve(async (req) => {
         y2 -= mRowHeight;
 
         const dummyDebts = [
-            ["02/14/2026", "Valentine's Dinner split", "$45.00"],
-            ["03/10/2026", "Uber to airport", "$12.50"]
+            ["02/14/2026", "Valentine's Dinner split", "Rs.45.00"],
+            ["03/10/2026", "Uber to airport", "Rs.12.50"]
         ];
 
         dummyDebts.forEach((row, rowIndex) => {
+            if (y2 < 90) {
+                monthlyPage = monthlyPdf.addPage();
+                y2 = h2 - 50;
+                monthlyPage.drawRectangle({ x: 35, y: y2 - 8, width: debtTableWidth + 10, height: 28, color: rgb(0.98, 0.92, 0.92) });
+                monthlyPage.drawLine({ start: { x: 35, y: y2 - 8 }, end: { x: 35 + debtTableWidth + 10, y: y2 - 8 }, color: rgb(0.9, 0.8, 0.8), thickness: 1 });
+                monthlyPage.drawLine({ start: { x: 35, y: y2 + 20 }, end: { x: 35 + debtTableWidth + 10, y: y2 + 20 }, color: rgb(0.9, 0.8, 0.8), thickness: 1 });
+                let dx = 40;
+                debtCols.forEach((col, i) => {
+                    monthlyPage.drawText(col, { x: dx, y: y2 + 2, size: 10, font: boldFont, color: rgb(0.7, 0.1, 0.1) });
+                    dx += debtWidths[i];
+                });
+                y2 -= mRowHeight;
+            }
+
             if (rowIndex % 2 === 0) {
-                monthlyPage.drawRectangle({ x: 35, y: y2 - 8, width: debtTableWidth + 10, height: mRowHeight, color: rgb(0.99, 0.97, 0.97) });
+                monthlyPage.drawRectangle({ x: 35, y: y2 - 8, width: debtTableWidth + 10, height: mRowHeight, color: rgb(0.99, 0.95, 0.95) });
             }
             monthlyPage.drawLine({ start: { x: 35, y: y2 - 8 }, end: { x: 35 + debtTableWidth + 10, y: y2 - 8 }, color: rgb(0.95, 0.88, 0.88), thickness: 1 });
             let cx = 40;

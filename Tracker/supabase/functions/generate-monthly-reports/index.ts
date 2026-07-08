@@ -70,14 +70,15 @@ serve(async (req) => {
                 .select('id')
                 .eq('user_id', userId)
                 .eq('month_date', previousMonthString)
+                .in('category_name', ['Total', 'No Activity'])
                 .maybeSingle()
 
             if (existingStat) continue;
 
-            // Fetch previous month expenses
+            // Fetch expenses for the active reporting month
             const { data: monthExpenses } = await supabaseAdmin
                 .from('expenses')
-                .select('*, expense_splits(*)')
+                .select('*, expense_categories(name)')
                 .eq('user_id', userId)
                 .gte('created_at', previousMonth.toISOString())
                 .lte('created_at', previousMonthEnd.toISOString())
@@ -161,7 +162,7 @@ serve(async (req) => {
             
             const catMap: Record<string, number> = {};
             activeMonthExpenses.forEach((exp: any) => {
-                const cat = exp.category || 'Uncategorized';
+                const cat = exp.expense_categories?.name || 'Uncategorized';
                 catMap[cat] = (catMap[cat] || 0) + Number(exp.amount);
             });
 
@@ -181,7 +182,7 @@ serve(async (req) => {
             })).sort((a, b) => b.amount - a.amount);
 
             page.drawText("Monthly Summary", { x: 40, y, size: 14, font: boldFont, color: rgb(0.1, 0.1, 0.15) });
-            page.drawText(`Total Spent: $${totalSpent.toFixed(2)}`, { x: width - 200, y, size: 14, font: boldFont, color: rgb(0.43, 0.16, 0.85) });
+            page.drawText(`Total Spent: Rs.${totalSpent.toFixed(2)}`, { x: width - 200, y, size: 14, font: boldFont, color: rgb(0.43, 0.16, 0.85) });
             
             y -= 25;
             const maxAmount = categoryStats.length > 0 ? Math.max(...categoryStats.map(s => s.amount)) : 0;
@@ -193,7 +194,7 @@ serve(async (req) => {
                     const barWidth = (stat.amount / maxAmount) * maxBarWidth;
                     page.drawRectangle({ x: 140, y: y - 2, width: maxBarWidth, height: 12, color: rgb(0.95, 0.95, 0.95) });
                     page.drawRectangle({ x: 140, y: y - 2, width: barWidth, height: 12, color: stat.color });
-                    page.drawText(`$${stat.amount.toFixed(2)}`, { x: 145 + maxBarWidth, y, size: 9, font: boldFont, color: stat.color });
+                    page.drawText(`Rs.${stat.amount.toFixed(2)}`, { x: 145 + maxBarWidth, y, size: 9, font: boldFont, color: stat.color });
                 }
                 y -= 18;
             });
@@ -233,7 +234,7 @@ serve(async (req) => {
                 });
             }
 
-            // Filter out future months and months with $0 spending
+            // Filter out future months and months with Rs.0 spending
             const ytdStats = monthsOrder.map((m, i) => ({
                 month: m,
                 amount: monthlyTotals[m] || 0
@@ -249,17 +250,44 @@ serve(async (req) => {
                     page.drawRectangle({ x: 140, y: y - 2, width: maxBarWidthYtd, height: 12, color: rgb(0.95, 0.95, 0.95) });
                     // Distinct purple for time trend
                     page.drawRectangle({ x: 140, y: y - 2, width: barWidth, height: 12, color: rgb(0.3, 0.15, 0.6) });
-                    page.drawText(`$${stat.amount.toFixed(2)}`, { x: 145 + maxBarWidthYtd, y, size: 9, font: boldFont, color: rgb(0.3, 0.15, 0.6) });
+                    page.drawText(`Rs.${stat.amount.toFixed(2)}`, { x: 145 + maxBarWidthYtd, y, size: 9, font: boldFont, color: rgb(0.3, 0.15, 0.6) });
                 }
                 y -= 18;
             });
 
-            y -= 30; // Space before table
+            y -= 30; // Space before top 5
+            
+            // ----------------------------------------------------
+            // TOP 5 HIGHEST SPENDS
+            // ----------------------------------------------------
+            if (activeMonthExpenses.length > 0) {
+                if (y < 120) {
+                    page = pdfDoc.addPage();
+                    y = height - 50;
+                }
+                page.drawText("Top Highest Spends", { x: 40, y, size: 12, font: boldFont, color: rgb(0.1, 0.1, 0.15) });
+                y -= 20;
+                
+                const top5Expenses = [...activeMonthExpenses].sort((a, b) => Number(b.amount) - Number(a.amount)).slice(0, 5);
+                top5Expenses.forEach((exp: any, i: number) => {
+                    page.drawText(`${i + 1}.`, { x: 40, y, size: 9, font: boldFont, color: rgb(0.4, 0.4, 0.45) });
+                    page.drawText((exp.category || 'Unnamed').substring(0, 30), { x: 55, y, size: 9, font: font, color: rgb(0.2, 0.2, 0.25) });
+                    page.drawText(`Rs.${Number(exp.amount).toFixed(2)}`, { x: 220, y, size: 9, font: boldFont, color: rgb(0.43, 0.16, 0.85) });
+                    page.drawText(exp.expense_categories?.name || 'Uncategorized', { x: 300, y, size: 9, font: font, color: rgb(0.5, 0.5, 0.55) });
+                    y -= 15;
+                });
+            }
+
+            y -= 25; // Space before table
 
             // ----------------------------------------------------
             // EXPENSES TABLE
             // ----------------------------------------------------
             // Modern Header Background
+            if (y < 100) {
+                page = pdfDoc.addPage();
+                y = height - 50;
+            }
             page.drawRectangle({ x: 35, y: y - 8, width: tableWidth + 10, height: 28, color: rgb(0.96, 0.95, 0.99) });
             page.drawLine({ start: { x: 35, y: y - 8 }, end: { x: 35 + tableWidth + 10, y: y - 8 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
             page.drawLine({ start: { x: 35, y: y + 20 }, end: { x: 35 + tableWidth + 10, y: y + 20 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
@@ -276,7 +304,7 @@ serve(async (req) => {
                 y -= mRowHeight;
             } else {
                 activeMonthExpenses.forEach((exp: any, rowIndex: number) => {
-                    if (y < 50) {
+                    if (y < 90) {
                         page = pdfDoc.addPage();
                         y = height - 50;
                         // Redraw header
@@ -300,9 +328,9 @@ serve(async (req) => {
 
                     const row = [
                         new Date(exp.created_at).toLocaleDateString(),
-                        (exp.category || 'Uncategorized').substring(0, 25),
-                        `$${Number(exp.amount).toFixed(2)}`,
-                        (exp.note || '').substring(0, 30)
+                        (exp.expense_categories?.name || 'Uncategorized').substring(0, 25),
+                        `Rs.${Number(exp.amount).toFixed(2)}`,
+                        (exp.category || '').substring(0, 30) // Display the title in the Note column
                     ];
                     
                     let cx = 40;
@@ -344,7 +372,7 @@ serve(async (req) => {
                 y -= mRowHeight;
 
                 unpaidOldDebts.forEach((d: any, rowIndex: number) => {
-                    if (y < 50) {
+                    if (y < 90) {
                         page = pdfDoc.addPage();
                         y = height - 50;
                         page.drawRectangle({ x: 35, y: y - 8, width: debtTableWidth + 10, height: 28, color: rgb(0.98, 0.92, 0.92) });
@@ -367,7 +395,7 @@ serve(async (req) => {
                     const row = [
                         new Date(d.date).toLocaleDateString(),
                         (d.title || 'Unknown').substring(0, 40),
-                        `$${Number(d.amount_owed).toFixed(2)}`
+                        `Rs.${Number(d.amount_owed).toFixed(2)}`
                     ];
                     
                     let cx = 40;

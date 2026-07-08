@@ -8,7 +8,7 @@ BEGIN
     SELECT 1 FROM public.monthly_category_stats mcs 
     WHERE mcs.user_id = p.user_id 
     AND mcs.month_date = p_month_date
-    AND mcs.category_name = 'Total'
+    AND mcs.category_name IN ('Total', 'No Activity')
   )
   LIMIT p_limit;
 END;
