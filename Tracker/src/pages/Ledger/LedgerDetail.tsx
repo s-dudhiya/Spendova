@@ -1208,6 +1208,11 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
 
       {activeTab === "activity" && (
         <section className="pt-2">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-[11px] font-bold uppercase tracking-wide text-foreground">
+              Recent Activity
+            </h2>
+          </div>
           {activities && activities.length > 0 ? (
             <div className="space-y-3">
               {activities.slice(0, 10).map((activity) => (
