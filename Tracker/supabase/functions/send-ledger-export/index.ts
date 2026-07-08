@@ -144,7 +144,7 @@ serve(async (req) => {
             page.drawText("No expenses recorded in this ledger.", { x: 40, y, size: 9, font: font });
         } else {
             expenses.forEach((exp: any, rowIndex: number) => {
-                if (y < 50) {
+                if (y < 90) {
                     page = pdfDoc.addPage();
                     y = height - 50;
                     // Redraw header on new page
