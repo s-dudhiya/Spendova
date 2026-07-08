@@ -424,7 +424,7 @@ export const CreateLedgerDrawer = ({
             </div>
           ) : (
             // Invite step
-            <div className="space-y-4 pb-3">
+            <div className="min-h-0 overflow-y-auto overscroll-contain pr-1 space-y-4 pb-3">
               <p className="rounded-2xl bg-elevated p-4 text-sm text-muted-foreground">
                 Your ledger is ready. You can invite members now or do it later from the ledger settings.
               </p>

@@ -4443,6 +4443,7 @@ const ActionModal = ({
         onSuccess={async () => {
           await closeAndRefresh();
         }}
+        members={ledger.ledger_members}
       />
     );
   }
@@ -4921,7 +4922,7 @@ const Index = () => {
           } else if (option === "group") {
             setTimeout(() => setModal({ type: data.groups.length === 1 ? "group-expense" : "choose-group-expense", item: data.groups.length === 1 ? data.groups[0].id : undefined }), 150);
           } else if (option === "ledger") {
-            setTimeout(() => setModal({ type: data.ledgers?.length === 1 ? "choose-ledger-expense" : "choose-ledger-expense", item: data.ledgers?.length === 1 ? data.ledgers[0].id : undefined }), 150);
+            setTimeout(() => setModal({ type: data.ledgers?.length === 1 ? "ledger-expense-drawer" : "choose-ledger-expense", item: data.ledgers?.length === 1 ? data.ledgers[0].id : undefined }), 150);
           }
         }}
       />
