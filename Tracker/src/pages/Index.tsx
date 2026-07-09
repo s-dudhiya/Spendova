@@ -3949,22 +3949,23 @@ const ActionModal = ({
   const friend = data.friends.find((item) => item.user_id === modal.item) || data.friends.find((item) => item.user_id === settlementFriendId);
   const groupExpenses = group ? data.expenses.filter((item) => item.group_id === group.id) : [];
   const balances = group ? computeGroupBalances(data.expenses, data.settlements, group, currentUserId) : [];
-    const friendBalances = useMemo(() => {
-    if (!friend) return [];
+  const friendBalances = useMemo(() => {
+    const targetId = friend?.user_id || (type === "settle-up" && !group ? modal.item : undefined);
+    if (!targetId) return [];
     
     // 1. Fetch personal balances
-    const personalBalances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null })
+    const personalBalances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: targetId, groupId: null })
       .map(b => ({ ...b, groupId: null, contextName: "Personal split" }));
       
     // 2. Fetch group balances for all shared groups
-    const sharedGroups = data.groups.filter(g => g.group_members.some(m => m.user_id === friend.user_id));
+    const sharedGroups = data.groups.filter(g => g.group_members.some(m => m.user_id === targetId));
     const groupBalances = sharedGroups.flatMap(g => 
-      buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: g.id })
+      buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: targetId, groupId: g.id })
         .map(b => ({ ...b, groupId: g.id, contextName: `${g.name} split` }))
     );
     
     return [...personalBalances, ...groupBalances].filter(b => b.amount > 0.009);
-  }, [friend, data.expenses, data.settlements, data.groups, currentUserId]);
+  }, [friend, type, group, modal.item, data.expenses, data.settlements, data.groups, currentUserId]);
 
   const title =
     type === "add-expense" ? "Add expense" :
@@ -3986,7 +3987,7 @@ const ActionModal = ({
     type === "add-friend" ? "Add friend" :
     type === "remove-friend" ? "Remove friend" :
     type === "friend-requests" ? "Friend requests" :
-    type === "settle-up" ? `Settle up - ${group?.name || displayName(friend) || ""}` :
+    type === "settle-up" ? `Settle up - ${group?.name || (friend ? displayName(friend) : (friendBalances.length > 0 ? (friendBalances[0].fromUserId === currentUserId ? friendBalances[0].toName : friendBalances[0].fromName) : ""))}` :
     type === "logout" ? "Logout" :
     type === "delete-account" ? "Delete Account" :
     type === "feedback-support" ? "Feedback & Support" :
@@ -4534,7 +4535,7 @@ const ActionModal = ({
           </div>
           )}
 
-          {type === "settle-up" && (group || friend) && (
+          {type === "settle-up" && (group || friend || (!group && modal.item)) && (
             <SettleForm group={group} balances={group ? balances : friendBalances} currentUserId={currentUserId} onSubmit={saveSettlement} onCancel={onClose} />
           )}
 
