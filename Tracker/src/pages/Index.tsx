@@ -2907,15 +2907,13 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
           <div className="mt-4 flex flex-wrap gap-x-4 gap-y-4 overflow-visible pb-1">
             {group.group_members.map((member) => {
               const name = member.user_id === currentUserId ? "You" : displayName(member.profiles).split(" ")[0];
-              const canManageMember = isOwner && member.user_id !== currentUserId && member.user_id !== group.created_by;
-              const selected = selectedMemberId === member.user_id;
+              const isOtherMember = member.user_id !== currentUserId;
               const openMemberActions = () => {
-                if (canManageMember) {
+                if (isOtherMember) {
                   openModal("remove-group-member", `${group.id}:${member.user_id}`);
-                  return;
                 }
-                setSelectedMemberId(selected ? null : member.user_id);
               };
+              
               return (
                 <div key={member.user_id} className="w-16 shrink-0 overflow-visible text-center">
                   <div
@@ -2929,7 +2927,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
                       }
                     }}
                     className="relative z-0 mx-auto grid size-11 overflow-visible place-items-center rounded-2xl bg-primary text-base font-bold text-primary-foreground shadow-primary-action"
-                    aria-label={`Select ${name}`}
+                    aria-label={isOtherMember ? `Manage ${name}` : name}
                   >
                     {displayName(member.profiles).charAt(0).toUpperCase()}
                     {member.user_id === group.created_by ? <span className="absolute -right-1 -top-1 z-10 grid size-4 place-items-center rounded-full bg-warning text-primary-foreground"><Crown className="size-2.5" /></span> : null}
@@ -4475,7 +4473,7 @@ const ActionModal = ({
       <DialogContent className="grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] w-[calc(100vw_-_1.5rem)] max-w-[calc(100vw_-_1.5rem)] grid-rows-[auto,minmax(0,1fr)] gap-4 overflow-hidden rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:w-full sm:max-w-md sm:p-6">
         <DialogHeader className="min-w-0 pr-6">
           <DialogTitle className="text-foreground">{title}</DialogTitle>
-          <DialogDescription>{type === "notifications" ? "Pending settlements, invites, and recent activity." : type === "feedback-support" ? "Send feedback, bugs, or suggestions." : type === "saved" ? `${modal.item ?? "Action"} saved.` : "Complete the fields below."}</DialogDescription>
+          <DialogDescription>{type === "notifications" ? "Pending settlements, invites, and recent activity." : type === "feedback-support" ? "Send feedback, bugs, or suggestions." : type === "remove-group-member" ? "Select an action for this member." : type === "saved" ? `${modal.item ?? "Action"} saved.` : "Complete the fields below."}</DialogDescription>
         </DialogHeader>
 
         <div className="spendova-modal-body min-h-0 overflow-y-auto overflow-x-visible overscroll-contain">
@@ -4493,12 +4491,37 @@ const ActionModal = ({
           <div className="space-y-3">
             <div className="rounded-2xl bg-elevated p-4 text-sm"><p className="font-semibold text-foreground">Balance: {money(groupExpenses.reduce((sum, item) => sum + item.amount, 0))}</p><p className="mt-1 text-muted-foreground">{group.group_members.length} active members - Latest: {groupExpenses[0]?.category || "None"}</p></div>
             <div className="space-y-2">
-              {group.group_members.map((member) => (
-                <div key={member.user_id} className="flex items-center justify-between rounded-2xl bg-elevated p-3 text-sm">
-                  <span className="font-semibold text-foreground">{member.user_id === currentUserId ? "You" : displayName(member.profiles)}</span>
-                  {group.created_by === currentUserId && member.user_id !== currentUserId && member.user_id !== group.created_by ? <button onClick={() => openModal("remove-group-member", `${group.id}:${member.user_id}`)} className="text-xs font-bold text-primary">Manage</button> : null}
-                </div>
-              ))}
+              {group.group_members.map((member) => {
+                const isFriend = data.friends.some(f => f.user_id === member.user_id);
+                const isPending = data.outgoingRequests.some(r => r.receiver_id === member.user_id) || data.incomingRequests.some(r => r.requester_id === member.user_id);
+                return (
+                  <div key={member.user_id} className="flex items-center justify-between rounded-2xl bg-elevated p-3 text-sm">
+                    <span className="font-semibold text-foreground">{member.user_id === currentUserId ? "You" : displayName(member.profiles)}</span>
+                    <div className="flex items-center gap-3">
+                      {member.user_id !== currentUserId && !isFriend && !isPending && (
+                        <button
+                          onClick={async () => {
+                            const { data: connection, error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: member.user_id, status: "pending" }).select("id").single();
+                            if (error) {
+                              toast({ title: getFriendlyErrorTitle(error, "friend"), description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" });
+                            } else {
+                              notifySharedAction({ type: "friend_request_received", recipients: [member.user_id], title: "New friend request", message: `${actorName} sent you a friend request.`, entity_type: "connection", entity_id: connection?.id || null });
+                              toast({ title: "Friend request sent" });
+                              await closeAndRefresh();
+                            }
+                          }}
+                          className="flex items-center gap-1 text-xs font-bold text-primary"
+                        >
+                          <UserPlus className="size-3.5" /> Add Friend
+                        </button>
+                      )}
+                      {group.created_by === currentUserId && member.user_id !== currentUserId && member.user_id !== group.created_by ? (
+                        <button onClick={() => openModal("remove-group-member", `${group.id}:${member.user_id}`)} className="text-xs font-bold text-primary">Manage</button>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <div className="space-y-2">
               {groupExpenses.map((item) => (
@@ -4547,10 +4570,43 @@ const ActionModal = ({
             <div className="space-y-3">
               <div className="rounded-2xl bg-elevated p-4 text-sm">
                 <p className="font-bold text-foreground">{displayName(memberToRemove.profiles)}</p>
-                <p className="mt-1 text-muted-foreground">Manage this member in {memberGroup.name}.</p>
+                <p className="mt-1 text-muted-foreground">Member of {memberGroup.name}</p>
               </div>
-              <Button className="w-full" onClick={makeGroupAdmin}><Crown />Make admin</Button>
-              <Button variant="destructive" className="w-full" onClick={removeGroupMember}><UserMinus />Remove person</Button>
+              
+              {(() => {
+                const isFriend = data.friends.some((f) => f.user_id === memberUserId);
+                const isPending = data.outgoingRequests.some((r) => r.receiver_id === memberUserId) || data.incomingRequests.some((r) => r.requester_id === memberUserId);
+                
+                if (!isFriend && !isPending) {
+                  return (
+                    <Button
+                      variant="outline"
+                      className="w-full border-primary text-primary hover:bg-primary/10"
+                      onClick={async () => {
+                        const { data: connection, error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: memberUserId, status: "pending" }).select("id").single();
+                        if (error) {
+                          toast({ title: getFriendlyErrorTitle(error, "friend"), description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" });
+                        } else {
+                          notifySharedAction({ type: "friend_request_received", recipients: [memberUserId], title: "New friend request", message: `${actorName} sent you a friend request.`, entity_type: "connection", entity_id: connection?.id || null });
+                          toast({ title: "Friend request sent" });
+                          await refresh();
+                          onClose();
+                        }
+                      }}
+                    >
+                      <UserPlus /> Add as Friend
+                    </Button>
+                  );
+                }
+                return null;
+              })()}
+
+              {memberGroup.created_by === currentUserId && (
+                <>
+                  <Button className="w-full" onClick={makeGroupAdmin}><Crown />Make admin</Button>
+                  <Button variant="destructive" className="w-full" onClick={removeGroupMember}><UserMinus />Remove person</Button>
+                </>
+              )}
               <Button variant="quiet" className="w-full" onClick={onClose}>Cancel</Button>
             </div>
           )}
