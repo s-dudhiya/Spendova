@@ -2756,7 +2756,15 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const defaultFilters = { status: "all", paidBy: "anyone", date: "month", dateStart: "", dateEnd: "", sort: "newest", splitType: "all", category: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
-  const groupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), getExpenseTimelineCreatedAt);
+  const groupExpenses = sortTimelineByCreatedAt(
+    data.expenses.filter((expense) => {
+      if (expense.group_id !== group.id) return false;
+      if (expense.paid_by === currentUserId) return true;
+      const userSplit = expense.expense_splits?.find(s => s.user_id === currentUserId);
+      return userSplit && Number(userSplit.amount_owed || 0) > 0;
+    }), 
+    getExpenseTimelineCreatedAt
+  );
   const groupCategories = scopedCategories(data.categories, "group", currentUserId, group.id);
   const groupSettlements = data.settlements.filter((settlement) => settlement.group_id === group.id && isSettlementParticipant(settlement, currentUserId));
   // Balances calculation moved down to use filtered data
