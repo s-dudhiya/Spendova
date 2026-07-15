@@ -2934,7 +2934,6 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
                   >
                     {displayName(member.profiles).charAt(0).toUpperCase()}
                     {member.user_id === group.created_by ? <span className="absolute -right-1 -top-1 z-10 grid size-4 place-items-center rounded-full bg-warning text-primary-foreground"><Crown className="size-2.5" /></span> : null}
-                    {isOtherMember ? <span className="absolute -bottom-0.5 -right-0.5 z-10 grid size-4 place-items-center rounded-full bg-background border border-border text-foreground shadow-sm"><MoreHorizontal className="size-3" /></span> : null}
                   </div>
                   <p className="mt-1.5 truncate text-center text-xs font-bold text-foreground">{name}</p>
                 </div>
