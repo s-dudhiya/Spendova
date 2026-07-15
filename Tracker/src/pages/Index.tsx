@@ -825,7 +825,7 @@ const Field = ({
     <label className="block text-sm font-semibold text-foreground">
       {label}
       <div className="relative mt-2">
-        <input type={type} value={value} min={min} max={max} onChange={(event) => onChange(event.target.value)} className={`block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring ${isDateEmpty ? "text-transparent" : ""}`} placeholder={placeholder} />
+        <input type={type} value={value} min={min} max={max} step={type === "number" ? "any" : undefined} onChange={(event) => onChange(event.target.value)} className={`block min-w-0 max-w-full w-full rounded-full border border-input bg-background px-4 py-3 text-sm font-normal outline-none focus:ring-2 focus:ring-inset focus:ring-ring ${isDateEmpty ? "text-transparent" : ""}`} placeholder={placeholder} />
         {isDateEmpty && <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sm font-normal text-muted-foreground">{placeholder || "Select date"}</span>}
       </div>
       {hint ? <span className="mt-1 block text-xs font-medium text-muted-foreground">{hint}</span> : null}
@@ -3632,7 +3632,7 @@ const ExpenseForm = ({
               {selectedMembers.map((member) => (
                 <label key={member.user_id} className="flex items-center gap-2 text-xs font-semibold text-foreground">
                   <span className="w-20 truncate">{member.name}</span>
-                  <input type="number" value={splitValues[member.user_id] || ""} onChange={(event) => setSplitValues({ ...splitValues, [member.user_id]: event.target.value })} className="flex-1 rounded-full border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder={strategy === "percentage" ? "0%" : "0"} />
+                  <input type="number" step="any" value={splitValues[member.user_id] || ""} onChange={(event) => setSplitValues({ ...splitValues, [member.user_id]: event.target.value })} className="flex-1 rounded-full border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder={strategy === "percentage" ? "0%" : "0"} />
                 </label>
               ))}
             </div>
