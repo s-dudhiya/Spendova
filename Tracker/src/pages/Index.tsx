@@ -11,6 +11,7 @@ import {
   Wallet,
   Car,
   Check,
+  ChevronDown,
   ChevronRight,
   CircleDollarSign,
   Coffee,
@@ -21,7 +22,9 @@ import {
   Home,
   Inbox,
   Link as LinkIcon,
+  LogOut,
   MessageSquare,
+  MoreHorizontal,
   MoreVertical,
   Moon,
   Pencil,
@@ -2887,7 +2890,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
           <div className="flex shrink-0 items-center gap-1">
             <button onClick={() => openModal("invite-members", group.id)} className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Invite members"><UserPlus className="size-4" /></button>
             {isOwner ? <button onClick={() => openModal("edit-group", group.id)} className="grid size-9 place-items-center rounded-full text-primary hover:bg-primary/10" aria-label="Manage group"><Pencil className="size-4" /></button> : null}
-            {isOwner ? <button onClick={() => openModal("delete-group", group.id)} className="grid size-9 place-items-center rounded-full text-destructive hover:bg-destructive/10" aria-label="Delete group"><Trash2 className="size-4" /></button> : null}
+            <button onClick={() => openModal("leave-group", group.id)} className="grid size-9 place-items-center rounded-full text-destructive hover:bg-destructive/10" aria-label="Leave group"><LogOut className="size-4" /></button>
           </div>
         </header>
 
@@ -2926,11 +2929,12 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
                         openMemberActions();
                       }
                     }}
-                    className="relative z-0 mx-auto grid size-11 overflow-visible place-items-center rounded-2xl bg-primary text-base font-bold text-primary-foreground shadow-primary-action"
+                    className="relative z-0 mx-auto grid size-11 overflow-visible place-items-center rounded-2xl bg-primary text-base font-bold text-primary-foreground shadow-primary-action hover:scale-105 transition-transform"
                     aria-label={isOtherMember ? `Manage ${name}` : name}
                   >
                     {displayName(member.profiles).charAt(0).toUpperCase()}
                     {member.user_id === group.created_by ? <span className="absolute -right-1 -top-1 z-10 grid size-4 place-items-center rounded-full bg-warning text-primary-foreground"><Crown className="size-2.5" /></span> : null}
+                    {isOtherMember ? <span className="absolute -bottom-0.5 -right-0.5 z-10 grid size-4 place-items-center rounded-full bg-background border border-border text-foreground shadow-sm"><MoreHorizontal className="size-3" /></span> : null}
                   </div>
                   <p className="mt-1.5 truncate text-center text-xs font-bold text-foreground">{name}</p>
                 </div>
@@ -2939,12 +2943,10 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
           </div>
         </section>
 
-        <section className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <Button onClick={() => openModal("group-expense", group.id)} className="h-[52px] w-full rounded-2xl shadow-primary-action"><Plus />Add Group Expense</Button>
-          <Button onClick={() => openModal("settle-up", group.id)} variant="outline" className="h-[52px] w-full rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary"><Check />Settle Up</Button>
+        <section className="flex gap-3">
+          <Button onClick={() => openModal("group-expense", group.id)} className="h-[52px] flex-1 rounded-2xl shadow-primary-action px-2"><Plus />Add Expense</Button>
+          <Button onClick={() => openModal("settle-up", group.id)} variant="outline" className="h-[52px] flex-1 rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary px-2"><Check />Settle Up</Button>
         </section>
-        <Button onClick={() => openModal("leave-group", group.id)} variant="quiet" className="h-11 w-full rounded-2xl text-destructive hover:bg-destructive/10 hover:text-destructive"><UserMinus />Leave Group</Button>
-
         <section className="pt-2">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-xs font-bold uppercase tracking-wide text-foreground">Expense History</h2>
@@ -4317,10 +4319,7 @@ const ActionModal = ({
     if (!group) return false;
     const cleanUsername = username.trim().replace(/^@/, "").toLowerCase();
     if (!cleanUsername) return false;
-    if (group.created_by !== currentUserId) {
-      toast({ title: "Add member failed", description: "Only the group owner can add members directly.", variant: "destructive" });
-      return false;
-    }
+
     const { data: foundUser, error: lookupError } = await supabase
       .from("profiles")
       .select("user_id, full_name, username")
@@ -4422,10 +4421,24 @@ const ActionModal = ({
 
   const leaveGroup = async () => {
     if (!group) return;
+    
     if (group.created_by === currentUserId) {
-      toast({ title: "Cannot leave group", description: "Group owners must delete the group or transfer ownership before leaving.", variant: "destructive" });
-      return;
+      if (group.group_members.length > 1) {
+        toast({ title: "Cannot leave group", description: "Make someone group admin before leaving.", variant: "destructive" });
+        return;
+      } else {
+        // Admin is the only member left, so delete the group entirely
+        const { error } = await supabase.from("groups").delete().eq("id", group.id);
+        if (error) {
+          toast({ title: "Leave failed", description: getFriendlyErrorMessage(error, "group"), variant: "destructive" });
+          return;
+        }
+        toast({ title: "Left group", description: `You left ${group.name}. The empty group was deleted.` });
+        await closeRefreshAndReturnToSplitList("groups");
+        return;
+      }
     }
+
     const { error } = await supabase.from("group_members").delete().eq("group_id", group.id).eq("user_id", currentUserId);
     if (error) {
       toast({ title: "Leave failed", description: getFriendlyErrorMessage(error, "group"), variant: "destructive" });
@@ -4744,8 +4757,7 @@ const InviteMembers = ({
       ) : (
         <div className="space-y-3">
           <Field label="Add by username" value={username} onChange={(value) => setUsername(value.toLowerCase().replace(/^@/, "").replace(/[^a-z0-9_]/g, ""))} placeholder="Enter username" />
-          {!canAddByUsername ? <p className="rounded-2xl bg-destructive/10 p-3 text-sm font-medium text-destructive">Only the group owner can add members directly.</p> : null}
-          <Button className="w-full" onClick={submitUsername} disabled={adding || !username.trim() || !canAddByUsername}>{adding ? "Adding..." : "Add member"}</Button>
+          <Button className="w-full" onClick={submitUsername} disabled={adding || !username.trim()}>{adding ? "Adding..." : "Add member"}</Button>
         </div>
       )}
     </div>
