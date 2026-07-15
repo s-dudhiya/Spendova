@@ -3751,15 +3751,15 @@ const PickerList = ({ items, emptyText, onPick }: { items: Array<{ id: string; t
 );
 
 const SettleForm = ({ group, settlement, balances, currentUserId, onSubmit, onCancel }: { group?: GroupRow; settlement?: SplitSettlementRow; balances: DebtBalance[]; currentUserId: string; onSubmit: (payloads: SettlementPayload[], proofFile?: File | null) => Promise<void>; onCancel: () => void }) => {
-  const [selectedSuggestionKeys, setSelectedSuggestionKeys] = useState<string[]>([]);
-  const [date, setDate] = useState(settlement?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
-  const [note, setNote] = useState(settlement?.note || "");
-  const [submitting, setSubmitting] = useState(false);
-  const [pendingPayloads, setPendingPayloads] = useState<SettlementPayload[] | null>(null);
   const visibleBalances = useMemo(
     () => balances.filter((balance) => balance.fromUserId === currentUserId || balance.toUserId === currentUserId),
     [balances, currentUserId],
   );
+  const [selectedSuggestionKeys, setSelectedSuggestionKeys] = useState<string[]>(() => visibleBalances.map(b => `${b.fromUserId}-${b.toUserId}-${b.groupId || "personal"}`));
+  const [date, setDate] = useState(settlement?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
+  const [note, setNote] = useState(settlement?.note || "");
+  const [submitting, setSubmitting] = useState(false);
+  const [pendingPayloads, setPendingPayloads] = useState<SettlementPayload[] | null>(null);
   
   const selectedBalances = visibleBalances.filter((balance) => selectedSuggestionKeys.includes(`${balance.fromUserId}-${balance.toUserId}-${balance.groupId || "personal"}`));
   const canSubmit = selectedBalances.length > 0 && !submitting;
