@@ -200,41 +200,23 @@ export function useLedgerExpenseMutation(ledger: LedgerRow, currentUserId: strin
     }
   };
 
-  const closeMonth = async (
+  const autoCloseMonth = async (
     month: number,
     year: number,
     savedAmount: number,
-    deficit: number,
-    useSavingsForNextMonth: boolean
+    deficit: number
   ) => {
-    const { error } = await supabase.rpc("perform_ledger_monthly_rollover" as never, {
+    const { error } = await supabase.rpc("auto_perform_monthly_closures" as never, {
       p_ledger_id: ledger.id,
-      p_from_month: month,
-      p_from_year: year,
+      p_month: month,
+      p_year: year,
       p_saved_amount: savedAmount,
       p_deficit: deficit,
     } as never);
     if (error) throw error;
-
-    if (useSavingsForNextMonth && savedAmount > 0) {
-      const nextMonth = month === 12 ? 1 : month + 1;
-      const nextYear = month === 12 ? year + 1 : year;
-      const { error: additionError } = await supabase
-        .from("ledger_budget_additions" as never)
-        .insert({
-          ledger_id: ledger.id,
-          amount: savedAmount,
-          note: "Rolled over savings",
-          added_by: currentUserId,
-          month: nextMonth,
-          year: nextYear,
-          is_savings_rollover: true,
-        } as never);
-      if (additionError) throw additionError;
-    }
   };
 
-  return { saveExpense, deleteExpense, closeMonth };
+  return { saveExpense, deleteExpense, autoCloseMonth };
 }
 
 // ── Dashboard Hook ────────────────────────────────────────────────────────

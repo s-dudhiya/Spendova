@@ -232,12 +232,14 @@ const AddBudgetDrawer = ({
   const { toast } = useToast();
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [useSavings, setUseSavings] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const parsedAmount = parseFloat(amount);
+  const availableSavings = Number(ledger.total_savings || 0);
 
   const handleClose = (o: boolean) => {
-    if (!o) { setAmount(""); setNote(""); }
+    if (!o) { setAmount(""); setNote(""); setUseSavings(false); }
     onOpenChange(o);
   };
 
@@ -251,23 +253,22 @@ const AddBudgetDrawer = ({
     const currentMonth = ledger.budget_type === "monthly" ? now.getMonth() + 1 : null;
     const currentYear = ledger.budget_type === "monthly" ? now.getFullYear() : null;
     try {
-      const { error } = (await supabase
-        .from("ledger_budget_additions" as never)
-        .insert({
-          ledger_id: ledger.id,
-          amount: parsedAmount,
-          note: note.trim() || null,
-          added_by: currentUserId,
-          month: currentMonth,
-          year: currentYear,
-        } as never)) as unknown as { error: Error | null };
+      const { data, error } = (await supabase
+        .rpc("add_ledger_budget" as never, {
+          p_ledger_id: ledger.id,
+          p_amount: parsedAmount,
+          p_note: note.trim() || null,
+          p_use_savings: useSavings,
+          p_month: currentMonth,
+          p_year: currentYear
+        } as never)) as unknown as { data: any, error: Error | null };
 
-      if (error) throw error;
+      if (error || data?.error) throw error || new Error(data?.error);
 
       await logLedgerActivity(ledger.id, currentUserId, "budget_added", {
         entityType: "budget",
         entityId: ledger.id,
-        metadata: { amount: parsedAmount },
+        metadata: { amount: parsedAmount, savings_used: data.savings_used || 0 },
       });
 
       toast({ title: "Budget added!", description: `${money(parsedAmount)} added to ledger.` });
@@ -316,6 +317,19 @@ const AddBudgetDrawer = ({
               placeholder="e.g. Mid-month top-up"
               maxLength={300}
             />
+
+            {availableSavings > 0 && (
+              <label className="flex items-center justify-between rounded-2xl bg-card border border-border p-4 transition-colors hover:bg-elevated cursor-pointer">
+                <div>
+                  <p className="text-sm font-bold text-foreground">Use available savings</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">You have {money(availableSavings)} saved</p>
+                </div>
+                <div className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" style={{ backgroundColor: useSavings ? 'hsl(var(--primary))' : 'hsl(var(--input))' }}>
+                  <input type="checkbox" className="sr-only" checked={useSavings} onChange={(e) => setUseSavings(e.target.checked)} />
+                  <span className={`pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform ${useSavings ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </div>
+              </label>
+            )}
           </div>
         </div>
         <div className="grid grid-cols-[1fr_min-content] items-end gap-3 border-t border-border/60 bg-card py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
@@ -863,85 +877,52 @@ export const LedgerDetail = ({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"expenses" | "activity">("expenses");
 
-  // Monthly rollover
-  const [rolloverOpen, setRolloverOpen] = useState(false);
-  const [rolloverInfo, setRolloverInfo] = useState<{ fromMonth: number; fromYear: number; savedAmount: number } | null>(null);
-  const [rolloverDismissed, setRolloverDismissed] = useState(false);
-
-  // Detect rollover need for monthly ledgers
+  // Silent Monthly Rollover
   useEffect(() => {
     if (
       ledger.budget_type !== "monthly" ||
       !isOwnerOrAdmin ||
-      rolloverDismissed ||
       budgetAdditions.length === 0
-    )
-      return;
+    ) return;
 
     const { needed, fromMonth, fromYear } = detectRolloverNeeded(budgetAdditions);
     if (!needed) return;
 
-    // Calculate how much to save
-    const lastMonthAdditions = budgetAdditions.filter(
-      (a) => a.month === fromMonth && a.year === fromYear
-    );
-    const lastMonthExpenses = expenses.filter(
-      (e) => e.month === fromMonth && e.year === fromYear
-    );
-    const lastBudget = lastMonthAdditions.reduce(
-      (s, a) => s + Number(a.amount || 0),
-      0
-    );
-    const lastPaid = lastMonthExpenses
-      .filter((e) => e.status === "paid")
-      .reduce((s, e) => s + Number(e.amount || 0), 0);
-    const saved = Math.max(lastBudget - lastPaid, 0);
+    const performSilentAutoRollover = async () => {
+      // Calculate how much to save
+      const lastMonthAdditions = budgetAdditions.filter(
+        (a) => a.month === fromMonth && a.year === fromYear
+      );
+      const lastMonthExpenses = expenses.filter(
+        (e) => e.month === fromMonth && e.year === fromYear
+      );
+      const lastBudget = lastMonthAdditions.reduce(
+        (s, a) => s + Number(a.amount || 0),
+        0
+      );
+      const lastPaid = lastMonthExpenses
+        .filter((e) => e.status === "paid")
+        .reduce((s, e) => s + Number(e.amount || 0), 0);
+      
+      const savedAmount = Math.max(lastBudget - lastPaid, 0);
 
-    setRolloverInfo({ fromMonth, fromYear, savedAmount: saved });
-    setRolloverOpen(true);
-  }, [budgetAdditions, expenses, ledger.budget_type, isOwnerOrAdmin, rolloverDismissed]);
+      // Silent UPSERT handled natively by RPC concurrency safeties
+      const { data, error } = await supabase.rpc("auto_perform_monthly_closures" as never, {
+        p_ledger_id: ledger.id,
+        p_month: fromMonth,
+        p_year: fromYear,
+        p_saved_amount: savedAmount,
+        p_deficit: 0,
+      } as never);
 
-  const handleRolloverConfirm = useCallback(async () => {
-    if (!rolloverInfo) return;
-    const { fromMonth, fromYear, savedAmount } = rolloverInfo;
-
-    const lastMonthAdditions = budgetAdditions.filter(
-      (a) => a.month === fromMonth && a.year === fromYear
-    );
-    const lastPaid = expenses
-      .filter((e) => e.month === fromMonth && e.year === fromYear && e.status === "paid")
-      .reduce((s, e) => s + Number(e.amount || 0), 0);
-    const budgetAmount = lastMonthAdditions.reduce(
-      (s, a) => s + Number(a.amount || 0),
-      0
-    );
-
-    const { data, error } = await (supabase.rpc("perform_ledger_monthly_rollover" as never, {
-      p_ledger_id: ledger.id,
-      p_from_month: fromMonth,
-      p_from_year: fromYear,
-      p_budget_amount: budgetAmount,
-      p_paid_amount: lastPaid,
-      p_saved_amount: savedAmount,
-    } as never) as unknown as { data: { error?: string } | null; error: Error | null });
-
-    if (error || data?.error) {
-      toast({
-        title: "Rollover failed",
-        description: error?.message || data?.error || "Something went wrong.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    toast({
-      title: "Month rolled over!",
-      description: `${money(savedAmount)} moved to savings.`,
-    });
-    setRolloverOpen(false);
-    setRolloverDismissed(true);
-    await Promise.all([refresh(), onRefreshList()]);
-  }, [rolloverInfo, budgetAdditions, expenses, ledger.id, refresh, onRefreshList, toast]);
+      if (!error && data && (data as any).rolled_over) {
+        await refresh();
+        await onRefreshList({ silent: true });
+      }
+    };
+    
+    performSilentAutoRollover();
+  }, [budgetAdditions, expenses, ledger.budget_type, ledger.id, isOwnerOrAdmin, refresh, onRefreshList]);
 
   const applyDateFilter = (dateString: string | undefined | null, dFilter: string, customStart?: string, customEnd?: string) => {
     if (dFilter === "all") return true;
@@ -1422,17 +1403,7 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
         onSuccess={refresh}
       />
 
-      {/* Monthly rollover confirmation */}
-      {rolloverInfo && (
-        <RolloverDialog
-          open={rolloverOpen}
-          onClose={() => { setRolloverOpen(false); setRolloverDismissed(true); }}
-          onConfirm={handleRolloverConfirm}
-          fromMonth={rolloverInfo.fromMonth}
-          fromYear={rolloverInfo.fromYear}
-          savedAmount={rolloverInfo.savedAmount}
-        />
-      )}
+      {/* Auto-rollovers handled silently */}
     </div>
   );
 };

@@ -93,8 +93,36 @@ serve(async (req) => {
             const activeMonthExpenses = monthExpenses || [];
             const purgeExpenses = oldExpenses || [];
 
+            // --- NEW: FETCH LEDGER ACTIVITY ---
+            const { data: userLedgers } = await supabaseAdmin
+                .from('ledger_members')
+                .select('ledger_id, ledgers(name, budget_type, total_savings)')
+                .eq('user_id', userId);
+            
+            const ledgerIds = (userLedgers || []).map((l: any) => l.ledger_id);
+            let ledgerMonthExpenses = [];
+            let ledgerMonthClosures = [];
+            
+            if (ledgerIds.length > 0) {
+                const [lx, lc] = await Promise.all([
+                    supabaseAdmin.from('ledger_expenses')
+                        .select('*, ledgers(name)')
+                        .in('ledger_id', ledgerIds)
+                        .gte('created_at', previousMonth.toISOString())
+                        .lte('created_at', previousMonthEnd.toISOString()),
+                    supabaseAdmin.from('ledger_monthly_closures')
+                        .select('*, ledgers(name)')
+                        .in('ledger_id', ledgerIds)
+                        .eq('month', previousMonth.getMonth() + 1)
+                        .eq('year', previousMonth.getFullYear())
+                ]);
+                ledgerMonthExpenses = lx.data || [];
+                ledgerMonthClosures = lc.data || [];
+            }
+            const hasLedgerActivity = ledgerMonthExpenses.length > 0 || ledgerMonthClosures.length > 0;
+
             // If no activity, just mark as processed and skip email
-            if (activeMonthExpenses.length === 0 && purgeExpenses.length === 0) {
+            if (activeMonthExpenses.length === 0 && purgeExpenses.length === 0 && !hasLedgerActivity) {
                 await supabaseAdmin.from('monthly_category_stats').insert({
                     user_id: userId,
                     month_date: previousMonthString,
@@ -424,6 +452,49 @@ serve(async (req) => {
             }
             const pdfBase64 = btoa(binaryString);
 
+            // --- NEW: GENERATE LEDGER PDF ---
+            let ledgerPdfBase64 = null;
+            if (hasLedgerActivity) {
+                const lPdf = await PDFDocument.create();
+                let lp = lPdf.addPage();
+                const lFont = await lPdf.embedFont(StandardFonts.Helvetica);
+                const lBold = await lPdf.embedFont(StandardFonts.HelveticaBold);
+                const { width: lw, height: lh } = lp.getSize();
+                
+                lp.drawText(`Ledger & Budget Report: ${previousMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}`, { x: 40, y: lh - 50, size: 18, font: lBold, color: rgb(0.1, 0.1, 0.15) });
+                lp.drawText(`Prepared for: ${userProfile.full_name || userProfile.username}`, { x: 40, y: lh - 70, size: 11, font: lFont, color: rgb(0.4, 0.4, 0.45) });
+
+                let ly = lh - 110;
+                
+                if (ledgerMonthClosures.length > 0) {
+                    lp.drawText("Monthly Closures & Savings", { x: 40, y: ly, size: 14, font: lBold, color: rgb(0.2, 0.6, 0.4) });
+                    ly -= 25;
+                    ledgerMonthClosures.forEach((c: any) => {
+                         lp.drawText(`${c.ledgers?.name || 'Ledger'}: Saved Rs.${c.saved_amount}`, { x: 40, y: ly, size: 10, font: lFont });
+                         ly -= 18;
+                    });
+                    ly -= 15;
+                }
+
+                if (ledgerMonthExpenses.length > 0) {
+                    if (ly < 100) { lp = lPdf.addPage(); ly = lh - 50; }
+                    lp.drawText("Ledger Expenses", { x: 40, y: ly, size: 14, font: lBold, color: rgb(0.3, 0.15, 0.6) });
+                    ly -= 25;
+                    
+                    ledgerMonthExpenses.forEach((e: any) => {
+                         if (ly < 50) { lp = lPdf.addPage(); ly = lh - 50; }
+                         const summaryStr = `${new Date(e.created_at).toLocaleDateString()} | ${e.ledgers?.name || 'Ledger'} | Rs.${e.amount}`;
+                         lp.drawText(summaryStr, { x: 40, y: ly, size: 10, font: lFont });
+                         ly -= 18;
+                    });
+                }
+
+                const lBytes = await lPdf.save();
+                let lStr = "";
+                for (let i = 0; i < lBytes.length; i++) lStr += String.fromCharCode(lBytes[i]);
+                ledgerPdfBase64 = btoa(lStr);
+            }
+
             // Fetch User Email
             const { data: userAuthData } = await supabaseAdmin.auth.admin.getUserById(userId);
             const userEmail = userAuthData?.user?.email;
@@ -462,11 +533,18 @@ serve(async (req) => {
                             contentHtml: `<div style="color:#3f4254;font-size:15px;line-height:1.65;">${htmlBody}</div>`,
                             footer: 'Spendova Automated Reports'
                         }),
-                        attachments: [{
-                            filename: `${previousMonth.toLocaleString('default', { month: 'long' })}_MonthlyReport.pdf`,
-                            content: pdfBase64,
-                            encoding: 'base64'
-                        }]
+                        attachments: [
+                            {
+                                filename: `${previousMonth.toLocaleString('default', { month: 'long' })}_PersonalReport.pdf`,
+                                content: pdfBase64,
+                                encoding: 'base64'
+                            },
+                            ...(ledgerPdfBase64 ? [{
+                                filename: `${previousMonth.toLocaleString('default', { month: 'long' })}_LedgerReport.pdf`,
+                                content: ledgerPdfBase64,
+                                encoding: 'base64'
+                            }] : [])
+                        ]
                     });
                 }
             }
