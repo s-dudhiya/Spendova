@@ -319,16 +319,23 @@ const AddBudgetDrawer = ({
             />
 
             {availableSavings > 0 && (
-              <label className="flex items-center justify-between rounded-2xl bg-card border border-border p-4 transition-colors hover:bg-elevated cursor-pointer">
-                <div>
-                  <p className="text-sm font-bold text-foreground">Use available savings</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">You have {money(availableSavings)} saved</p>
-                </div>
-                <div className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" style={{ backgroundColor: useSavings ? 'hsl(var(--primary))' : 'hsl(var(--input))' }}>
-                  <input type="checkbox" className="sr-only" checked={useSavings} onChange={(e) => setUseSavings(e.target.checked)} />
-                  <span className={`pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform ${useSavings ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                </div>
-              </label>
+              <div className="space-y-2">
+                <label className="flex items-center justify-between rounded-2xl bg-card border border-border p-4 transition-colors hover:bg-elevated cursor-pointer">
+                  <div>
+                    <p className="text-sm font-bold text-foreground">Use available savings</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">You have {money(availableSavings)} saved</p>
+                  </div>
+                  <div className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" style={{ backgroundColor: useSavings ? 'hsl(var(--primary))' : 'hsl(var(--input))' }}>
+                    <input type="checkbox" className="sr-only" checked={useSavings} onChange={(e) => setUseSavings(e.target.checked)} />
+                    <span className={`pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform ${useSavings ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </div>
+                </label>
+                {useSavings && parsedAmount > 0 && (
+                  <div className="px-4 py-3 text-xs leading-relaxed text-muted-foreground bg-primary/5 rounded-2xl border border-primary/10">
+                    <span className="font-bold text-primary">{money(Math.min(availableSavings, parsedAmount))}</span> will be covered by savings. You only need to contribute <span className="font-bold text-foreground">{money(Math.max(parsedAmount - availableSavings, 0))}</span> to reach your total budget.
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
