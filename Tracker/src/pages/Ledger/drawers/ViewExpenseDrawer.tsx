@@ -2,6 +2,17 @@ import { useState, useEffect } from "react";
 import { Banknote, ExternalLink, Loader2, Paperclip, Undo2, Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Drawer,
   DrawerContent,
   DrawerDescription,
@@ -203,25 +214,55 @@ export const ViewExpenseDrawer = ({
                 <div className="space-y-3">
                   {canModify ? (
                     isPending ? (
-                      <button
-                        type="button"
-                        onClick={() => handleAction("pay")}
-                        disabled={activeAction !== null}
-                        className="flex w-full items-center justify-center gap-3 rounded-full bg-primary p-4 text-primary-foreground shadow-lg shadow-primary/25 transition-transform active:scale-[0.98] disabled:opacity-50"
-                      >
-                        {activeAction === "pay" ? <Loader2 className="size-5 animate-spin" /> : <Banknote className="size-5" />}
-                        <span className="font-bold text-base">Mark as Paid</span>
-                      </button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button
+                            type="button"
+                            disabled={activeAction !== null}
+                            className="flex w-full items-center justify-center gap-3 rounded-full bg-primary p-4 text-primary-foreground shadow-lg shadow-primary/25 transition-transform active:scale-[0.98] disabled:opacity-50"
+                          >
+                            {activeAction === "pay" ? <Loader2 className="size-5 animate-spin" /> : <Banknote className="size-5" />}
+                            <span className="font-bold text-base">Mark as Paid</span>
+                          </button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Mark as Paid?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to mark this expense as paid? This will update the status for everyone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleAction("pay")}>Confirm</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleAction("pending")}
-                        disabled={activeAction !== null}
-                        className="flex w-full items-center justify-center gap-3 rounded-full bg-elevated border border-border p-4 text-foreground transition-transform active:scale-[0.98] hover:bg-elevated/80 disabled:opacity-50"
-                      >
-                        {activeAction === "pending" ? <Loader2 className="size-5 animate-spin" /> : <Undo2 className="size-5" />}
-                        <span className="font-bold text-base">Revert to Pending</span>
-                      </button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <button
+                            type="button"
+                            disabled={activeAction !== null}
+                            className="flex w-full items-center justify-center gap-3 rounded-full bg-elevated border border-border p-4 text-foreground transition-transform active:scale-[0.98] hover:bg-elevated/80 disabled:opacity-50"
+                          >
+                            {activeAction === "pending" ? <Loader2 className="size-5 animate-spin" /> : <Undo2 className="size-5" />}
+                            <span className="font-bold text-base">Revert to Pending</span>
+                          </button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Revert to Pending?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to revert this expense to pending? This will update the status for everyone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleAction("pending")}>Confirm</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     )
                   ) : (
                     <p className="rounded-2xl bg-elevated/50 p-4 text-sm text-muted-foreground text-center border border-dashed border-border/50">

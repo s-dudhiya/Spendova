@@ -7,6 +7,17 @@ import type { LedgerExpenseRow, LedgerRole } from "../types";
 import { EXPENSE_STATUS_CONFIG } from "../types";
 import { money, dateLabel, displayName, getInitial } from "../utils";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface ExpenseCardProps {
   expense: LedgerExpenseRow;
@@ -103,17 +114,30 @@ export const ExpenseCard = ({
           {(onEdit || (onApprove && expense.status === "pending")) && isClickable && (
             <div className="flex items-center gap-1 opacity-100 sm:opacity-0 transition-opacity sm:group-hover:opacity-100">
               {onApprove && expense.status === "pending" && isOwner && (
-                <button
-                  type="button"
-                  className="grid size-7 place-items-center rounded-full text-success hover:bg-success/15 active:scale-95 transition-all"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onApprove(expense);
-                  }}
-                  title="Mark as Paid"
-                >
-                  <CheckCircle className="size-4" />
-                </button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button
+                      type="button"
+                      className="grid size-7 place-items-center rounded-full text-success hover:bg-success/15 active:scale-95 transition-all"
+                      onClick={(e) => e.stopPropagation()}
+                      title="Mark as Paid"
+                    >
+                      <CheckCircle className="size-4" />
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Mark as Paid?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to mark this expense as paid? This will update the status for everyone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => onApprove(expense)}>Confirm</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
               {onEdit && (isOwnExpense || isOwner) && (
                 <button
