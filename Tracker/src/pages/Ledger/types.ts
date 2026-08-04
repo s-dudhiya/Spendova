@@ -73,6 +73,7 @@ export interface LedgerExpenseRow {
   created_at: string;
   updated_at: string | null;
   profiles?: LedgerMemberProfile | null;
+  reviewer?: LedgerMemberProfile | null;
 }
 
 export interface LedgerMonthlyClosure {

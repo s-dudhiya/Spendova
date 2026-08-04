@@ -53,6 +53,7 @@ export const ExpenseCard = ({
   const initial = getInitial(name);
   const isOwner = userRole === "owner" || userRole === "admin" || isBudgetAdmin;
   const isOwnExpense = expense.user_id === currentUserId;
+  const canApprove = isBudgetAdmin || isOwnExpense;
 
   const isClickable = isOwner || isOwnExpense;
 
@@ -111,9 +112,9 @@ export const ExpenseCard = ({
         <div className="flex items-center gap-2">
           <p className="text-sm font-black text-foreground">{money(expense.amount)}</p>
           {/* Quick Actions (only icons) */}
-          {(onEdit || (onApprove && expense.status === "pending")) && isClickable && (
+          {isClickable && (
             <div className="flex items-center gap-1 opacity-100 sm:opacity-0 transition-opacity sm:group-hover:opacity-100">
-              {onApprove && expense.status === "pending" && isOwner && (
+              {onApprove && canApprove && expense.status === "pending" && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <button

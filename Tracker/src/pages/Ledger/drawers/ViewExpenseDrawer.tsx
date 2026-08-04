@@ -69,10 +69,8 @@ export const ViewExpenseDrawer = ({
     // Reset any state on open if needed
   }, [open]);
 
-  if (!expense) return null;
-
-  const cfg = EXPENSE_STATUS_CONFIG[expense.status] || { label: expense.status, className: "bg-muted text-muted-foreground" };
-  const name = displayName(expense.profiles);
+  const cfg = expense ? EXPENSE_STATUS_CONFIG[expense.status] || { label: expense.status, className: "bg-muted text-muted-foreground" } : { label: "Unknown", className: "" };
+  const name = expense ? displayName(expense.profiles) : "User";
 
   const handleAction = async (action: "pay" | "pending") => {
     if (activeAction) return;
@@ -101,7 +99,7 @@ export const ViewExpenseDrawer = ({
 
       if (error) throw error;
 
-      await logLedgerActivity(ledgerId, currentUserId, action === "pay" ? "expense_paid" : "expense_updated", {
+      await logLedgerActivity(ledgerId, currentUserId, action === "pay" ? "expense_paid" : "expense_reverted", {
         entityType: "expense",
         entityId: expense.id,
         metadata: { amount: expense.amount, title: expense.title, status: action },
@@ -124,11 +122,27 @@ export const ViewExpenseDrawer = ({
     }
   };
 
-  const isPayer = expense.user_id === currentUserId;
+  const isPayer = expense?.user_id === currentUserId;
   const isBudgetAdmin = currentUserId === budgetAdminId;
   const canModify = isPayer || isBudgetAdmin;
 
-  const isPending = expense.status === "pending";
+  const isPending = expense?.status === "pending";
+
+  if (!expense) {
+    return (
+      <Drawer open={open} onOpenChange={onOpenChange}>
+        <DrawerContent className="mx-auto flex flex-col w-full max-w-3xl overflow-hidden rounded-t-[2.5rem] border-border bg-background p-8">
+          <DrawerHeader className="sr-only">
+            <DrawerTitle>Expense Details</DrawerTitle>
+            <DrawerDescription>Loading...</DrawerDescription>
+          </DrawerHeader>
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="size-8 animate-spin text-muted-foreground" />
+          </div>
+        </DrawerContent>
+      </Drawer>
+    );
+  }
 
   return (
     <Drawer open={open} onOpenChange={onOpenChange}>
@@ -159,6 +173,20 @@ export const ViewExpenseDrawer = ({
                   <span className="text-sm font-semibold text-muted-foreground">Date added</span>
                   <span className="text-sm font-bold text-foreground">{dateLabel(expense.created_at)}</span>
                 </div>
+                {!isPending && expense.paid_at && (
+                  <>
+                    <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                      <span className="text-sm font-semibold text-muted-foreground">Marked as paid on</span>
+                      <span className="text-sm font-bold text-foreground">{dateLabel(expense.paid_at)}</span>
+                    </div>
+                    {expense.reviewer && (
+                      <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                        <span className="text-sm font-semibold text-muted-foreground">Marked as paid by</span>
+                        <span className="text-sm font-bold text-foreground">{displayName(expense.reviewer)}</span>
+                      </div>
+                    )}
+                  </>
+                )}
                 {expense.category && (
                   <div className="flex items-center justify-between pt-2 border-t border-border/50">
                     <span className="text-sm font-semibold text-muted-foreground">Category</span>
@@ -213,57 +241,37 @@ export const ViewExpenseDrawer = ({
                 </p>
                 <div className="space-y-3">
                   {canModify ? (
-                    isPending ? (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <button
-                            type="button"
-                            disabled={activeAction !== null}
-                            className="flex w-full items-center justify-center gap-3 rounded-full bg-primary p-4 text-primary-foreground shadow-lg shadow-primary/25 transition-transform active:scale-[0.98] disabled:opacity-50"
-                          >
-                            {activeAction === "pay" ? <Loader2 className="size-5 animate-spin" /> : <Banknote className="size-5" />}
-                            <span className="font-bold text-base">Mark as Paid</span>
-                          </button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Mark as Paid?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to mark this expense as paid? This will update the status for everyone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleAction("pay")}>Confirm</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    ) : (
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <button
-                            type="button"
-                            disabled={activeAction !== null}
-                            className="flex w-full items-center justify-center gap-3 rounded-full bg-elevated border border-border p-4 text-foreground transition-transform active:scale-[0.98] hover:bg-elevated/80 disabled:opacity-50"
-                          >
-                            {activeAction === "pending" ? <Loader2 className="size-5 animate-spin" /> : <Undo2 className="size-5" />}
-                            <span className="font-bold text-base">Revert to Pending</span>
-                          </button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Revert to Pending?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to revert this expense to pending? This will update the status for everyone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleAction("pending")}>Confirm</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    )
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <button
+                          type="button"
+                          disabled={activeAction !== null}
+                          className={isPending
+                            ? "flex w-full items-center justify-center gap-3 rounded-full bg-primary p-4 text-primary-foreground shadow-lg shadow-primary/25 transition-transform active:scale-[0.98] disabled:opacity-50"
+                            : "flex w-full items-center justify-center gap-3 rounded-full bg-elevated border border-border p-4 text-foreground transition-transform active:scale-[0.98] hover:bg-elevated/80 disabled:opacity-50"
+                          }
+                        >
+                          {isPending ? (
+                            activeAction === "pay" ? <Loader2 className="size-5 animate-spin" /> : <Banknote className="size-5" />
+                          ) : (
+                            activeAction === "pending" ? <Loader2 className="size-5 animate-spin" /> : <Undo2 className="size-5" />
+                          )}
+                          <span className="font-bold text-base">{isPending ? "Mark as Paid" : "Revert to Pending"}</span>
+                        </button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>{isPending ? "Mark as Paid?" : "Revert to Pending?"}</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to {isPending ? "mark this expense as paid" : "revert this expense to pending"}? This will update the status for everyone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleAction(isPending ? "pay" : "pending")}>Confirm</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   ) : (
                     <p className="rounded-2xl bg-elevated/50 p-4 text-sm text-muted-foreground text-center border border-dashed border-border/50">
                       Only the budget admin or the payer can modify this expense.

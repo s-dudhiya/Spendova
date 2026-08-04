@@ -74,7 +74,7 @@ const ActivityRow = ({ activity, ledger }: { activity: LedgerActivityRow; ledger
   let amountPrefix = "+";
   let amountStr = "";
 
-  const isExpense = activity.action === "expense_submitted" || activity.action === "expense_paid" || activity.action === "expense_approved";
+  const isExpense = activity.action.startsWith("expense_");
   const isRollover = activity.action === "monthly_rollover";
   
   if (isExpense) {
@@ -93,12 +93,25 @@ const ActivityRow = ({ activity, ledger }: { activity: LedgerActivityRow; ledger
   }
 
   let title = activity.action;
-  if (isExpense && activity.metadata && (activity.metadata as any).title) {
-    title = `${activity.profiles?.full_name || activity.profiles?.username || "User"} added ${(activity.metadata as any).title}`;
+  const userName = activity.profiles?.full_name || activity.profiles?.username || "User";
+  const itemName = activity.metadata && (activity.metadata as any).title ? (activity.metadata as any).title : "an item";
+
+  if (activity.action === "expense_submitted") {
+    title = `${userName} added ${itemName}`;
+  } else if (activity.action === "expense_paid") {
+    title = `${userName} marked ${itemName} as paid`;
+  } else if (activity.action === "expense_deleted") {
+    title = `${userName} deleted ${itemName}`;
+  } else if (activity.action === "expense_reverted") {
+    title = `${userName} reverted ${itemName} to pending`;
+  } else if (activity.action === "expense_updated") {
+    title = `${userName} updated ${itemName}`;
   } else if (activity.action === "budget_added") {
-    title = "Budget increased";
+    title = `${userName} increased the budget`;
   } else if (isRollover) {
     title = "Monthly rollover completed";
+  } else if (isExpense) {
+    title = `${userName} updated ${itemName}`;
   }
 
   return (
@@ -884,6 +897,17 @@ export const LedgerDetail = ({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"expenses" | "activity">("expenses");
 
+  const dedupedActivities = useMemo(() => {
+    if (!activities) return [];
+    return activities.filter((act, index, self) => 
+      index === self.findIndex((t) => 
+        t.action === act.action && 
+        t.entity_id === act.entity_id &&
+        Math.abs(new Date(t.created_at).getTime() - new Date(act.created_at).getTime()) < 60000
+      )
+    );
+  }, [activities]);
+
   // Silent Monthly Rollover
   useEffect(() => {
     if (
@@ -1039,6 +1063,13 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
         .eq("id" as never, expense.id as never);
 
       if (error) throw error;
+
+      await logLedgerActivity(ledger.id, currentUserId, "expense_paid", {
+        entityType: "expense",
+        entityId: expense.id,
+        metadata: { amount: expense.amount, title: expense.title, status: "paid" },
+      });
+
       toast({ title: "Marked as paid" });
       await refresh();
     } catch (e) {
@@ -1213,9 +1244,9 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
               Recent Activity
             </h2>
           </div>
-          {activities && activities.length > 0 ? (
+          {dedupedActivities && dedupedActivities.length > 0 ? (
             <div className="space-y-3">
-              {activities.slice(0, 10).map((activity) => (
+              {dedupedActivities.slice(0, 10).map((activity) => (
                 <ActivityRow key={activity.id} activity={activity} ledger={ledger} />
               ))}
             </div>
