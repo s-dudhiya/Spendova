@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // ============================================================
-// Budget Ledger â€“ Ledger Detail View
+// Budget Ledger – Ledger Detail View
 // ============================================================
 
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -59,8 +60,6 @@ import { ViewExpenseDrawer } from "./drawers/ViewExpenseDrawer";
 import { MonthlyHistoryDrawer } from "./components/MonthlyHistory";
 import { Field } from "./components/Fields";
 import { FilterSheet, FilterField, FilterTrigger, DateFilterControls } from "./components/Filters";
-import { LedgerSettingsDrawer } from "./drawers/LedgerSettingsDrawer";
-import { AddBudgetDrawer } from "./drawers/AddBudgetDrawer";
 import { SettleBalancesDrawer } from "./drawers/SettleBalancesDrawer";
 
 import { useLedgerDetail, logLedgerActivity } from "./hooks";
