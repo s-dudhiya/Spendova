@@ -22,6 +22,8 @@ import {
   ShoppingCart,
   RefreshCw,
   MoreHorizontal,
+  Users,
+  IndianRupee,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,6 +59,9 @@ import { ViewExpenseDrawer } from "./drawers/ViewExpenseDrawer";
 import { MonthlyHistoryDrawer } from "./components/MonthlyHistory";
 import { Field } from "./components/Fields";
 import { FilterSheet, FilterField, FilterTrigger, DateFilterControls } from "./components/Filters";
+import { LedgerSettingsDrawer } from "./drawers/LedgerSettingsDrawer";
+import { AddBudgetDrawer } from "./drawers/AddBudgetDrawer";
+import { SettleBalancesDrawer } from "./drawers/SettleBalancesDrawer";
 
 import { useLedgerDetail, logLedgerActivity } from "./hooks";
 import {
@@ -886,6 +891,7 @@ export const LedgerDetail = ({
   const [editExpense, setEditExpense] = useState<LedgerExpenseRow | null>(null);
   const [reviewExpense, setReviewExpense] = useState<LedgerExpenseRow | null>(null);
   const [addBudgetOpen, setAddBudgetOpen] = useState(false);
+  const [settleBalancesOpen, setSettleBalancesOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1038,6 +1044,11 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
 
   // Filter expenses for timeline
   const pendingCount = expenses.filter((e) => e.status === "pending").length;
+  const currentUserPendingCount = expenses.filter((e) => e.status === "pending" && e.user_id === currentUserId).length;
+  const currentUserPendingTotal = expenses
+    .filter((e) => e.status === "pending" && e.user_id === currentUserId)
+    .reduce((sum, e) => sum + Number(e.amount), 0);
+  const isBudgetAdmin = ledger?.budget_admin_id === currentUserId;
 
   // Expense card click
   const handleExpenseClick = (expense: LedgerExpenseRow) => {
@@ -1192,6 +1203,52 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
           isMonthly={isMonthly}
           monthLabel={monthLabel}
         />
+        
+        {/* Settlement Banner for Budget Admin */}
+        {isBudgetAdmin && pendingCount > 0 && (
+          <div 
+            className="mt-3 flex items-center justify-between rounded-2xl bg-card border border-border/40 p-3 shadow-sm cursor-pointer hover:bg-card/80 transition-colors"
+            onClick={() => setSettleBalancesOpen(true)}
+          >
+            <div className="flex items-center gap-3">
+              <div className="grid size-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+                <IndianRupee className="size-5" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-foreground">
+                  {pendingCount} Pending {pendingCount === 1 ? 'Payout' : 'Payouts'}
+                </p>
+                <p className="text-xs font-medium text-muted-foreground mt-0.5">
+                  Needs your attention
+                </p>
+              </div>
+            </div>
+            <div className="shrink-0">
+              <Button size="sm" className="rounded-xl h-8 px-4 text-xs font-bold shadow-primary-action pointer-events-none">
+                Settle
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Pending Reimbursement Banner for Regular Users */}
+        {!isBudgetAdmin && currentUserPendingCount > 0 && (
+          <div className="mt-3 flex items-center justify-between rounded-2xl bg-card border border-border/40 p-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="grid size-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+                <IndianRupee className="size-5" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-foreground">
+                  You are owed {money(currentUserPendingTotal)}
+                </p>
+                <p className="text-xs font-medium text-muted-foreground mt-0.5">
+                  For {currentUserPendingCount} pending {currentUserPendingCount === 1 ? 'expense' : 'expenses'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ── Quick Actions ── */}
@@ -1383,6 +1440,15 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
         monthlyClosures={monthlyClosures}
         totalSavings={ledger.total_savings}
         ledgerName={ledger.name}
+      />
+
+      <SettleBalancesDrawer
+        open={settleBalancesOpen}
+        onOpenChange={setSettleBalancesOpen}
+        expenses={expenses}
+        ledgerId={ledger.id}
+        currentUserId={currentUserId}
+        onSuccess={refresh}
       />
 
       <FilterSheet 
