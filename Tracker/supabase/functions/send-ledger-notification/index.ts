@@ -35,13 +35,15 @@ serve(async (req) => {
     // Get Ledger details
     const { data: ledger, error: ledgerError } = await supabaseAdmin
       .from('ledgers')
-      .select('name, budget_admin_id')
+      .select('name, budget_admin_id, owner_id')
       .eq('id', ledger_id)
       .single()
 
     if (ledgerError || !ledger) {
       return json({ error: 'Ledger not found' }, 404)
     }
+
+    const effectiveAdminId = ledger.budget_admin_id || ledger.owner_id;
 
     // Get Expense details
     const { data: expense, error: expenseError } = await supabaseAdmin
@@ -66,20 +68,23 @@ serve(async (req) => {
     let title = ''
     let message = ''
 
+    const cleanName = ledger.name.trim();
+    const displayName = cleanName.toLowerCase().endsWith('ledger') ? cleanName : `${cleanName} Ledger`;
+
     if (action === 'expense_added') {
       // If the budget admin themselves added the expense, no notification needed
-      if (actor_id === ledger.budget_admin_id) {
+      if (actor_id === effectiveAdminId) {
         return json({ success: true, message: 'Admin added expense, no notification' })
       }
       
-      targetUserId = ledger.budget_admin_id
-      title = `New Expense in ${ledger.name}`
+      targetUserId = effectiveAdminId
+      title = `New Expense in ${displayName}`
       message = `${actorName} submitted a new expense for INR ${expense.amount}: "${expense.title}"`
 
     } else if (action === 'expense_paid') {
       // If someone marks it paid, we notify the person who created the expense
       targetUserId = expense.user_id
-      title = `Expense Paid in ${ledger.name}`
+      title = `Expense Paid in ${displayName}`
       message = `You have been paid INR ${expense.amount} for "${expense.title}".`
     } else {
       return json({ error: 'Unsupported action' }, 400)

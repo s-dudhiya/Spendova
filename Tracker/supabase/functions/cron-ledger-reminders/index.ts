@@ -38,7 +38,8 @@ serve(async (req) => {
         ledger_id,
         ledgers (
           name,
-          budget_admin_id
+          budget_admin_id,
+          owner_id
         )
       `)
       .in('status', ['pending', 'approved'])
@@ -57,7 +58,7 @@ serve(async (req) => {
 
     expenses.forEach((expense) => {
       // Extract data
-      const adminId = expense.ledgers?.budget_admin_id
+      const adminId = expense.ledgers?.budget_admin_id || expense.ledgers?.owner_id
       const ledgerId = expense.ledger_id
       const ledgerName = expense.ledgers?.name
       
@@ -74,13 +75,15 @@ serve(async (req) => {
 
     for (const [adminId, ledgers] of Object.entries(pendingMap)) {
       for (const [ledgerId, count] of Object.entries(ledgers)) {
-        const ledgerName = ledgerNames[ledgerId]
+        const rawLedgerName = ledgerNames[ledgerId] || 'Unknown';
+        const cleanName = rawLedgerName.trim();
+        const displayName = cleanName.toLowerCase().endsWith('ledger') ? cleanName : `${cleanName} Ledger`;
         
         notificationsToInsert.push({
           user_id: adminId,
           actor_id: adminId, // System reminder
           type: 'ledger_reminder',
-          title: `Pending Expenses in ${ledgerName}`,
+          title: `Pending Expenses in ${displayName}`,
           message: `Reminder: You have ${count} unpaid expense${count > 1 ? 's' : ''} waiting for your review.`,
           entity_type: 'ledger',
           entity_id: ledgerId,

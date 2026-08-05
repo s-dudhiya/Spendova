@@ -162,11 +162,14 @@ export function useLedgerExpenseMutation(ledger: LedgerRow, currentUserId: strin
       p_created_at: payload.date || null,
     } as never) as unknown as { data: { error?: string; expense_id?: string } | null; error: Error | null });
 
+    console.log("RPC sync_ledger_expense result:", { data, error, action, ledger_type: ledger.ledger_type });
+
     if (error || data?.error) {
       throw new Error(data?.error || error?.message || "Failed to save expense");
     }
 
     const expenseId = data?.expense_id;
+    console.log("Extracted expenseId:", expenseId);
 
     if (proofFile && expenseId) {
       const blob = await compressReceiptImage(proofFile);
@@ -178,15 +181,22 @@ export function useLedgerExpenseMutation(ledger: LedgerRow, currentUserId: strin
     }
 
     if (action === "insert" && ledger.ledger_type === "shared" && expenseId) {
+      console.log("Triggering send-ledger-notification...");
       // Fire off push notification trigger
-      void supabase.functions.invoke("send-ledger-notification", {
+      supabase.functions.invoke("send-ledger-notification", {
         body: {
           action: "expense_added",
           ledger_id: ledger.id,
           expense_id: expenseId,
           actor_id: currentUserId,
         },
+      }).then(({ data: invokeData, error: invokeError }) => {
+        console.log("send-ledger-notification result:", invokeData, invokeError);
+      }).catch((err) => {
+        console.error("send-ledger-notification crashed:", err);
       });
+    } else {
+      console.log("Notification NOT triggered. Conditions:", { action, ledger_type: ledger.ledger_type, expenseId });
     }
   };
 
