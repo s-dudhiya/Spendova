@@ -3189,6 +3189,22 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
             <div className="flex justify-between gap-4"><span className="text-muted-foreground">Member since</span><span className="font-semibold text-foreground">{dateLabel(createdAt)}</span></div>
           </div>
           <button onClick={onThemeToggle} className="flex w-full items-center justify-between rounded-2xl bg-elevated p-4 font-bold text-foreground shadow-soft"><span>Theme</span><span className="flex items-center gap-2 text-primary">{theme === "dark" ? "Dark" : "Light"}{theme === "dark" ? <Moon className="size-4" /> : <Sun className="size-4" />}</span></button>
+            <button
+              onClick={() => {
+                if (userId) {
+                  import("@/lib/notifications").then(module => {
+                    module.initializeNotifications(userId);
+                  });
+                }
+              }}
+              className="flex w-full items-center justify-between gap-3 rounded-2xl bg-elevated p-4 text-left font-bold text-foreground shadow-soft"
+            >
+              <span className="flex items-center gap-3">
+                <span className="grid size-10 place-items-center rounded-full bg-primary/10 text-primary"><Bell className="size-5" /></span>
+                <span>Push Notifications</span>
+              </span>
+              <span className="text-xs text-muted-foreground">Enable</span>
+            </button>
           <button
             onClick={toggleBiometricLock}
             disabled={biometricBusy || (!biometricAvailable && !biometricEnabled)}
