@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { LogOut, User, Mail, Calendar, ArrowLeft, Edit2, Loader2, Check, X, Save, XCircle, Sun, Moon } from 'lucide-react';
+import { LogOut, User, Mail, Calendar, ArrowLeft, Edit2, Loader2, Check, X, Save, XCircle, Sun, Moon, Bell } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import { useNavigate } from 'react-router-dom';
@@ -247,10 +247,10 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Appearance Group */}
+            {/* Appearance & Settings Group */}
             <div>
-              <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-3 px-2">Appearance</h3>
-              <div className="bg-secondary/30 rounded-3xl border border-border/40 overflow-hidden">
+              <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-3 px-2">Appearance & Settings</h3>
+              <div className="bg-secondary/30 rounded-3xl border border-border/40 overflow-hidden divide-y divide-border/40">
                 <button
                   onClick={toggleTheme}
                   className="flex items-center gap-4 p-4 w-full hover:bg-muted/30 active:bg-muted/50 transition-colors text-left"
@@ -273,6 +273,25 @@ export default function Profile() {
                       className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-md transform transition-transform duration-300 ${theme === 'dark' ? 'translate-x-6' : 'translate-x-0.5'
                         }`}
                     />
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (user?.id) {
+                      import("@/lib/notifications").then(module => {
+                        module.initializeNotifications(user.id);
+                      });
+                    }
+                  }}
+                  className="flex items-center gap-4 p-4 w-full hover:bg-muted/30 active:bg-muted/50 transition-colors text-left"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                    <Bell className="h-5 w-5 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Push Notifications</p>
+                    <p className="font-bold text-foreground text-sm">Enable for this device</p>
                   </div>
                 </button>
               </div>
