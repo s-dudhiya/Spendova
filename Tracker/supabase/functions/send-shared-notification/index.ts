@@ -135,6 +135,7 @@ serve(async (req) => {
     const SMTP_PASS = Deno.env.get('SMTP_PASS')
 
     let sent = 0
+    /* --- COMMENTED OUT EMAIL LOGIC (Push Notifications handle this now) --- 
     if (SMTP_USER && SMTP_PASS) {
       const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers()
       if (usersError) throw usersError
@@ -171,6 +172,7 @@ serve(async (req) => {
     } else {
       console.warn('SMTP credentials missing. Notification email skipped.')
     }
+    ---------------------------------------------------------------------- */
 
     return json({ success: true, inserted: rows.length, emailSent: sent > 0, sent })
   } catch (error) {

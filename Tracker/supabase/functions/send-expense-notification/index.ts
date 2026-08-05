@@ -143,6 +143,7 @@ serve(async (req) => {
     const payerName = expense.payer?.full_name || 'Someone'
     let sent = 0
 
+    /* --- COMMENTED OUT EMAIL LOGIC (Push Notifications handle this now) ---
     for (const split of splits) {
       if (split.user_id === expense.paid_by) continue
       const email = userEmailMap[split.user_id]
@@ -156,6 +157,7 @@ serve(async (req) => {
       })
       sent += 1
     }
+    ---------------------------------------------------------------------- */
 
     return new Response(JSON.stringify({ success: true, sent, emailSent: sent > 0 }), {
       status: 200,
