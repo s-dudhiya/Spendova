@@ -105,6 +105,18 @@ export const SettleBalancesDrawer = ({
         metadata: { amount, count: expenseIds.length, status: "paid" },
       });
 
+      // Send push notifications for each paid expense
+      expenseIds.forEach((expId) => {
+        void supabase.functions.invoke("send-ledger-notification", {
+          body: {
+            action: "expense_paid",
+            ledger_id: ledgerId,
+            expense_id: expId,
+            actor_id: currentUserId,
+          },
+        });
+      });
+
       toast({ title: "Balances settled successfully" });
       await onSuccess();
       

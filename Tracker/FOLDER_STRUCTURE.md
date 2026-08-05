@@ -66,6 +66,8 @@ Contains `.sql` files. These files dictate exactly how your PostgreSQL database 
 ### 📁 `/supabase/functions`
 Contains **Edge Functions**. This is your serverless backend code (written in Deno/TypeScript).
 - **`/send-push-notification`**: Triggered automatically by a Database Webhook whenever a row is inserted into the `notifications` table. It sends FCM payloads to user devices.
+- **`/send-ledger-notification`**: Handled via frontend triggers to notify Budget Admins of new expenses, or users of paid expenses.
+- **`/cron-ledger-reminders`**: Triggered daily at 10 PM IST via `pg_cron` to remind Budget Admins of unpaid ledger expenses.
 - **`/send-invite` & `/send-ledger-invite`**: Triggered by the frontend to send beautifully formatted HTML emails using Nodemailer.
 - **`/send-auth-otp` & `/reset-password-with-otp`**: Securely handles sending passwords and verification codes to users.
 - **`/generate-monthly-reports`**: Triggered automatically by a cron job on the 1st of every month to email PDF summaries to users.

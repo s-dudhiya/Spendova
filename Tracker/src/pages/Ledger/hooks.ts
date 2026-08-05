@@ -176,6 +176,18 @@ export function useLedgerExpenseMutation(ledger: LedgerRow, currentUserId: strin
         .update({ proof_path: path, proof_uploaded_at: new Date().toISOString() } as never)
         .eq("id", expenseId);
     }
+
+    if (action === "insert" && ledger.ledger_type === "shared" && expenseId) {
+      // Fire off push notification trigger
+      void supabase.functions.invoke("send-ledger-notification", {
+        body: {
+          action: "expense_added",
+          ledger_id: ledger.id,
+          expense_id: expenseId,
+          actor_id: currentUserId,
+        },
+      });
+    }
   };
 
     const deleteExpense = async (expense: LedgerExpenseRow) => {

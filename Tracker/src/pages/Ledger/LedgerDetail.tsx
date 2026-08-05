@@ -1080,6 +1080,15 @@ const MONTH_NAMES_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"
         metadata: { amount: expense.amount, title: expense.title, status: "paid" },
       });
 
+      void supabase.functions.invoke("send-ledger-notification", {
+        body: {
+          action: "expense_paid",
+          ledger_id: ledger.id,
+          expense_id: expense.id,
+          actor_id: currentUserId,
+        },
+      });
+
       toast({ title: "Marked as paid" });
       await refresh();
     } catch (e) {

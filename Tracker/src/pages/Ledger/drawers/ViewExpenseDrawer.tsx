@@ -105,6 +105,17 @@ export const ViewExpenseDrawer = ({
         metadata: { amount: expense.amount, title: expense.title, status: action },
       });
 
+      if (action === "pay") {
+        void supabase.functions.invoke("send-ledger-notification", {
+          body: {
+            action: "expense_paid",
+            ledger_id: ledgerId,
+            expense_id: expense.id,
+            actor_id: currentUserId,
+          },
+        });
+      }
+
       toast({
         title: action === "pay" ? "Marked as paid" : "Reverted to pending",
       });

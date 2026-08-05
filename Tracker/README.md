@@ -80,13 +80,15 @@ A unified system for sending native push notifications to Web and Android.
   - `notifications`: Stores the actual in-app notifications (powers the bell icon).
 - **Edge Functions**:
   - `send-push-notification`: **CRITICAL FUNCTION**. This function is automatically triggered by a Supabase **Database Webhook** every time a new row is inserted into the `notifications` table. It grabs the user's token from `user_push_tokens` and sends the push via Firebase.
+  - `send-ledger-notification`: Triggered when an expense is added or paid in a Ledger to notify the Budget Admin or the submitting user.
   - *(Note: `send-shared-notification` and `send-expense-notification` exist but have had their email logic disabled to prevent spam. They only exist to insert rows into the `notifications` table).*
 
 ### 5. Admin & Background Tasks
 - **Frontend Files**: `src/pages/Admin.tsx`
 - **Database Tables**: `site_settings`, `feedback_tickets`
-- **Edge Functions**: 
+- **Edge Functions / Cron Jobs**: 
   - `generate-monthly-reports` (Triggered automatically by `pg_cron` in the database).
+  - `cron-ledger-reminders` (Triggered daily at 10 PM IST by `pg_cron` to remind Budget Admins of unpaid ledger expenses).
   - `feedback-ticket-email`, `send-admin-mail`, `toggle-maintenance`.
 
 ---
