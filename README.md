@@ -1,1 +1,0 @@
-# Spendova – Split. Track. Grow.
