@@ -64,7 +64,7 @@ serve(async (req) => {
       .single()
 
     const actorName = actor?.full_name || 'Someone'
-    let targetUserId = null
+    let targetUserIds: string[] = []
     let title = ''
     let message = ''
 
@@ -72,59 +72,74 @@ serve(async (req) => {
     const displayName = cleanName.toLowerCase().endsWith('ledger') ? cleanName : `${cleanName} Ledger`;
 
     if (action === 'expense_added') {
-      // If the budget admin themselves added the expense, no notification needed
-      if (actor_id === effectiveAdminId) {
-        return json({ success: true, message: 'Admin added expense, no notification' })
-      }
-      
-      targetUserId = effectiveAdminId
       title = `New Expense in ${displayName}`
       message = `${actorName} submitted a new expense for INR ${expense.amount}: "${expense.title}"`
 
+      // Fetch all ledger members
+      const { data: members, error: membersError } = await supabaseAdmin
+        .from('ledger_members')
+        .select('user_id')
+        .eq('ledger_id', ledger_id)
+
+      if (members && !membersError) {
+        // Notify everyone except the person who added the expense
+        targetUserIds = members.map(m => m.user_id).filter(id => id !== actor_id)
+      }
+      
     } else if (action === 'expense_paid') {
       // If someone marks it paid, we notify the person who created the expense
-      targetUserId = expense.user_id
+      if (expense.user_id !== actor_id) {
+        targetUserIds = [expense.user_id]
+      }
       title = `Expense Paid in ${displayName}`
       message = `You have been paid INR ${expense.amount} for "${expense.title}".`
     } else {
       return json({ error: 'Unsupported action' }, 400)
     }
 
-    if (!targetUserId) {
-      return json({ success: true, message: 'No target user to notify' })
+    if (!targetUserIds.length) {
+      return json({ success: true, message: 'No target users to notify' })
     }
 
-    // Deduplicate: avoid sending exact same notification in last 10 minutes
+    // Deduplicate and prepare inserts
     const dedupeSince = new Date(Date.now() - 10 * 60 * 1000).toISOString()
-    const { data: existing } = await supabaseAdmin
-      .from('notifications')
-      .select('id')
-      .eq('user_id', targetUserId)
-      .eq('actor_id', actor_id)
-      .eq('entity_id', expense_id)
-      .eq('type', action)
-      .gte('created_at', dedupeSince)
-      .limit(1)
+    const rows = []
+    
+    for (const userId of targetUserIds) {
+      const { data: existing } = await supabaseAdmin
+        .from('notifications')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('actor_id', actor_id)
+        .eq('entity_id', expense_id)
+        .eq('type', action)
+        .gte('created_at', dedupeSince)
+        .limit(1)
 
-    if (existing?.length) {
-      return json({ success: true, message: 'Notification deduped' })
+      if (!existing?.length) {
+        rows.push({
+          user_id: userId,
+          actor_id: actor_id,
+          type: action,
+          title,
+          message,
+          entity_type: 'ledger_expense',
+          entity_id: expense_id,
+          is_read: false,
+        })
+      }
+    }
+
+    if (rows.length === 0) {
+      return json({ success: true, message: 'Notifications deduped' })
     }
 
     // Insert into notifications (This triggers the push notification webhook!)
-    const { error: insertError } = await supabaseAdmin.from('notifications').insert({
-      user_id: targetUserId,
-      actor_id: actor_id,
-      type: action,
-      title,
-      message,
-      entity_type: 'ledger_expense',
-      entity_id: expense_id,
-      is_read: false,
-    })
+    const { error: insertError } = await supabaseAdmin.from('notifications').insert(rows)
 
     if (insertError) throw insertError
 
-    return json({ success: true, inserted: 1 })
+    return json({ success: true, inserted: rows.length })
 
   } catch (error: any) {
     console.error('send-ledger-notification error:', error)
