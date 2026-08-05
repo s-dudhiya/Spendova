@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { consumeFreshLoginUnlocked, isBiometricLockEnabled, unlockWithBiometric } from "@/lib/biometric-lock";
 import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
+import { initializeNotifications } from "@/lib/notifications";
 import Auth from "./pages/Auth";
 
 const Admin = lazy(() => import("./pages/Admin"));
@@ -53,6 +54,13 @@ const LoadingFallback = ({ label = "Preparing your workspace..." }: { label?: st
 
 const ProtectedIndex = () => {
   const { user, loading } = useAuth();
+  
+  useEffect(() => {
+    if (user) {
+      initializeNotifications(user.id);
+    }
+  }, [user]);
+
   if (loading) return <LoadingFallback />;
   if (!user) return <Auth mode="login" />;
   return <Index />;
