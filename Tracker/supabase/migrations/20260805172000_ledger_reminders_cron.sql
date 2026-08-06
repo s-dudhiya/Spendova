@@ -16,10 +16,10 @@ SELECT
     $$
     SELECT
       net.http_post(
-          url:='https://' || (SELECT setting FROM pg_settings WHERE name = 'supautils.project_id') || '.supabase.co/functions/v1/cron-ledger-reminders',
+          url:='https://kmllvchwuhrnnahksurt.supabase.co/functions/v1/cron-ledger-reminders',
           headers:=jsonb_build_object(
               'Content-Type', 'application/json',
-              'Authorization', 'Bearer ' || current_setting('request.jwt.secret', true)
+              'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImttbGx2Y2h3dWhybm5haGtzdXJ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg0NDMwMzYsImV4cCI6MjA3NDAxOTAzNn0.xAVAI_o058aFKsWLHcA4LsxzNFRYIHZ6ylC_BYd0s5I'
           ),
           body:=jsonb_build_object('time', now())
       ) AS request_id;
