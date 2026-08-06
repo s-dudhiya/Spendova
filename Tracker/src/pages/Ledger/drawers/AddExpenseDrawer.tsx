@@ -207,7 +207,7 @@ export const AddExpenseDrawer = ({
         title: isEdit ? "Expense updated" : "Expense submitted",
         description: isEdit
           ? "Your expense has been updated."
-          : "Your expense is pending owner approval.",
+          : "Your expense has been added.",
       });
 
       handleOpenChange(false);
