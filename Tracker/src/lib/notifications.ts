@@ -70,9 +70,9 @@ async function initializeWebNotifications(userId: string) {
     onMessage(messaging, (payload) => {
       console.log("Message received in foreground: ", payload);
       // Optional: Show a custom toast/notification in the app UI
-      if (payload.notification) {
-        new Notification(payload.notification.title || "New Message", {
-          body: payload.notification.body,
+      if (payload.data && payload.data.title) {
+        new Notification(payload.data.title || "New Message", {
+          body: payload.data.body,
         });
       }
     });
