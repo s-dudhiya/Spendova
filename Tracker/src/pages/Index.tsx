@@ -3223,7 +3223,7 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
           return;
         }
 
-        await initializeNotifications(userId);
+        await initializeNotifications(userId, true);
         if (typeof window !== "undefined" && "Notification" in window) {
           const res = Notification.permission;
           setPushPermission(res);
@@ -3327,7 +3327,7 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
                         setShowUnblockGuide(false);
                         if (userId) {
                           const { initializeNotifications } = await import("@/lib/notifications");
-                          await initializeNotifications(userId);
+                          await initializeNotifications(userId, true);
                           setPushEnabled(true);
                         }
                         toast({ title: "Notifications Active!", description: "Push notifications are now enabled." });

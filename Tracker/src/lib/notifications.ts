@@ -19,8 +19,18 @@ const app = initializeApp(firebaseConfig);
  * Initializes push notifications for the current user.
  * Automatically handles Web vs Native (Capacitor) implementations.
  */
-export async function initializeNotifications(userId: string) {
+export async function initializeNotifications(userId: string, isUserAction = false) {
   try {
+    // If push notifications were manually disabled by the user in profile settings, skip auto-registering on boot
+    if (!isUserAction && typeof localStorage !== "undefined" && localStorage.getItem(`push_disabled_${userId}`) === "true") {
+      console.log("Push notifications manually disabled by user in settings. Skipping auto-initialization.");
+      return;
+    }
+
+    if (isUserAction && typeof localStorage !== "undefined") {
+      localStorage.removeItem(`push_disabled_${userId}`);
+    }
+
     if (Capacitor.isNativePlatform()) {
       await initializeCapacitorNotifications(userId);
     } else {
@@ -32,10 +42,14 @@ export async function initializeNotifications(userId: string) {
 }
 
 /**
- * Removes the user's push tokens from Supabase so push alerts are stopped.
+ * Removes the user's push tokens from Supabase so push alerts are stopped,
+ * and sets a local preference so it doesn't automatically re-enable on page refresh.
  */
 export async function disableNotifications(userId: string) {
   try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(`push_disabled_${userId}`, "true");
+    }
     // @ts-expect-error user_push_tokens table types are not yet generated
     const { error } = await supabase.from("user_push_tokens").delete().eq("user_id", userId);
     if (error) {
@@ -49,10 +63,13 @@ export async function disableNotifications(userId: string) {
 }
 
 /**
- * Checks if active push tokens exist in Supabase for this user.
+ * Checks if active push tokens exist in Supabase for this user and that notifications are not manually disabled.
  */
 export async function checkPushEnabled(userId: string): Promise<boolean> {
   try {
+    if (typeof localStorage !== "undefined" && localStorage.getItem(`push_disabled_${userId}`) === "true") {
+      return false;
+    }
     // @ts-expect-error user_push_tokens table types are not yet generated
     const { data, error } = await supabase.from("user_push_tokens").select("id").eq("user_id", userId).limit(1);
     if (error || !data) return false;
