@@ -5,18 +5,10 @@ import nodemailer from 'npm:nodemailer'
 import { PDFDocument, rgb, StandardFonts } from 'https://esm.sh/pdf-lib@1.17.1'
 import { cleanMailHeader, emailTemplate, escapeHtml, fromAddress, stripHtml, withAutomatedFooterText } from '../_shared/email-template.ts'
 import { SPENDOVA_LOGO_BASE64 } from '../_shared/logo.ts'
+
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-function escapeCsv(val: any) {
-    if (val == null) return '';
-    const str = String(val);
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
 }
 
 serve(async (req) => {
@@ -76,18 +68,22 @@ serve(async (req) => {
             return new Response(JSON.stringify({ message: 'No emails found to send' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
         }
 
-        // Also fetch profiles to map user_id to names
+        // Fetch profiles for all members as well as expense creators to map user_id to names
+        const expenses = ledger.ledger_expenses || [];
+        const expenseUserIds = expenses.map((e: any) => e.user_id).filter(Boolean);
+        const allUserIds = Array.from(new Set([...memberIds, ...expenseUserIds]));
+
         const { data: profiles } = await supabaseAdmin
             .from('profiles')
             .select('user_id, full_name, username')
-            .in('user_id', memberIds)
+            .in('user_id', allUserIds)
             
         const profileMap = (profiles || []).reduce((acc: any, p: any) => {
             acc[p.user_id] = p.full_name || p.username || 'Unknown';
             return acc;
         }, {})
 
-        // Generate PDF using pdf-lib (Edge compatible) with Beautiful Table Design
+        // Generate PDF using pdf-lib (Edge compatible) matching Monthly Personal Report
         const pdfDoc = await PDFDocument.create();
         let page = pdfDoc.addPage();
         const { width, height } = page.getSize();
@@ -113,18 +109,147 @@ serve(async (req) => {
         
         const logoY = height - 80;
 
-        // Report Title
-        page.drawText(`Ledger Export: ${ledger.name}`, { x: 40, y: logoY - 50, size: 18, font: boldFont, color: rgb(0.1, 0.1, 0.15) });
-        page.drawText(`Exported on ${new Date().toLocaleDateString()}`, { x: 40, y: logoY - 70, size: 11, font: font, color: rgb(0.4, 0.4, 0.45) });
+        // Report Title & Metadata
+        page.drawText(`Ledger Report: ${ledger.name}`, { x: 40, y: logoY - 50, size: 18, font: boldFont, color: rgb(0.1, 0.1, 0.15) });
+        page.drawText(`Exported on: ${new Date().toLocaleDateString()} | Members: ${memberIds.length}`, { x: 40, y: logoY - 70, size: 11, font: font, color: rgb(0.4, 0.4, 0.45) });
 
-        const expenses = ledger.ledger_expenses || [];
-        
-        // Custom Table Drawing Function
         let y = logoY - 120;
-        const columns = ['Date', 'Title', 'Amount', 'Category', 'Paid By', 'Status'];
-        const colWidths = [70, 110, 70, 80, 90, 60];
+
+        // ----------------------------------------------------
+        // LEDGER SUMMARY SECTION (Bar Chart & Totals)
+        // ----------------------------------------------------
+        const totalSpent = expenses.reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+        
+        const catMap: Record<string, number> = {};
+        expenses.forEach((exp: any) => {
+            const cat = exp.category || 'Uncategorized';
+            catMap[cat] = (catMap[cat] || 0) + Number(exp.amount || 0);
+        });
+
+        const palette = [
+            rgb(0.2, 0.75, 0.4), // Green
+            rgb(0.2, 0.5, 0.9),  // Blue
+            rgb(0.9, 0.4, 0.2),  // Orange
+            rgb(0.8, 0.2, 0.5),  // Pink
+            rgb(0.5, 0.2, 0.8),  // Purple
+            rgb(0.2, 0.8, 0.8),  // Teal
+        ];
+
+        const categoryStats = Object.keys(catMap).map((name, index) => ({
+            name,
+            amount: catMap[name],
+            color: palette[index % palette.length]
+        })).sort((a, b) => b.amount - a.amount);
+
+        page.drawText("Ledger Summary", { x: 40, y, size: 14, font: boldFont, color: rgb(0.1, 0.1, 0.15) });
+        page.drawText(`Total Spent: Rs.${totalSpent.toFixed(2)}`, { x: width - 210, y, size: 14, font: boldFont, color: rgb(0.43, 0.16, 0.85) });
+        
+        y -= 25;
+        const maxAmount = categoryStats.length > 0 ? Math.max(...categoryStats.map(s => s.amount)) : 0;
+        const maxBarWidth = 250;
+
+        categoryStats.forEach(stat => {
+            if (y < 80) {
+                page = pdfDoc.addPage();
+                y = height - 50;
+            }
+            page.drawText(stat.name.substring(0, 18), { x: 40, y, size: 10, font: font, color: rgb(0.3, 0.3, 0.35) });
+            if (maxAmount > 0) {
+                const barWidth = (stat.amount / maxAmount) * maxBarWidth;
+                page.drawRectangle({ x: 140, y: y - 2, width: maxBarWidth, height: 12, color: rgb(0.95, 0.95, 0.95) });
+                page.drawRectangle({ x: 140, y: y - 2, width: barWidth, height: 12, color: stat.color });
+                page.drawText(`Rs.${stat.amount.toFixed(2)}`, { x: 145 + maxBarWidth, y, size: 9, font: boldFont, color: stat.color });
+            }
+            y -= 18;
+        });
+
+        // ----------------------------------------------------
+        // MONTHLY SPENDING TREND (Month-wise)
+        // ----------------------------------------------------
+        if (expenses.length > 0) {
+            y -= 25;
+            if (y < 120) {
+                page = pdfDoc.addPage();
+                y = height - 50;
+            }
+            page.drawText("Monthly Spending Trend", { x: 40, y, size: 14, font: boldFont, color: rgb(0.1, 0.1, 0.15) });
+            y -= 25;
+
+            const monthsOrder = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const monthlyTotals: Record<string, number> = {};
+
+            expenses.forEach((exp: any) => {
+                if (exp.created_at) {
+                    const d = new Date(exp.created_at);
+                    if (!isNaN(d.getTime())) {
+                        const monthKey = monthsOrder[d.getMonth()];
+                        monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + Number(exp.amount || 0);
+                    }
+                }
+            });
+
+            const monthlyStats = monthsOrder
+                .map(m => ({ month: m, amount: monthlyTotals[m] || 0 }))
+                .filter(s => s.amount > 0);
+
+            const maxMonthly = monthlyStats.length > 0 ? Math.max(...monthlyStats.map(s => s.amount)) : 0;
+
+            monthlyStats.forEach(stat => {
+                if (y < 80) {
+                    page = pdfDoc.addPage();
+                    y = height - 50;
+                }
+                page.drawText(stat.month, { x: 40, y, size: 10, font: font, color: rgb(0.3, 0.3, 0.35) });
+                if (maxMonthly > 0) {
+                    const barWidth = (stat.amount / maxMonthly) * maxBarWidth;
+                    page.drawRectangle({ x: 140, y: y - 2, width: maxBarWidth, height: 12, color: rgb(0.95, 0.95, 0.95) });
+                    page.drawRectangle({ x: 140, y: y - 2, width: barWidth, height: 12, color: rgb(0.3, 0.15, 0.6) });
+                    page.drawText(`Rs.${stat.amount.toFixed(2)}`, { x: 145 + maxBarWidth, y, size: 9, font: boldFont, color: rgb(0.3, 0.15, 0.6) });
+                }
+                y -= 18;
+            });
+        }
+
+        // ----------------------------------------------------
+        // TOP 5 HIGHEST SPENDS
+        // ----------------------------------------------------
+        if (expenses.length > 0) {
+            y -= 25;
+            if (y < 120) {
+                page = pdfDoc.addPage();
+                y = height - 50;
+            }
+            page.drawText("Top Highest Spends", { x: 40, y, size: 12, font: boldFont, color: rgb(0.1, 0.1, 0.15) });
+            y -= 20;
+            
+            const top5Expenses = [...expenses].sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0)).slice(0, 5);
+            top5Expenses.forEach((exp: any, i: number) => {
+                if (y < 80) {
+                    page = pdfDoc.addPage();
+                    y = height - 50;
+                }
+                page.drawText(`${i + 1}.`, { x: 40, y, size: 9, font: boldFont, color: rgb(0.4, 0.4, 0.45) });
+                page.drawText((exp.title || 'Unnamed').substring(0, 25), { x: 55, y, size: 9, font: font, color: rgb(0.2, 0.2, 0.25) });
+                page.drawText(`Rs.${Number(exp.amount || 0).toFixed(2)}`, { x: 220, y, size: 9, font: boldFont, color: rgb(0.43, 0.16, 0.85) });
+                page.drawText((exp.category || 'Uncategorized').substring(0, 20), { x: 320, y, size: 9, font: font, color: rgb(0.5, 0.5, 0.55) });
+                y -= 15;
+            });
+        }
+
+        y -= 25; // Space before table
+
+        // ----------------------------------------------------
+        // EXPENSES TABLE (Exact match to Personal Monthly Report)
+        // ----------------------------------------------------
+        const columns = ['Date', 'Expense Name', 'Category', 'Paid By', 'Amount', 'Status'];
+        const colWidths = [70, 120, 90, 90, 75, 55];
         const tableWidth = colWidths.reduce((a, b) => a + b, 0);
         const rowHeight = 24;
+
+        if (y < 100) {
+            page = pdfDoc.addPage();
+            y = height - 50;
+        }
 
         // Modern Header Background
         page.drawRectangle({ x: 35, y: y - 8, width: tableWidth + 10, height: 28, color: rgb(0.96, 0.95, 0.99) });
@@ -141,7 +266,8 @@ serve(async (req) => {
 
         // Table Body
         if (expenses.length === 0) {
-            page.drawText("No expenses recorded in this ledger.", { x: 40, y, size: 9, font: font });
+            page.drawText("No expenses recorded in this ledger.", { x: 40, y: y + 2, size: 9, font: font });
+            y -= rowHeight;
         } else {
             expenses.forEach((exp: any, rowIndex: number) => {
                 if (y < 90) {
@@ -167,13 +293,16 @@ serve(async (req) => {
                 // Bottom border for the row
                 page.drawLine({ start: { x: 35, y: y - 8 }, end: { x: 35 + tableWidth + 10, y: y - 8 }, color: rgb(0.92, 0.92, 0.94), thickness: 1 });
 
+                const rawStatus = exp.status ? String(exp.status) : 'pending';
+                const formattedStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
+
                 const row = [
                     exp.created_at ? new Date(exp.created_at).toLocaleDateString() : '',
-                    (exp.title || 'Unknown').substring(0, 18),
-                    `Rs.${Number(exp.amount).toFixed(2)}`,
-                    (exp.category || '').substring(0, 15),
+                    (exp.title || 'Unknown').substring(0, 20),
+                    (exp.category || 'Uncategorized').substring(0, 15),
                     (profileMap[exp.user_id] || 'Unknown').substring(0, 15),
-                    exp.status
+                    `Rs.${Number(exp.amount || 0).toFixed(2)}`,
+                    formattedStatus.substring(0, 10)
                 ];
                 
                 let cx = 40;
@@ -188,11 +317,11 @@ serve(async (req) => {
         const pages = pdfDoc.getPages();
         for (let i = 0; i < pages.length; i++) {
             const p = pages[i];
-            const { width, height } = p.getSize();
-            p.drawLine({ start: { x: 40, y: 40 }, end: { x: width - 40, y: 40 }, color: rgb(0.9, 0.88, 0.95), thickness: 1 });
+            const { width: pWidth } = p.getSize();
+            p.drawLine({ start: { x: 40, y: 40 }, end: { x: pWidth - 40, y: 40 }, color: rgb(0.9, 0.88, 0.95), thickness: 1 });
             p.drawText("Spendova", { x: 40, y: 25, size: 9, font: boldFont, color: rgb(0.4, 0.4, 0.45) });
             p.drawText("System-generated document", { x: 95, y: 25, size: 8, font: font, color: rgb(0.5, 0.5, 0.55) });
-            p.drawText(`Page ${i + 1} of ${pages.length}`, { x: width - 90, y: 25, size: 9, font: font, color: rgb(0.4, 0.4, 0.45) });
+            p.drawText(`Page ${i + 1} of ${pages.length}`, { x: pWidth - 90, y: 25, size: 9, font: font, color: rgb(0.4, 0.4, 0.45) });
         }
 
         const pdfBytes = await pdfDoc.save();
@@ -224,8 +353,8 @@ serve(async (req) => {
 
         const subject = `Expense Export: ${ledger.name}`
         const htmlBody = `
-            <h2>${escapeHtml(ledger.name)} has been closed/deleted.</h2>
-            <p>Please find attached the final expense report for this ledger.</p>
+            <h2>${escapeHtml(ledger.name)} report attached.</h2>
+            <p>Please find attached the complete expense report for this ledger.</p>
         `
 
         const mailOptions = {
@@ -262,3 +391,4 @@ serve(async (req) => {
         })
     }
 })
+

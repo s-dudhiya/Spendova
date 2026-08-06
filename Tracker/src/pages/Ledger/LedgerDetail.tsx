@@ -25,6 +25,7 @@ import {
   MoreHorizontal,
   Users,
   IndianRupee,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -613,10 +614,27 @@ const SettingsDrawer = ({
 }: SettingsDrawerProps) => {
   const { toast } = useToast();
   const [deletingLedger, setDeletingLedger] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const isOwner = userRole === "owner";
+
+  const exportLedgerPdf = async () => {
+    if (!ledger || exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('send-ledger-export', {
+        body: { ledgerId: ledger.id }
+      });
+      if (error || data?.error) throw error || new Error(data?.error);
+      toast({ title: "PDF Export Sent!", description: "Check your email inbox for the attached PDF report." });
+    } catch (err: any) {
+      toast({ title: "Export Failed", description: err.message || "Failed to send PDF report email.", variant: "destructive" });
+    } finally {
+      setExportingPdf(false);
+    }
+  };
 
   const deleteLedger = async () => {
     if (!ledger) return;
@@ -792,6 +810,26 @@ const SettingsDrawer = ({
                 })}
               </div>
             )}
+
+            {/* Reports & Export */}
+            <div className="mt-4 space-y-2">
+              <p className="px-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                Reports & Export
+              </p>
+              <Button
+                variant="outline"
+                className="h-12 w-full justify-start rounded-2xl border-primary/30 bg-primary/5 font-bold text-primary hover:bg-primary/10 hover:text-primary"
+                onClick={exportLedgerPdf}
+                disabled={exportingPdf}
+              >
+                {exportingPdf ? (
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                ) : (
+                  <FileText className="mr-2 size-4" />
+                )}
+                {exportingPdf ? "Sending PDF Report..." : "Email PDF Report"}
+              </Button>
+            </div>
 
             {/* Danger zone */}
             <div className="mt-4 space-y-3">
