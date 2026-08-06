@@ -3202,6 +3202,8 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
     };
   }, [userId]);
 
+  const [showUnblockGuide, setShowUnblockGuide] = useState(false);
+
   const handlePushToggle = async () => {
     if (!userId) return;
     setPushBusy(true);
@@ -3217,11 +3219,7 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
         });
       } else {
         if (pushPermission === "denied") {
-          toast({
-            title: "Notifications Blocked",
-            description: "Notifications are blocked in your browser or OS settings. Please unblock them in site settings.",
-            variant: "destructive",
-          });
+          setShowUnblockGuide(true);
           return;
         }
 
@@ -3234,7 +3232,7 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
             toast({ title: "Notifications Enabled", description: "You will now receive instant push alerts!" });
           } else if (res === "denied") {
             setPushEnabled(false);
-            toast({ title: "Permission Denied", description: "Notifications were blocked in browser prompt.", variant: "destructive" });
+            setShowUnblockGuide(true);
           }
         } else {
           setPushEnabled(true);
@@ -3271,7 +3269,7 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
                 <span className="block">Push Notifications</span>
                 <span className="mt-0.5 block text-xs font-medium text-muted-foreground">
                   {pushPermission === "denied"
-                    ? "Blocked in browser settings"
+                    ? "Blocked in browser settings (Tap for help)"
                     : pushPermission === "unsupported"
                     ? "Not supported on this browser"
                     : pushEnabled
@@ -3286,6 +3284,69 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
               onCheckedChange={handlePushToggle}
             />
           </div>
+
+          <Dialog open={showUnblockGuide} onOpenChange={setShowUnblockGuide}>
+            <DialogContent className="max-w-md rounded-3xl p-6">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-3 text-xl font-bold">
+                  <span className="grid size-10 place-items-center rounded-full bg-amber-500/10 text-amber-500">
+                    <AlertTriangle className="size-5" />
+                  </span>
+                  Enable Notifications
+                </DialogTitle>
+                <DialogDescription className="pt-2 text-sm leading-relaxed text-muted-foreground">
+                  Notifications are blocked in your browser settings. Web security rules prevent sites from opening settings automatically, so follow these quick steps:
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="my-4 space-y-3 rounded-2xl bg-elevated p-4 text-sm font-medium">
+                <div className="flex items-start gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary/20 text-xs font-bold text-primary">1</span>
+                  <span>Look at the top left of your address bar (next to the web address).</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary/20 text-xs font-bold text-primary">2</span>
+                  <span>Click the 🔒 <strong>Lock icon</strong> or <strong>Site Settings</strong> button.</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary/20 text-xs font-bold text-primary">3</span>
+                  <span>Change <strong>Notifications</strong> to <strong>Allow</strong>.</span>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="outline" onClick={() => setShowUnblockGuide(false)} className="rounded-xl">
+                  Close
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (typeof window !== "undefined" && "Notification" in window) {
+                      const current = Notification.permission;
+                      setPushPermission(current);
+                      if (current === "granted") {
+                        setShowUnblockGuide(false);
+                        if (userId) {
+                          const { initializeNotifications } = await import("@/lib/notifications");
+                          await initializeNotifications(userId);
+                          setPushEnabled(true);
+                        }
+                        toast({ title: "Notifications Active!", description: "Push notifications are now enabled." });
+                      } else {
+                        toast({
+                          title: "Still Blocked",
+                          description: "Browser permission is still set to blocked. Please allow notifications in address bar settings.",
+                          variant: "destructive",
+                        });
+                      }
+                    }
+                  }}
+                  className="rounded-xl shadow-primary-action"
+                >
+                  Check Permission Now
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
           <button
             onClick={toggleBiometricLock}
             disabled={biometricBusy || (!biometricAvailable && !biometricEnabled)}
