@@ -72,6 +72,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -3219,6 +3220,15 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
         });
       } else {
         if (pushPermission === "denied") {
+          if (Capacitor.isNativePlatform()) {
+            try {
+              const { NativeSettings, Option } = await import("capacitor-native-settings");
+              await NativeSettings.open({ option: Option.Notification });
+              return;
+            } catch (e) {
+              console.warn("Failed to open native settings automatically", e);
+            }
+          }
           setShowUnblockGuide(true);
           return;
         }
@@ -3232,6 +3242,15 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
             toast({ title: "Notifications Enabled", description: "You will now receive instant push alerts!" });
           } else if (res === "denied") {
             setPushEnabled(false);
+            if (Capacitor.isNativePlatform()) {
+              try {
+                const { NativeSettings, Option } = await import("capacitor-native-settings");
+                await NativeSettings.open({ option: Option.Notification });
+                return;
+              } catch (e) {
+                console.warn(e);
+              }
+            }
             setShowUnblockGuide(true);
           }
         } else {
@@ -3314,7 +3333,23 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+                {Capacitor.isNativePlatform() && (
+                  <Button
+                    variant="secondary"
+                    onClick={async () => {
+                      try {
+                        const { NativeSettings, Option } = await import("capacitor-native-settings");
+                        await NativeSettings.open({ option: Option.Notification });
+                      } catch (e) {
+                        console.error("Failed to open native settings", e);
+                      }
+                    }}
+                    className="rounded-xl font-semibold"
+                  >
+                    <Smartphone className="mr-2 size-4" /> Open Phone Settings
+                  </Button>
+                )}
                 <Button variant="outline" onClick={() => setShowUnblockGuide(false)} className="rounded-xl">
                   Close
                 </Button>
