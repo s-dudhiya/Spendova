@@ -31,6 +31,37 @@ export async function initializeNotifications(userId: string) {
   }
 }
 
+/**
+ * Removes the user's push tokens from Supabase so push alerts are stopped.
+ */
+export async function disableNotifications(userId: string) {
+  try {
+    // @ts-expect-error user_push_tokens table types are not yet generated
+    const { error } = await supabase.from("user_push_tokens").delete().eq("user_id", userId);
+    if (error) {
+      console.error("Failed to remove push tokens from Supabase:", error);
+    } else {
+      console.log(`Push tokens deleted for user: ${userId}`);
+    }
+  } catch (err) {
+    console.error("Error disabling push notifications:", err);
+  }
+}
+
+/**
+ * Checks if active push tokens exist in Supabase for this user.
+ */
+export async function checkPushEnabled(userId: string): Promise<boolean> {
+  try {
+    // @ts-expect-error user_push_tokens table types are not yet generated
+    const { data, error } = await supabase.from("user_push_tokens").select("id").eq("user_id", userId).limit(1);
+    if (error || !data) return false;
+    return data.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function saveTokenToSupabase(userId: string, token: string, platform: string) {
   // @ts-expect-error user_push_tokens table types are not yet generated
   const { error } = await supabase.from("user_push_tokens").upsert(

@@ -3179,56 +3179,71 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
     }
     return "unsupported";
   });
+  const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
 
   useEffect(() => {
-    const updatePerm = () => {
+    let active = true;
+    const checkStatus = async () => {
       if (typeof window !== "undefined" && "Notification" in window) {
         setPushPermission(Notification.permission);
       }
+      if (userId) {
+        const { checkPushEnabled } = await import("@/lib/notifications");
+        const isEnabled = await checkPushEnabled(userId);
+        if (active) setPushEnabled(isEnabled && (typeof window === "undefined" || !("Notification" in window) || Notification.permission === "granted"));
+      }
     };
-    updatePerm();
-    window.addEventListener("focus", updatePerm);
-    return () => window.removeEventListener("focus", updatePerm);
-  }, []);
+    checkStatus();
+    window.addEventListener("focus", checkStatus);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", checkStatus);
+    };
+  }, [userId]);
 
   const handlePushToggle = async () => {
-    if (pushPermission === "granted") {
-      toast({
-        title: "Push Notifications Enabled",
-        description: "Notifications are active on this device. To disable them, update your browser site settings.",
-      });
-      return;
-    }
+    if (!userId) return;
+    setPushBusy(true);
+    try {
+      const { initializeNotifications, disableNotifications } = await import("@/lib/notifications");
 
-    if (pushPermission === "denied") {
-      toast({
-        title: "Notifications Blocked",
-        description: "Notifications are blocked in your browser or OS settings. Please unblock them in site settings.",
-        variant: "destructive",
-      });
-      return;
-    }
+      if (pushEnabled) {
+        await disableNotifications(userId);
+        setPushEnabled(false);
+        toast({
+          title: "Push Notifications Disabled",
+          description: "Push notifications are now turned off for this account.",
+        });
+      } else {
+        if (pushPermission === "denied") {
+          toast({
+            title: "Notifications Blocked",
+            description: "Notifications are blocked in your browser or OS settings. Please unblock them in site settings.",
+            variant: "destructive",
+          });
+          return;
+        }
 
-    if (userId) {
-      setPushBusy(true);
-      try {
-        const { initializeNotifications } = await import("@/lib/notifications");
         await initializeNotifications(userId);
         if (typeof window !== "undefined" && "Notification" in window) {
           const res = Notification.permission;
           setPushPermission(res);
           if (res === "granted") {
-            toast({ title: "Notifications Enabled", description: "You will now receive instant push notifications!" });
+            setPushEnabled(true);
+            toast({ title: "Notifications Enabled", description: "You will now receive instant push alerts!" });
           } else if (res === "denied") {
+            setPushEnabled(false);
             toast({ title: "Permission Denied", description: "Notifications were blocked in browser prompt.", variant: "destructive" });
           }
+        } else {
+          setPushEnabled(true);
         }
-      } catch (err) {
-        console.error("Error toggling push notifications", err);
-      } finally {
-        setPushBusy(false);
       }
+    } catch (err) {
+      console.error("Error toggling push notifications", err);
+    } finally {
+      setPushBusy(false);
     }
   };
 
@@ -3255,18 +3270,18 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
               <span>
                 <span className="block">Push Notifications</span>
                 <span className="mt-0.5 block text-xs font-medium text-muted-foreground">
-                  {pushPermission === "granted"
-                    ? "Active on this device"
-                    : pushPermission === "denied"
+                  {pushPermission === "denied"
                     ? "Blocked in browser settings"
                     : pushPermission === "unsupported"
                     ? "Not supported on this browser"
-                    : "Tap switch to enable"}
+                    : pushEnabled
+                    ? "Active for this account"
+                    : "Disabled for this account"}
                 </span>
               </span>
             </span>
             <Switch
-              checked={pushPermission === "granted"}
+              checked={pushEnabled && pushPermission === "granted"}
               disabled={pushBusy || pushPermission === "unsupported"}
               onCheckedChange={handlePushToggle}
             />
