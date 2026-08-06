@@ -103,6 +103,7 @@ serve(async (req) => {
             let ledgerMonthExpenses = [];
             let ledgerMonthClosures = [];
             
+            let lProfileMap: Record<string, string> = {};
             if (ledgerIds.length > 0) {
                 const [lx, lc] = await Promise.all([
                     supabaseAdmin.from('ledger_expenses')
@@ -118,6 +119,17 @@ serve(async (req) => {
                 ]);
                 ledgerMonthExpenses = lx.data || [];
                 ledgerMonthClosures = lc.data || [];
+
+                if (ledgerMonthExpenses.length > 0) {
+                    const lUserIds = Array.from(new Set(ledgerMonthExpenses.map((e: any) => e.user_id).filter(Boolean)));
+                    const { data: lProfiles } = await supabaseAdmin
+                        .from('profiles')
+                        .select('user_id, full_name, username')
+                        .in('user_id', lUserIds);
+                    (lProfiles || []).forEach((p: any) => {
+                        lProfileMap[p.user_id] = p.full_name || p.username || 'Unknown';
+                    });
+                }
             }
             const hasLedgerActivity = ledgerMonthExpenses.length > 0 || ledgerMonthClosures.length > 0;
 
@@ -452,47 +464,208 @@ serve(async (req) => {
             }
             const pdfBase64 = btoa(binaryString);
 
-            // --- NEW: GENERATE LEDGER PDF ---
-            let ledgerPdfBase64 = null;
+            // --- GENERATE INDIVIDUAL LEDGER PDFs PER LEDGER ---
+            const ledgerAttachments: Array<{ filename: string, content: string, encoding: string }> = [];
+
             if (hasLedgerActivity) {
-                const lPdf = await PDFDocument.create();
-                let lp = lPdf.addPage();
-                const lFont = await lPdf.embedFont(StandardFonts.Helvetica);
-                const lBold = await lPdf.embedFont(StandardFonts.HelveticaBold);
-                const { width: lw, height: lh } = lp.getSize();
-                
-                lp.drawText(`Ledger & Budget Report: ${previousMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}`, { x: 40, y: lh - 50, size: 18, font: lBold, color: rgb(0.1, 0.1, 0.15) });
-                lp.drawText(`Prepared for: ${userProfile.full_name || userProfile.username}`, { x: 40, y: lh - 70, size: 11, font: lFont, color: rgb(0.4, 0.4, 0.45) });
+                // Group expenses and closures by ledger_id
+                const ledgerExpensesByLedger: Record<string, any[]> = {};
+                const ledgerClosuresByLedger: Record<string, any[]> = {};
 
-                let ly = lh - 110;
-                
-                if (ledgerMonthClosures.length > 0) {
-                    lp.drawText("Monthly Closures & Savings", { x: 40, y: ly, size: 14, font: lBold, color: rgb(0.2, 0.6, 0.4) });
-                    ly -= 25;
-                    ledgerMonthClosures.forEach((c: any) => {
-                         lp.drawText(`${c.ledgers?.name || 'Ledger'}: Saved Rs.${c.saved_amount}`, { x: 40, y: ly, size: 10, font: lFont });
-                         ly -= 18;
-                    });
-                    ly -= 15;
-                }
+                ledgerMonthExpenses.forEach((e: any) => {
+                    const lid = e.ledger_id;
+                    if (!ledgerExpensesByLedger[lid]) ledgerExpensesByLedger[lid] = [];
+                    ledgerExpensesByLedger[lid].push(e);
+                });
 
-                if (ledgerMonthExpenses.length > 0) {
-                    if (ly < 100) { lp = lPdf.addPage(); ly = lh - 50; }
-                    lp.drawText("Ledger Expenses", { x: 40, y: ly, size: 14, font: lBold, color: rgb(0.3, 0.15, 0.6) });
-                    ly -= 25;
+                ledgerMonthClosures.forEach((c: any) => {
+                    const lid = c.ledger_id;
+                    if (!ledgerClosuresByLedger[lid]) ledgerClosuresByLedger[lid] = [];
+                    ledgerClosuresByLedger[lid].push(c);
+                });
+
+                const activeLedgerIds = Array.from(new Set([
+                    ...Object.keys(ledgerExpensesByLedger),
+                    ...Object.keys(ledgerClosuresByLedger)
+                ]));
+
+                for (const lid of activeLedgerIds) {
+                    const expensesForLedger = ledgerExpensesByLedger[lid] || [];
+                    const closuresForLedger = ledgerClosuresByLedger[lid] || [];
+                    const ledgerName = expensesForLedger[0]?.ledgers?.name || closuresForLedger[0]?.ledgers?.name || 'Ledger';
+
+                    const lPdf = await PDFDocument.create();
+                    let lp = lPdf.addPage();
+                    const lFont = await lPdf.embedFont(StandardFonts.Helvetica);
+                    const lBold = await lPdf.embedFont(StandardFonts.HelveticaBold);
+                    const { width: lw, height: lh } = lp.getSize();
+
+                    // Header Logo
+                    try {
+                        const logoImageBytes = Uint8Array.from(atob(SPENDOVA_LOGO_BASE64), c => c.charCodeAt(0));
+                        const logoImage = await lPdf.embedPng(logoImageBytes);
+                        const scaledLogo = logoImage.scaleToFit(220, 50); 
+                        lp.drawImage(logoImage, {
+                            x: (lw - scaledLogo.width) / 2,
+                            y: lh - 80,
+                            width: scaledLogo.width,
+                            height: scaledLogo.height,
+                        });
+                    } catch (e) {
+                        const textWidth = lBold.widthOfTextAtSize("Spendova", 28);
+                        lp.drawText("Spendova", { x: (lw - textWidth) / 2, y: lh - 70, size: 28, font: lBold, color: rgb(0.43, 0.16, 0.85) });
+                    }
                     
-                    ledgerMonthExpenses.forEach((e: any) => {
-                         if (ly < 50) { lp = lPdf.addPage(); ly = lh - 50; }
-                         const summaryStr = `${new Date(e.created_at).toLocaleDateString()} | ${e.ledgers?.name || 'Ledger'} | Rs.${e.amount}`;
-                         lp.drawText(summaryStr, { x: 40, y: ly, size: 10, font: lFont });
-                         ly -= 18;
+                    const lLogoY = lh - 80;
+
+                    lp.drawText(`Ledger Report: ${ledgerName}`, { x: 40, y: lLogoY - 50, size: 18, font: lBold, color: rgb(0.1, 0.1, 0.15) });
+                    lp.drawText(`Prepared for: ${userProfile.full_name || userProfile.username} | ${previousMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}`, { x: 40, y: lLogoY - 70, size: 11, font: lFont, color: rgb(0.4, 0.4, 0.45) });
+
+                    let ly = lLogoY - 120;
+
+                    // Summary & Bar Chart for this specific ledger
+                    const lTotalSpent = expensesForLedger.reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+                    const lCatMap: Record<string, number> = {};
+                    expensesForLedger.forEach((exp: any) => {
+                        const cat = exp.category || 'Uncategorized';
+                        lCatMap[cat] = (lCatMap[cat] || 0) + Number(exp.amount || 0);
+                    });
+
+                    const lPalette = [
+                        rgb(0.2, 0.75, 0.4),
+                        rgb(0.2, 0.5, 0.9),
+                        rgb(0.9, 0.4, 0.2),
+                        rgb(0.8, 0.2, 0.5),
+                        rgb(0.5, 0.2, 0.8),
+                        rgb(0.2, 0.8, 0.8),
+                    ];
+
+                    const lCategoryStats = Object.keys(lCatMap).map((name, index) => ({
+                        name,
+                        amount: lCatMap[name],
+                        color: lPalette[index % lPalette.length]
+                    })).sort((a, b) => b.amount - a.amount);
+
+                    lp.drawText("Ledger Summary", { x: 40, y: ly, size: 14, font: lBold, color: rgb(0.1, 0.1, 0.15) });
+                    lp.drawText(`Total Spent: Rs.${lTotalSpent.toFixed(2)}`, { x: lw - 210, y: ly, size: 14, font: lBold, color: rgb(0.43, 0.16, 0.85) });
+                    
+                    ly -= 25;
+                    const lMaxAmount = lCategoryStats.length > 0 ? Math.max(...lCategoryStats.map(s => s.amount)) : 0;
+                    const lMaxBarWidth = 250;
+
+                    lCategoryStats.forEach(stat => {
+                        if (ly < 80) {
+                            lp = lPdf.addPage();
+                            ly = lh - 50;
+                        }
+                        lp.drawText(stat.name.substring(0, 18), { x: 40, y: ly, size: 10, font: lFont, color: rgb(0.3, 0.3, 0.35) });
+                        if (lMaxAmount > 0) {
+                            const barWidth = (stat.amount / lMaxAmount) * lMaxBarWidth;
+                            lp.drawRectangle({ x: 140, y: ly - 2, width: lMaxBarWidth, height: 12, color: rgb(0.95, 0.95, 0.95) });
+                            lp.drawRectangle({ x: 140, y: ly - 2, width: barWidth, height: 12, color: stat.color });
+                            lp.drawText(`Rs.${stat.amount.toFixed(2)}`, { x: 145 + lMaxBarWidth, y: ly, size: 9, font: lBold, color: stat.color });
+                        }
+                        ly -= 18;
+                    });
+                    
+                    if (closuresForLedger.length > 0) {
+                        ly -= 15;
+                        if (ly < 100) { lp = lPdf.addPage(); ly = lh - 50; }
+                        lp.drawText("Monthly Closures & Savings", { x: 40, y: ly, size: 14, font: lBold, color: rgb(0.2, 0.6, 0.4) });
+                        ly -= 25;
+                        closuresForLedger.forEach((c: any) => {
+                             lp.drawText(`Saved: Rs.${Number(c.saved_amount || 0).toFixed(2)}`, { x: 40, y: ly, size: 10, font: lFont });
+                             ly -= 18;
+                        });
+                    }
+
+                    if (expensesForLedger.length > 0) {
+                        ly -= 20;
+                        if (ly < 100) { lp = lPdf.addPage(); ly = lh - 50; }
+                        
+                        const lCols = ['Date', 'Expense Name', 'Category', 'Paid By', 'Amount', 'Status'];
+                        const lWidths = [70, 120, 90, 90, 75, 55];
+                        const lTableWidth = lWidths.reduce((a, b) => a + b, 0);
+                        const lRowHeight = 24;
+
+                        lp.drawText("Ledger Expenses", { x: 40, y: ly, size: 14, font: lBold, color: rgb(0.3, 0.15, 0.6) });
+                        ly -= 25;
+
+                        // Header Background
+                        lp.drawRectangle({ x: 35, y: ly - 8, width: lTableWidth + 10, height: 28, color: rgb(0.96, 0.95, 0.99) });
+                        lp.drawLine({ start: { x: 35, y: ly - 8 }, end: { x: 35 + lTableWidth + 10, y: ly - 8 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
+                        lp.drawLine({ start: { x: 35, y: ly + 20 }, end: { x: 35 + lTableWidth + 10, y: ly + 20 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
+
+                        let lxStart = 40;
+                        lCols.forEach((col, i) => {
+                            lp.drawText(col, { x: lxStart, y: ly + 2, size: 10, font: lBold, color: rgb(0.3, 0.15, 0.6) });
+                            lxStart += lWidths[i];
+                        });
+                        ly -= lRowHeight;
+
+                        expensesForLedger.forEach((e: any, rowIndex: number) => {
+                            if (ly < 90) {
+                                lp = lPdf.addPage();
+                                ly = lh - 50;
+                                lp.drawRectangle({ x: 35, y: ly - 8, width: lTableWidth + 10, height: 28, color: rgb(0.96, 0.95, 0.99) });
+                                lp.drawLine({ start: { x: 35, y: ly - 8 }, end: { x: 35 + lTableWidth + 10, y: ly - 8 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
+                                lp.drawLine({ start: { x: 35, y: ly + 20 }, end: { x: 35 + lTableWidth + 10, y: ly + 20 }, color: rgb(0.85, 0.8, 0.95), thickness: 1 });
+                                let hx = 40;
+                                lCols.forEach((col, i) => {
+                                    lp.drawText(col, { x: hx, y: ly + 2, size: 10, font: lBold, color: rgb(0.3, 0.15, 0.6) });
+                                    hx += lWidths[i];
+                                });
+                                ly -= lRowHeight;
+                            }
+
+                            if (rowIndex % 2 === 0) {
+                                lp.drawRectangle({ x: 35, y: ly - 8, width: lTableWidth + 10, height: lRowHeight, color: rgb(0.98, 0.98, 0.99) });
+                            }
+                            lp.drawLine({ start: { x: 35, y: ly - 8 }, end: { x: 35 + lTableWidth + 10, y: ly - 8 }, color: rgb(0.92, 0.92, 0.94), thickness: 1 });
+
+                            const rawStatus = e.status ? String(e.status) : 'pending';
+                            const formattedStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
+
+                            const row = [
+                                e.created_at ? new Date(e.created_at).toLocaleDateString() : '',
+                                (e.title || e.category || 'Unknown').substring(0, 20),
+                                (e.category || 'Uncategorized').substring(0, 15),
+                                (lProfileMap[e.user_id] || 'Unknown').substring(0, 15),
+                                `Rs.${Number(e.amount || 0).toFixed(2)}`,
+                                formattedStatus.substring(0, 10)
+                            ];
+
+                            let cx = 40;
+                            row.forEach((cell, i) => {
+                                lp.drawText(cell, { x: cx, y: ly + 2, size: 9, font: lFont, color: rgb(0.2, 0.2, 0.25) });
+                                cx += lWidths[i];
+                            });
+                            ly -= lRowHeight;
+                        });
+                    }
+
+                    const lPages = lPdf.getPages();
+                    for (let i = 0; i < lPages.length; i++) {
+                        const p = lPages[i];
+                        const { width: pWidth } = p.getSize();
+                        p.drawLine({ start: { x: 40, y: 40 }, end: { x: pWidth - 40, y: 40 }, color: rgb(0.9, 0.88, 0.95), thickness: 1 });
+                        p.drawText("Spendova", { x: 40, y: 25, size: 9, font: lBold, color: rgb(0.4, 0.4, 0.45) });
+                        p.drawText("System-generated document", { x: 95, y: 25, size: 8, font: lFont, color: rgb(0.5, 0.5, 0.55) });
+                        p.drawText(`Page ${i + 1} of ${lPages.length}`, { x: pWidth - 90, y: 25, size: 9, font: lFont, color: rgb(0.4, 0.4, 0.45) });
+                    }
+
+                    const lBytes = await lPdf.save();
+                    let lStr = "";
+                    for (let i = 0; i < lBytes.length; i++) lStr += String.fromCharCode(lBytes[i]);
+                    const lBase64 = btoa(lStr);
+
+                    const safeName = ledgerName.replace(/[^a-z0-9]/gi, '_');
+                    ledgerAttachments.push({
+                        filename: `${previousMonth.toLocaleString('default', { month: 'long' })}_${safeName}_LedgerReport.pdf`,
+                        content: lBase64,
+                        encoding: 'base64'
                     });
                 }
-
-                const lBytes = await lPdf.save();
-                let lStr = "";
-                for (let i = 0; i < lBytes.length; i++) lStr += String.fromCharCode(lBytes[i]);
-                ledgerPdfBase64 = btoa(lStr);
             }
 
             // Fetch User Email
@@ -539,11 +712,7 @@ serve(async (req) => {
                                 content: pdfBase64,
                                 encoding: 'base64'
                             },
-                            ...(ledgerPdfBase64 ? [{
-                                filename: `${previousMonth.toLocaleString('default', { month: 'long' })}_LedgerReport.pdf`,
-                                content: ledgerPdfBase64,
-                                encoding: 'base64'
-                            }] : [])
+                            ...ledgerAttachments
                         ]
                     });
                 }
