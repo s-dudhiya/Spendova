@@ -3222,8 +3222,11 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
         if (pushPermission === "denied") {
           if (Capacitor.isNativePlatform()) {
             try {
-              const { NativeSettings, Option } = await import("capacitor-native-settings");
-              await NativeSettings.open({ option: Option.Notification });
+              const { NativeSettings, AndroidSettings, IOSSettings } = await import("capacitor-native-settings");
+              await NativeSettings.open({
+                optionAndroid: AndroidSettings.AppNotification,
+                optionIOS: IOSSettings.App,
+              });
               return;
             } catch (e) {
               console.warn("Failed to open native settings automatically", e);
@@ -3244,8 +3247,11 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
             setPushEnabled(false);
             if (Capacitor.isNativePlatform()) {
               try {
-                const { NativeSettings, Option } = await import("capacitor-native-settings");
-                await NativeSettings.open({ option: Option.Notification });
+                const { NativeSettings, AndroidSettings, IOSSettings } = await import("capacitor-native-settings");
+                await NativeSettings.open({
+                  optionAndroid: AndroidSettings.AppNotification,
+                  optionIOS: IOSSettings.App,
+                });
                 return;
               } catch (e) {
                 console.warn(e);
@@ -3339,8 +3345,11 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
                     variant="secondary"
                     onClick={async () => {
                       try {
-                        const { NativeSettings, Option } = await import("capacitor-native-settings");
-                        await NativeSettings.open({ option: Option.Notification });
+                        const { NativeSettings, AndroidSettings, IOSSettings } = await import("capacitor-native-settings");
+                        await NativeSettings.open({
+                          optionAndroid: AndroidSettings.AppNotification,
+                          optionIOS: IOSSettings.App,
+                        });
                       } catch (e) {
                         console.error("Failed to open native settings", e);
                       }
