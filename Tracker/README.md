@@ -74,21 +74,23 @@ A separate feature for tracking shared budgets (like a household ledger).
 
 ### 4. Push Notifications & Alerts
 A unified system for sending native push notifications to Web and Android.
-- **Frontend Files**: `src/lib/notifications.ts`, `public/firebase-messaging-sw.js`
+- **Frontend Files**: `src/lib/notifications.ts`, `public/firebase-messaging-sw.js`, `src/pages/Index.tsx` (contains Profile view manual Push Notification toggle button).
 - **Database Tables**:
-  - `user_push_tokens`: Stores the secret Firebase/Capacitor device tokens for each user.
-  - `notifications`: Stores the actual in-app notifications (powers the bell icon).
+  - `user_push_tokens`: Stores secret Firebase/Capacitor device tokens for each user.
+  - `notifications`: Stores in-app notifications (powers the bell icon).
 - **Edge Functions**:
-  - `send-push-notification`: **CRITICAL FUNCTION**. This function is automatically triggered by a Supabase **Database Webhook** every time a new row is inserted into the `notifications` table. It grabs the user's token from `user_push_tokens` and sends the push via Firebase.
-  - `send-ledger-notification`: Triggered when an expense is added or paid in a Ledger to notify the Budget Admin or the submitting user.
-  - *(Note: `send-shared-notification` and `send-expense-notification` exist but have had their email logic disabled to prevent spam. They only exist to insert rows into the `notifications` table).*
+  - `send-push-notification`: **CRITICAL FUNCTION**. Triggered automatically by a Supabase Database Webhook whenever a new row is inserted into `notifications`. It grabs the user's token from `user_push_tokens` and sends the push notification via Firebase.
+  - `send-ledger-notification`: Triggered when an expense is added or paid in a Ledger:
+    - **Expense Added**: Notifies **all members** of the ledger (excluding the payer).
+    - **Marked Paid**: Notifies **only the payer**.
+    - **Reminders**: Sent only to the **Budget Admin**.
 
 ### 5. Admin & Background Tasks
 - **Frontend Files**: `src/pages/Admin.tsx`
 - **Database Tables**: `site_settings`, `feedback_tickets`
 - **Edge Functions / Cron Jobs**: 
   - `generate-monthly-reports` (Triggered automatically by `pg_cron` in the database).
-  - `cron-ledger-reminders` (Triggered daily at 10 PM IST by `pg_cron` to remind Budget Admins of unpaid ledger expenses).
+  - `cron-ledger-reminders`: Triggered daily at **10:00 PM IST** (`30 16 * * *` UTC) via `pg_cron` (Migration `20260806100000_fix_ledger_reminders_cron.sql`) using hardcoded project credentials to notify Budget Admins of pending ledger expenses.
   - `feedback-ticket-email`, `send-admin-mail`, `toggle-maintenance`.
 
 ---
