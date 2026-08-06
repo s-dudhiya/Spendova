@@ -12,7 +12,7 @@ WHERE EXISTS (
 SELECT
   cron.schedule(
     'cron-ledger-reminders',
-    '58 4 * * *',
+    '38 4 * * *',
     $$
     SELECT
       net.http_post(

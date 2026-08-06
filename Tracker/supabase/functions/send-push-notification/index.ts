@@ -77,16 +77,21 @@ serve(async (req) => {
 
     // 2. Send Firebase Push Notification
     const payload = {
+      notification: {
+        title: String(notificationRow.title),
+        body: String(notificationRow.message),
+      },
       data: {
-        title: notificationRow.title,
-        body: notificationRow.message,
-        notificationId: notificationRow.id,
-        path: '/dashboard', // Default path
+        notificationId: String(notificationRow.id),
+        path: '/dashboard',
+      },
+      android: {
+        priority: 'high',
       },
       tokens: tokens,
     };
 
-    console.log("Sending FCM data payload...", payload.data);
+    console.log("Sending FCM payload...", payload.notification);
     const response = await getMessaging().sendEachForMulticast(payload);
     console.log(`FCM success count: ${response.successCount}, failure count: ${response.failureCount}`);
 
