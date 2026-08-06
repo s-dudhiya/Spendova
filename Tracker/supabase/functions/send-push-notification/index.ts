@@ -78,15 +78,12 @@ serve(async (req) => {
     // 2. Send Firebase Push Notification
     const payload = {
       notification: {
-        title: String(notificationRow.title),
-        body: String(notificationRow.message),
+        title: notificationRow.title,
+        body: notificationRow.message,
       },
       data: {
-        notificationId: String(notificationRow.id),
-        path: '/dashboard',
-      },
-      android: {
-        priority: 'high',
+        notificationId: notificationRow.id,
+        path: '/dashboard', // Default path, can be customized based on entity_type
       },
       tokens: tokens,
     };
