@@ -10,7 +10,6 @@ export const LEGACY_THEME_STORAGE_KEY = 'theme';
 export function applyThemeColor(theme: Theme) {
   const isDark = theme === 'dark';
   const hexColor = isDark ? '#0D0B19' : '#C2BDDA';
-  const hslColor = isDark ? 'hsl(248, 40%, 7%)' : 'hsl(250, 28%, 80%)';
   const root = document.documentElement;
 
   if (isDark) {
@@ -19,25 +18,32 @@ export function applyThemeColor(theme: Theme) {
     root.classList.remove('dark');
   }
 
-  root.style.backgroundColor = hslColor;
+  // Remove inline background style overrides so CSS variables drive page background cleanly
+  root.style.removeProperty('background-color');
   if (document.body) {
-    document.body.style.backgroundColor = hslColor;
+    document.body.style.removeProperty('background-color');
   }
 
-  const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-  if (metaThemeColor) {
-    metaThemeColor.setAttribute('content', hexColor);
+  // Force Chrome / WebKit browsers to update top status bar tint by replacing meta theme-color tag in <head>
+  try {
+    const existingMetas = document.querySelectorAll('meta[name="theme-color"]');
+    existingMetas.forEach(meta => meta.remove());
+
+    const newMeta = document.createElement('meta');
+    newMeta.name = 'theme-color';
+    newMeta.content = hexColor;
+    document.head.appendChild(newMeta);
+  } catch (e) {
+    // Ignore DOM errors if any
   }
 
-  // Dynamically update mobile app native status bar text color/style and background color
+  // Dynamically update mobile app native status bar in Capacitor (Android APK & iOS IPA builds)
   try {
     if (Capacitor.isPluginAvailable('StatusBar')) {
       void StatusBar.setStyle({
         style: isDark ? Style.Dark : Style.Light
       });
-      
-      // Explicitly set the background color on Android to eliminate divider/border lines
-      if (Capacitor.getPlatform() === 'android') {
+      if (Capacitor.isNativePlatform()) {
         void StatusBar.setBackgroundColor({ color: hexColor });
       }
     }
