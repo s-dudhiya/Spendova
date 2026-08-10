@@ -21,10 +21,13 @@ export function useTheme() {
 
   useEffect(() => {
     const root = document.documentElement;
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (theme === 'dark') {
       root.classList.add('dark');
+      if (metaThemeColor) metaThemeColor.setAttribute('content', '#0B0A12');
     } else {
       root.classList.remove('dark');
+      if (metaThemeColor) metaThemeColor.setAttribute('content', '#C2BEDA');
     }
     safeStorage.setItem(THEME_STORAGE_KEY, theme);
     safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);

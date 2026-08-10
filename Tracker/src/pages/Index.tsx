@@ -5069,7 +5069,12 @@ const Index = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    const isDark = theme === "dark";
+    document.documentElement.classList.toggle("dark", isDark);
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute("content", isDark ? "#0B0A12" : "#C2BEDA");
+    }
     safeStorage.setItem(THEME_STORAGE_KEY, theme);
     safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
   }, [theme]);
