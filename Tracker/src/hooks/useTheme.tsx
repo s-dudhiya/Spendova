@@ -7,7 +7,7 @@ export const LEGACY_THEME_STORAGE_KEY = 'theme';
 
 export function applyThemeColor(theme: Theme) {
   const isDark = theme === 'dark';
-  const hexColor = isDark ? '#0B0A12' : '#C2BEDA';
+  const hexColor = isDark ? '#0D0B19' : '#C2BDDA';
   const hslColor = isDark ? 'hsl(248, 40%, 7%)' : 'hsl(250, 28%, 80%)';
   const root = document.documentElement;
 

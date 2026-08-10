@@ -130,6 +130,7 @@ All colors MUST be HSL.
   html,
   body {
     touch-action: manipulation;
+    background-color: hsl(var(--background));
   }
 
   body {
