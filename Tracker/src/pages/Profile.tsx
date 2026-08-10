@@ -132,7 +132,7 @@ export default function Profile() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground pb-28 md:pb-8 relative overflow-x-hidden pt-[env(safe-area-inset-top)]">
+    <div className="min-h-screen bg-background text-foreground pb-28 md:pb-8 relative overflow-x-hidden pt-[env(safe-area-inset-top)] border-none border-t-0 outline-none">
       {/* Background ambient shape */}
       <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-[100px] pointer-events-none" />
 

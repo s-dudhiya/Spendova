@@ -5124,7 +5124,7 @@ const Index = () => {
   const showingDetailPage = Boolean(friendDetail || groupDetail || expenseDetail || settlementDetail);
 
   return (
-    <div className="min-h-screen bg-background text-foreground pt-[env(safe-area-inset-top)]">
+    <div className="min-h-screen bg-background text-foreground pt-[env(safe-area-inset-top)] border-none border-t-0 outline-none">
       <div className="mx-auto min-h-screen max-w-3xl px-4 pb-36 sm:px-6">
         {!showingDetailPage && <AppHeader title={title === "Home" ? "Overview" : title} theme={theme} unreadCount={unreadNotifications} onThemeToggle={toggleTheme} onProfile={() => navigate("/profile")} openModal={openModal} />}
         {friendDetailId && !friendDetail && <Navigate to="/split" replace />}

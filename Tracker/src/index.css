@@ -125,12 +125,17 @@ All colors MUST be HSL.
     min-height: 100%;
     overscroll-behavior: none;
     -webkit-text-size-adjust: 100%;
+    border: none !important;
+    border-top: none !important;
+    outline: none !important;
   }
 
   html,
   body {
     touch-action: manipulation;
     background-color: hsl(var(--background));
+    margin: 0;
+    padding: 0;
   }
 
   body {
