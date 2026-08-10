@@ -3163,25 +3163,35 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
     }
   };
 
-  const [pushPermission, setPushPermission] = useState<"granted" | "denied" | "default" | "unsupported">(() => {
-    if (typeof window !== "undefined" && "Notification" in window) {
-      return Notification.permission;
-    }
-    return "unsupported";
-  });
+  const [pushPermission, setPushPermission] = useState<"granted" | "denied" | "default" | "unsupported">("unsupported");
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
     const checkStatus = async () => {
-      if (typeof window !== "undefined" && "Notification" in window) {
-        setPushPermission(Notification.permission);
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const { PushNotifications } = await import("@capacitor/push-notifications");
+          const perm = await PushNotifications.checkPermissions();
+          if (active) {
+            if (perm.receive === "granted") setPushPermission("granted");
+            else if (perm.receive === "denied") setPushPermission("denied");
+            else setPushPermission("default");
+          }
+        } catch (e) {
+          if (active) setPushPermission("unsupported");
+        }
+      } else if (typeof window !== "undefined" && "Notification" in window) {
+        if (active) setPushPermission(Notification.permission as any);
+      } else {
+        if (active) setPushPermission("unsupported");
       }
+      
       if (userId) {
         const { checkPushEnabled } = await import("@/lib/notifications");
         const isEnabled = await checkPushEnabled(userId);
-        if (active) setPushEnabled(isEnabled && (typeof window === "undefined" || !("Notification" in window) || Notification.permission === "granted"));
+        if (active) setPushEnabled(isEnabled);
       }
     };
     checkStatus();
@@ -3226,15 +3236,17 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
         }
 
         await initializeNotifications(userId, true);
-        if (typeof window !== "undefined" && "Notification" in window) {
-          const res = Notification.permission;
-          setPushPermission(res);
-          if (res === "granted") {
-            setPushEnabled(true);
-            toast({ title: "Notifications Enabled", description: "You will now receive instant push alerts!" });
-          } else if (res === "denied") {
-            setPushEnabled(false);
-            if (Capacitor.isNativePlatform()) {
+        
+        if (Capacitor.isNativePlatform()) {
+          try {
+            const { PushNotifications } = await import("@capacitor/push-notifications");
+            const perm = await PushNotifications.checkPermissions();
+            setPushPermission(perm.receive as any);
+            if (perm.receive === "granted") {
+              setPushEnabled(true);
+              toast({ title: "Notifications Enabled", description: "You will now receive instant push alerts!" });
+            } else if (perm.receive === "denied") {
+              setPushEnabled(false);
               try {
                 const { NativeSettings, AndroidSettings, IOSSettings } = await import("capacitor-native-settings");
                 await NativeSettings.open({
@@ -3245,7 +3257,20 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
               } catch (e) {
                 console.warn(e);
               }
+              setShowUnblockGuide(true);
             }
+          } catch (e) {
+            console.error("Native push error", e);
+            setPushEnabled(true); // Fallback to optimistic update if check fails but initialize succeeded
+          }
+        } else if (typeof window !== "undefined" && "Notification" in window) {
+          const res = Notification.permission;
+          setPushPermission(res);
+          if (res === "granted") {
+            setPushEnabled(true);
+            toast({ title: "Notifications Enabled", description: "You will now receive instant push alerts!" });
+          } else if (res === "denied") {
+            setPushEnabled(false);
             setShowUnblockGuide(true);
           }
         } else {
@@ -3353,7 +3378,30 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
                 </Button>
                 <Button
                   onClick={async () => {
-                    if (typeof window !== "undefined" && "Notification" in window) {
+                    if (Capacitor.isNativePlatform()) {
+                      try {
+                        const { PushNotifications } = await import("@capacitor/push-notifications");
+                        const perm = await PushNotifications.checkPermissions();
+                        setPushPermission(perm.receive as any);
+                        if (perm.receive === "granted") {
+                          setShowUnblockGuide(false);
+                          if (userId) {
+                            const { initializeNotifications } = await import("@/lib/notifications");
+                            await initializeNotifications(userId, true);
+                            setPushEnabled(true);
+                          }
+                          toast({ title: "Notifications Active!", description: "Push notifications are now enabled." });
+                        } else {
+                          toast({
+                            title: "Still Blocked",
+                            description: "Please allow notifications in your device settings.",
+                            variant: "destructive",
+                          });
+                        }
+                      } catch (e) {
+                        console.error(e);
+                      }
+                    } else if (typeof window !== "undefined" && "Notification" in window) {
                       const current = Notification.permission;
                       setPushPermission(current);
                       if (current === "granted") {
