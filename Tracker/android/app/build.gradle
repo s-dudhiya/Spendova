@@ -23,6 +23,12 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def version = variant.versionName
+            outputFileName = "Spendova-v${version}.apk"
+        }
+    }
 }
 
 repositories {
