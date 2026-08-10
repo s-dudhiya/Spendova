@@ -887,39 +887,39 @@ function useSpendovaData(userId?: string) {
             payer_profile:profiles!expenses_paid_by_fkey(user_id, full_name, username),
             expense_splits(id, user_id, amount_owed, amount_paid, has_paid, created_at, profiles!expense_splits_user_id_fkey(user_id, full_name, username))
           `)
-          .order("created_at", { ascending: false }), 8000, "expenses fetch"),
+          .order("created_at", { ascending: false }), 15000, "expenses fetch"),
         withTimeout(supabase
           .from("connections")
           .select("id, requester_id, receiver_id, status, created_at, profiles!connections_receiver_id_fkey(user_id, full_name, username)")
-          .eq("requester_id", userId), 8000, "sent connections fetch"),
+          .eq("requester_id", userId), 15000, "sent connections fetch"),
         withTimeout(supabase
           .from("connections")
           .select("id, requester_id, receiver_id, status, created_at, profiles!connections_requester_id_fkey(user_id, full_name, username)")
-          .eq("receiver_id", userId), 8000, "received connections fetch"),
+          .eq("receiver_id", userId), 15000, "received connections fetch"),
         withTimeout(supabase
           .from("groups")
           .select("id, name, emoji, description, created_by, created_at, group_members(user_id, joined_at, profiles!group_members_user_id_fkey(user_id, full_name, username))")
-          .order("created_at", { ascending: false }), 8000, "groups fetch"),
+          .order("created_at", { ascending: false }), 15000, "groups fetch"),
         withTimeout(supabase
           .from("split_settlements" as never)
           .select("id, group_id, expense_id, from_user_id, to_user_id, amount, note, created_at, payment_proof_path, payment_proof_uploaded_at, payment_proof_deleted_at, from_profile:profiles!split_settlements_from_user_id_fkey(user_id, full_name, username), to_profile:profiles!split_settlements_to_user_id_fkey(user_id, full_name, username)")
-          .order("created_at", { ascending: false }), 8000, "settlements fetch"),
+          .order("created_at", { ascending: false }), 15000, "settlements fetch"),
         withTimeout(supabase
           .from("notifications" as never)
           .select("id, user_id, actor_id, type, title, message, entity_type, entity_id, is_read, created_at")
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
-          .limit(10), 8000, "notifications fetch"),
+          .limit(10), 15000, "notifications fetch"),
         withTimeout(supabase
           .from("expense_categories" as never)
           .select("id, name, type, user_id, group_id, created_by, is_deleted, created_at, updated_at")
           .eq("is_deleted", false)
-          .order("name", { ascending: true }), 8000, "expense categories fetch"),
+          .order("name", { ascending: true }), 15000, "expense categories fetch"),
         withTimeout(supabase
           .from("ledgers" as never)
           .select("id, name, description, ledger_type, budget_type, total_savings, owner_id, budget_admin_id, icon, is_archived, created_at, updated_at, ledger_members(id, user_id, role, joined_at, profiles!ledger_members_user_id_fkey(user_id, full_name, username))")
           .eq("is_archived" as never, false as never)
-          .order("created_at", { ascending: false }), 8000, "ledgers fetch"),
+          .order("created_at", { ascending: false }), 15000, "ledgers fetch"),
       ]);
 
       if (expensesRes.error) console.error("Dashboard expenses fetch failed", expensesRes.error);
