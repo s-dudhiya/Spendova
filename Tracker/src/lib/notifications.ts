@@ -145,7 +145,12 @@ async function initializeCapacitorNotifications(userId: string) {
       return;
     }
 
-    await PushNotifications.register();
+    // Safely attempt Firebase registration without crashing if google-services.json is missing
+    try {
+      await PushNotifications.register();
+    } catch (regErr) {
+      console.warn("Firebase PushNotifications.register skipped (missing google-services.json):", regErr);
+    }
 
     PushNotifications.addListener('registration', async (token) => {
       console.log("Native Push registration success, token: " + token.value);
