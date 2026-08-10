@@ -24,15 +24,19 @@ export function applyThemeColor(theme: Theme) {
     document.body.style.removeProperty('background-color');
   }
 
-  // Force Chrome / WebKit browsers to update top status bar tint by replacing meta theme-color tag in <head>
+  // Update meta theme-color content directly on existing elements without node deletion
   try {
-    const existingMetas = document.querySelectorAll('meta[name="theme-color"]');
-    existingMetas.forEach(meta => meta.remove());
-
-    const newMeta = document.createElement('meta');
-    newMeta.name = 'theme-color';
-    newMeta.content = hexColor;
-    document.head.appendChild(newMeta);
+    const metaThemeColors = document.querySelectorAll('meta[name="theme-color"]');
+    if (metaThemeColors.length > 0) {
+      metaThemeColors.forEach(meta => {
+        meta.setAttribute('content', hexColor);
+      });
+    } else {
+      const meta = document.createElement('meta');
+      meta.name = 'theme-color';
+      meta.content = hexColor;
+      document.head.appendChild(meta);
+    }
   } catch (e) {
     // Ignore DOM errors if any
   }
