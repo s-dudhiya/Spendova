@@ -84,7 +84,7 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
     document.documentElement.classList.toggle("dark", isDark);
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
-      metaThemeColor.setAttribute("content", isDark ? "#0B0A12" : "#C2BEDA");
+      metaThemeColor.setAttribute("content", isDark ? "hsl(248, 40%, 7%)" : "hsl(250, 28%, 80%)");
     }
   }, [theme]);
 

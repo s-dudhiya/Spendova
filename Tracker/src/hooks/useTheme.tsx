@@ -24,10 +24,10 @@ export function useTheme() {
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (theme === 'dark') {
       root.classList.add('dark');
-      if (metaThemeColor) metaThemeColor.setAttribute('content', '#0B0A12');
+      if (metaThemeColor) metaThemeColor.setAttribute('content', 'hsl(248, 40%, 7%)');
     } else {
       root.classList.remove('dark');
-      if (metaThemeColor) metaThemeColor.setAttribute('content', '#C2BEDA');
+      if (metaThemeColor) metaThemeColor.setAttribute('content', 'hsl(250, 28%, 80%)');
     }
     safeStorage.setItem(THEME_STORAGE_KEY, theme);
     safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
