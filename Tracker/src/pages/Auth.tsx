@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-error";
-import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY, applyThemeColor } from "@/hooks/useTheme";
+import { useTheme } from "@/hooks/useTheme";
 import { safeStorage } from "@/lib/startup-safety";
 
 type AuthMode = "login" | "register" | "forgot" | "reset";
@@ -19,18 +19,7 @@ const SIGNUP_PASSWORD_KEY = "spendova_pending_signup_password";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 6;
 
-const getInitialTheme = (): Theme => {
-  if (typeof window === "undefined") return "light";
-  const saved = safeStorage.getItem(THEME_STORAGE_KEY);
-  if (saved === "light" || saved === "dark") return saved;
-  const legacy = safeStorage.getItem(LEGACY_THEME_STORAGE_KEY);
-  if (legacy === "light" || legacy === "dark") {
-    safeStorage.setItem(THEME_STORAGE_KEY, legacy);
-    safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
-    return legacy;
-  }
-  return "light";
-};
+
 
 const PasswordField = ({ label, placeholder, value, onChange }: { label: string; placeholder: string; value: string; onChange: (value: string) => void }) => {
   const [visible, setVisible] = useState(false);
@@ -60,7 +49,7 @@ const TextField = ({ label, placeholder, value, onChange, type = "text", icon: I
 );
 
 const Auth = ({ mode }: { mode: AuthMode }) => {
-  const [theme] = useState<Theme>(getInitialTheme);
+  const { theme } = useTheme();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -78,10 +67,6 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
   const isLogin = mode === "login" && !isReset;
   const isRegister = mode === "register";
   const isForgot = mode === "forgot";
-
-  useEffect(() => {
-    applyThemeColor(theme);
-  }, [theme]);
 
   useEffect(() => {
     if (!isRegister || username.length === 0) {

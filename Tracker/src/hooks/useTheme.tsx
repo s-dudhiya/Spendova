@@ -1,11 +1,19 @@
-import { useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { safeStorage } from '@/lib/startup-safety';
 import { Capacitor } from '@capacitor/core';
 import { StatusBar, Style } from '@capacitor/status-bar';
 
-type Theme = 'light' | 'dark';
+export type Theme = 'light' | 'dark';
 export const THEME_STORAGE_KEY = 'spendova-theme';
 export const LEGACY_THEME_STORAGE_KEY = 'theme';
+
+interface ThemeContextType {
+  theme: Theme;
+  toggleTheme: () => void;
+  setTheme: (theme: Theme) => void;
+}
+
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function applyThemeColor(theme: Theme) {
   const isDark = theme === 'dark';
@@ -56,19 +64,21 @@ export function applyThemeColor(theme: Theme) {
   }
 }
 
-export function useTheme() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = safeStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
-    if (saved === 'light' || saved === 'dark') return saved;
-    const legacy = safeStorage.getItem(LEGACY_THEME_STORAGE_KEY) as Theme | null;
-    if (legacy === 'light' || legacy === 'dark') {
-      safeStorage.setItem(THEME_STORAGE_KEY, legacy);
-      safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
-      return legacy;
-    }
+export function getInitialTheme(): Theme {
+  const saved = safeStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
+  if (saved === 'light' || saved === 'dark') return saved;
+  const legacy = safeStorage.getItem(LEGACY_THEME_STORAGE_KEY) as Theme | null;
+  if (legacy === 'light' || legacy === 'dark') {
+    safeStorage.setItem(THEME_STORAGE_KEY, legacy);
+    safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+    return legacy;
+  }
 
-    return 'light';
-  });
+  return 'light';
+}
+
+export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
+  const [theme, setThemeState] = useState<Theme>(getInitialTheme);
 
   useEffect(() => {
     applyThemeColor(theme);
@@ -76,7 +86,31 @@ export function useTheme() {
     safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
   }, [theme]);
 
-  const toggleTheme = () => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  const toggleTheme = () => {
+    setThemeState(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
 
-  return { theme, toggleTheme };
+  const setTheme = (newTheme: Theme) => {
+    setThemeState(newTheme);
+  };
+
+  return (
+    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+};
+
+export function useTheme() {
+  const context = useContext(ThemeContext);
+  if (!context) {
+    const [theme, setThemeState] = useState<Theme>(getInitialTheme);
+    useEffect(() => {
+      applyThemeColor(theme);
+    }, [theme]);
+    const toggleTheme = () => setThemeState(prev => (prev === 'dark' ? 'light' : 'dark'));
+    const setTheme = (newTheme: Theme) => setThemeState(newTheme);
+    return { theme, toggleTheme, setTheme };
+  }
+  return context;
 }

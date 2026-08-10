@@ -76,7 +76,7 @@ import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY, applyThemeColor } from "@/hooks/useTheme";
+import { useTheme } from "@/hooks/useTheme";
 import { canUsePlatformBiometrics, disableBiometricLock, enableBiometricLock, isBiometricLockEnabled } from "@/lib/biometric-lock";
 import { getDeviceId, listDeviceSessions, type DeviceSession } from "@/lib/device-session";
 import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-error";
@@ -330,18 +330,7 @@ const emojiMap: Record<string, string> = {
   Cart: "🛒",
 };
 
-const getInitialTheme = (): Theme => {
-  if (typeof window === "undefined") return "light";
-  const saved = safeStorage.getItem(THEME_STORAGE_KEY);
-  if (saved === "light" || saved === "dark") return saved;
-  const legacy = safeStorage.getItem(LEGACY_THEME_STORAGE_KEY);
-  if (legacy === "light" || legacy === "dark") {
-    safeStorage.setItem(THEME_STORAGE_KEY, legacy);
-    safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
-    return legacy;
-  }
-  return "light";
-};
+
 
 const money = (amount: number) => {
   const value = Number.isFinite(amount) ? amount : 0;
@@ -5063,16 +5052,10 @@ const Index = () => {
   const settlementDetailId = location.pathname.startsWith("/split/settlement/") ? params.id : undefined;
   const ledgerDetailId = isLedgerRoute && location.pathname !== "/ledger" ? params.id : undefined;
   const [activeTab, setActiveTabState] = useState<TabKey>(isSplitRoute ? "split" : isLedgerRoute ? "ledger" : "home");
-  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const { theme, toggleTheme } = useTheme();
   const [modal, setModal] = useState<ModalState>({ type: null });
   const { data, loading, refresh } = useSpendovaData(user?.id);
   const { toast } = useToast();
-
-  useEffect(() => {
-    applyThemeColor(theme);
-    safeStorage.setItem(THEME_STORAGE_KEY, theme);
-    safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
-  }, [theme]);
 
   if (!authLoading && !user) return <Navigate to="/login" replace />;
 
@@ -5091,7 +5074,6 @@ const Index = () => {
 
   const activeContentTab: ContentKey = isProfileRoute ? "profile" : isSplitRoute ? "split" : isLedgerRoute ? "ledger" : activeTab;
   const title = friendDetailId ? "Friend" : groupDetailId ? "Group" : expenseDetailId ? "Expense" : settlementDetailId ? "Settlement" : isProfileRoute ? "Profile" : tabs.find((tab) => tab.key === activeContentTab)?.label ?? "Home";
-  const toggleTheme = () => setTheme((current) => (current === "dark" ? "light" : "dark"));
   const openModal = (type: ModalType, item?: string) => setModal({ type, item });
   const summary = user ? getSummary(data.expenses, user.id, data.settlements) : getSummary([], "");
   const unreadNotifications = data.notifications.filter((item) => !item.is_read).length;
