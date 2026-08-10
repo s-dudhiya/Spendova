@@ -17,5 +17,6 @@
   ],
   "theme_color": "#C2BDDA",
   "background_color": "#C2BDDA",
-  "display": "standalone"
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"]
 }
