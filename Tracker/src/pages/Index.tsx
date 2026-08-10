@@ -845,7 +845,7 @@ const Textarea = ({ label, placeholder, value, onChange }: { label: string; plac
 
 
 const AppHeader = ({ title, theme, unreadCount, onThemeToggle, onProfile, openModal }: { title: string; theme: Theme; unreadCount: number; onThemeToggle: () => void; onProfile: () => void; openModal: (type: ModalType, item?: string) => void }) => (
-  <header className="sticky top-[-1px] z-20 -mx-4 mb-5 border-b border-border/70 bg-background px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 sm:-mx-6 sm:px-6">
+  <header className="mb-5 border-b border-border/70 bg-background py-3">
     <div className="mx-auto flex max-w-3xl items-center justify-between">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Spendova</p>
@@ -5142,7 +5142,7 @@ const Index = () => {
   const showingDetailPage = Boolean(friendDetail || groupDetail || expenseDetail || settlementDetail);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground pt-[env(safe-area-inset-top)]">
       <div className="mx-auto min-h-screen max-w-3xl px-4 pb-36 sm:px-6">
         {!showingDetailPage && <AppHeader title={title === "Home" ? "Overview" : title} theme={theme} unreadCount={unreadNotifications} onThemeToggle={toggleTheme} onProfile={() => navigate("/profile")} openModal={openModal} />}
         {friendDetailId && !friendDetail && <Navigate to="/split" replace />}

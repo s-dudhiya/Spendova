@@ -132,12 +132,12 @@ export default function Profile() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground pb-28 md:pb-8 relative overflow-x-hidden">
+    <div className="min-h-screen bg-background text-foreground pb-28 md:pb-8 relative overflow-x-hidden pt-[env(safe-area-inset-top)]">
       {/* Background ambient shape */}
       <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-[100px] pointer-events-none" />
 
       {/* App Header */}
-      <header className="px-6 pt-[max(2rem,env(safe-area-inset-top))] pb-4 flex justify-between items-center sticky top-[-1px] bg-background border-b border-border/70 z-50">
+      <header className="px-6 pt-6 pb-4 flex justify-between items-center bg-background border-b border-border/70">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" className="rounded-full w-10 h-10 hover:bg-muted -ml-2 shrink-0" onClick={() => navigate('/dashboard')}>
             <ArrowLeft className="h-5 w-5" />
