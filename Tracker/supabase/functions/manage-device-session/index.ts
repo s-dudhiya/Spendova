@@ -93,6 +93,13 @@ serve(async (req) => {
         .neq('device_id', deviceId)
       if (deleteOtherDevicesError) throw deleteOtherDevicesError
 
+      // Also clear out old push tokens so older devices don't receive notifications
+      // The current device will automatically register its new token immediately after login.
+      await supabaseAdmin
+        .from('user_push_tokens')
+        .delete()
+        .eq('user_id', userId)
+
       const { data, error } = await supabaseAdmin
         .from('auth_device_sessions')
         .upsert({
