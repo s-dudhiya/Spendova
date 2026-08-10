@@ -128,29 +128,38 @@ async function initializeWebNotifications(userId: string) {
 }
 
 async function initializeCapacitorNotifications(userId: string) {
-  let permStatus = await PushNotifications.checkPermissions();
+  try {
+    if (!Capacitor.isPluginAvailable('PushNotifications')) {
+      console.warn("Capacitor PushNotifications plugin is not available on this build.");
+      return;
+    }
 
-  if (permStatus.receive === 'prompt') {
-    permStatus = await PushNotifications.requestPermissions();
+    let permStatus = await PushNotifications.checkPermissions();
+
+    if (permStatus.receive === 'prompt') {
+      permStatus = await PushNotifications.requestPermissions();
+    }
+
+    if (permStatus.receive !== 'granted') {
+      console.log("User denied native push notification permissions");
+      return;
+    }
+
+    await PushNotifications.register();
+
+    PushNotifications.addListener('registration', async (token) => {
+      console.log("Native Push registration success, token: " + token.value);
+      await saveTokenToSupabase(userId, token.value, Capacitor.getPlatform());
+    });
+
+    PushNotifications.addListener('registrationError', (error: any) => {
+      console.error("Error on native push registration: ", JSON.stringify(error));
+    });
+
+    PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      console.log("Native Push received: ", notification);
+    });
+  } catch (err) {
+    console.warn("Native push notifications initialization skipped or failed gracefully:", err);
   }
-
-  if (permStatus.receive !== 'granted') {
-    console.log("User denied native push notification permissions");
-    return;
-  }
-
-  await PushNotifications.register();
-
-  PushNotifications.addListener('registration', async (token) => {
-    console.log("Native Push registration success, token: " + token.value);
-    await saveTokenToSupabase(userId, token.value, Capacitor.getPlatform());
-  });
-
-  PushNotifications.addListener('registrationError', (error: any) => {
-    console.error("Error on native push registration: ", JSON.stringify(error));
-  });
-
-  PushNotifications.addListener('pushNotificationReceived', (notification) => {
-    console.log("Native Push received: ", notification);
-  });
 }
