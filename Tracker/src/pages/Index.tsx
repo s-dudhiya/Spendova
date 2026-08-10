@@ -76,7 +76,7 @@ import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from "@/hooks/useTheme";
+import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY, applyThemeColor } from "@/hooks/useTheme";
 import { canUsePlatformBiometrics, disableBiometricLock, enableBiometricLock, isBiometricLockEnabled } from "@/lib/biometric-lock";
 import { getDeviceId, listDeviceSessions, type DeviceSession } from "@/lib/device-session";
 import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-error";
@@ -5069,12 +5069,7 @@ const Index = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    const isDark = theme === "dark";
-    document.documentElement.classList.toggle("dark", isDark);
-    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-    if (metaThemeColor) {
-      metaThemeColor.setAttribute("content", isDark ? "hsl(248, 40%, 7%)" : "hsl(250, 28%, 80%)");
-    }
+    applyThemeColor(theme);
     safeStorage.setItem(THEME_STORAGE_KEY, theme);
     safeStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
   }, [theme]);
