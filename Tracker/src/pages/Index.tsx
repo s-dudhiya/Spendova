@@ -5193,7 +5193,7 @@ const Index = () => {
       <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-3xl px-4 pb-4">
         <div className="flex items-center justify-center">
           {/* Left Pill */}
-          <div className="flex flex-1 items-center justify-around rounded-[1.4rem] border border-border/80 bg-card p-1 shadow-panel backdrop-blur">
+          <div className="flex flex-1 items-center justify-around rounded-[1.4rem] border border-border/80 bg-card/95 p-1 shadow-panel">
             {tabs.slice(0, 2).map((tab) => {
               const Icon = tab.icon;
               const active = activeContentTab === tab.key;
@@ -5220,7 +5220,7 @@ const Index = () => {
           </button>
           
           {/* Right Pill */}
-          <div className="flex flex-1 items-center justify-around rounded-[1.4rem] border border-border/80 bg-card p-1 shadow-panel backdrop-blur">
+          <div className="flex flex-1 items-center justify-around rounded-[1.4rem] border border-border/80 bg-card/95 p-1 shadow-panel">
             {tabs.slice(2).map((tab) => {
               const Icon = tab.icon;
               const active = activeContentTab === tab.key;

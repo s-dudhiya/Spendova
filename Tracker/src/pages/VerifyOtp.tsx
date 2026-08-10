@@ -213,7 +213,7 @@ export default function VerifyOtp() {
           </Link>
         </header>
 
-        <section className="mt-3 w-full rounded-[1.35rem] border border-white/80 bg-white/78 p-5 shadow-[0_22px_36px_rgba(76,61,130,0.18)] backdrop-blur-xl min-[380px]:p-7 sm:mt-4 sm:p-8">
+        <section className="mt-3 w-full rounded-[1.35rem] border border-white/80 bg-white/95 p-5 shadow-[0_22px_36px_rgba(76,61,130,0.18)] min-[380px]:p-7 sm:mt-4 sm:p-8">
           <div className="mb-4 border-b border-[#ddd3f6] pb-4 text-left">
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.22em] text-[#6e6295]">Spendova account</p>
             <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#0d0b35]">{resetToken ? "Set new password" : "Verify your email"}</h1>
