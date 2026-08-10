@@ -1,4 +1,4 @@
-package com.expensemate.app;
+package com.Spendova.app;
 
 import com.getcapacitor.BridgeActivity;
 

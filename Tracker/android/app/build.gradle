@@ -15,15 +15,6 @@ android {
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
-        applicationVariants.all { variant ->
-            variant.outputs.all { output ->
-                def project = "ExpenseMate"
-                def SEP = "-"
-                def version = variant.versionName
-                def newApkName = project + SEP + version + ".apk"
-                outputFileName = new File(newApkName)
-            }
-        }
 
     }
     buildTypes {
