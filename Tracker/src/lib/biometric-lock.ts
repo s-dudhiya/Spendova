@@ -1,4 +1,5 @@
 import { safeStorage, withTimeout } from "@/lib/startup-safety";
+import { Capacitor } from "@capacitor/core";
 
 const LOCK_PREFIX = "spendova_biometric_lock";
 const FRESH_LOGIN_UNLOCK_KEY = "spendova_fresh_login_unlocked";
@@ -35,6 +36,16 @@ export function isBiometricLockSupported() {
 }
 
 export async function canUsePlatformBiometrics() {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { NativeBiometric } = await import("@capgo/capacitor-native-biometric");
+      const result = await NativeBiometric.isAvailable();
+      return result.isAvailable;
+    } catch {
+      return false;
+    }
+  }
+
   if (!isBiometricLockSupported()) return false;
   try {
     const available = await withTimeout(PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.() ?? Promise.resolve(false), 2500, "biometric availability");
@@ -63,6 +74,20 @@ export function consumeFreshLoginUnlocked(userId: string) {
 export async function enableBiometricLock(userId: string, email?: string | null, displayName?: string | null) {
   if (!await canUsePlatformBiometrics()) {
     throw new Error("Fingerprint or Face ID lock is not available on this device/browser.");
+  }
+
+  if (Capacitor.isNativePlatform()) {
+    const { NativeBiometric } = await import("@capgo/capacitor-native-biometric");
+    await NativeBiometric.verifyIdentity({
+      reason: "Authenticate to setup biometric lock",
+      title: "Set up Biometric Lock",
+    });
+    const record: LockRecord = {
+      credentialId: "native-biometric",
+      createdAt: new Date().toISOString(),
+    };
+    safeStorage.setItem(keyForUser(userId), JSON.stringify(record));
+    return record;
   }
 
   const credential = await navigator.credentials.create({
@@ -103,6 +128,20 @@ export async function unlockWithBiometric(userId: string) {
   if (!rawRecord) return true;
 
   const record = JSON.parse(rawRecord) as LockRecord;
+
+  if (Capacitor.isNativePlatform() && record.credentialId === "native-biometric") {
+    try {
+      const { NativeBiometric } = await import("@capgo/capacitor-native-biometric");
+      await NativeBiometric.verifyIdentity({
+        reason: "Unlock Spendova",
+        title: "Biometric Unlock",
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   const credential = await withTimeout(navigator.credentials.get({
     publicKey: {
       challenge: randomChallenge(),
