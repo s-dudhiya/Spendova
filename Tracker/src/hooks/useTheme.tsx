@@ -32,6 +32,23 @@ export function applyThemeColor(theme: Theme) {
     document.body.style.removeProperty('background-color');
   }
 
+  // Synchronize HTML meta theme-color tag content to match exact active theme color
+  try {
+    const metaThemeColors = document.querySelectorAll('meta[name="theme-color"]');
+    if (metaThemeColors.length > 0) {
+      metaThemeColors.forEach(meta => {
+        meta.setAttribute('content', hexColor);
+      });
+    } else {
+      const meta = document.createElement('meta');
+      meta.name = 'theme-color';
+      meta.content = hexColor;
+      document.head.appendChild(meta);
+    }
+  } catch (e) {
+    // Ignore DOM errors if any
+  }
+
   // Dynamically update mobile app native status bar in Capacitor (Android APK & iOS IPA builds)
   try {
     if (Capacitor.isPluginAvailable('StatusBar')) {
