@@ -128,11 +128,6 @@ async function initializeWebNotifications(userId: string) {
 }
 
 async function initializeCapacitorNotifications(userId: string) {
-  if (Capacitor.getPlatform() === 'android') {
-    console.warn("Android Push Notifications are temporarily disabled because google-services.json is not configured.");
-    return;
-  }
-
   try {
     if (!Capacitor.isPluginAvailable('PushNotifications')) {
       console.warn("Capacitor PushNotifications plugin is not available on this build.");

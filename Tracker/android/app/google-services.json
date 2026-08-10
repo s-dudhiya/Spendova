@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "600416942612",
+    "project_id": "spendova-1252",
+    "storage_bucket": "spendova-1252.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:600416942612:android:dac17561ae83b737344501",
+        "android_client_info": {
+          "package_name": "com.Spendova.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAM-J5NW3ABVVowilzvzVFnYZbTEKbzXPY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
