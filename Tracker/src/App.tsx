@@ -215,6 +215,9 @@ const AppRoutes = () => {
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
+  );
+};
+
 const App = () => {
   useEffect(() => {
     bootLog("app boot start");
