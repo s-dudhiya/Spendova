@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { safeStorage } from '@/lib/startup-safety';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
 
 type Theme = 'light' | 'dark';
 export const THEME_STORAGE_KEY = 'spendova-theme';
@@ -25,6 +27,22 @@ export function applyThemeColor(theme: Theme) {
   const metaThemeColor = document.querySelector('meta[name="theme-color"]');
   if (metaThemeColor) {
     metaThemeColor.setAttribute('content', hexColor);
+  }
+
+  // Dynamically update mobile app native status bar text color/style and background color
+  try {
+    if (Capacitor.isPluginAvailable('StatusBar')) {
+      void StatusBar.setStyle({
+        style: isDark ? Style.Dark : Style.Light
+      });
+      
+      // Explicitly set the background color on Android to eliminate divider/border lines
+      if (Capacitor.getPlatform() === 'android') {
+        void StatusBar.setBackgroundColor({ color: hexColor });
+      }
+    }
+  } catch (err) {
+    console.warn('Native status bar styling not available:', err);
   }
 }
 
