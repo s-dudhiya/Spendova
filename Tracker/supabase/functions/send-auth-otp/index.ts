@@ -30,7 +30,7 @@ async function isFakeEmail(email: string): Promise<boolean> {
   }
   
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -143,7 +143,36 @@ serve(async (req) => {
     await cleanupAuthOtps(supabaseAdmin)
 
     if (purpose === 'signup_verify') {
-      const isFake = await isFakeEmail(email)
+      const domain = email.split('@')[1]
+      let isFake = false
+
+      if (domain) {
+        // 1. Check cache first
+        const { data: cachedDomain } = await supabaseAdmin
+          .from('email_domains')
+          .select('is_fake')
+          .eq('domain', domain)
+          .maybeSingle()
+
+        if (cachedDomain) {
+          isFake = cachedDomain.is_fake
+          console.log(`[${email}] Cache HIT: is_fake = ${isFake}`)
+        } else {
+          // 2. Cache miss, call Gemini
+          console.log(`[${email}] Cache MISS: checking with Gemini...`)
+          isFake = await isFakeEmail(email)
+          
+          // 3. Save to cache (using upsert to prevent unique constraint warnings on rare concurrent signups)
+          const { error: cacheError } = await supabaseAdmin
+            .from('email_domains')
+            .upsert({ domain, is_fake: isFake }, { onConflict: 'domain' })
+            
+          if (cacheError) console.warn(`[${email}] Failed to cache domain:`, cacheError.message)
+        }
+      } else {
+        isFake = true // Invalid email format
+      }
+
       if (isFake) {
         return json({ error: 'Fake or temporary email addresses are not allowed. Please use a valid email.' }, 400)
       }
