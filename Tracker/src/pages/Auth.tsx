@@ -152,7 +152,13 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
           ? { purpose, email, password, fullName, username }
           : { purpose, email },
       });
-      if (error) throw error;
+      if (error) {
+        if (error.context && typeof error.context.json === 'function') {
+          const body = await error.context.json().catch(() => null);
+          if (body?.error) throw new Error(body.error);
+        }
+        throw error;
+      }
 
       if (isRegister) safeStorage.setItem(SIGNUP_PASSWORD_KEY, password);
       toast({
