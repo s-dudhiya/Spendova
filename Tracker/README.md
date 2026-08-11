@@ -17,6 +17,7 @@ Welcome to the Developer Documentation for **Spendova**. This document is design
 The frontend is a React Single Page Application (SPA) located primarily in the `src/` directory.
 
 - **`public/`**: Contains static assets like images, `manifest.json`, and importantly, `firebase-messaging-sw.js` which handles background push notifications on the web.
+- **`scripts/`**: Node.js utility scripts for database maintenance outside the main app (e.g., `cleanup-fake-users.mjs`).
 - **`src/components/`**: Reusable UI elements (buttons, modals, forms).
 - **`src/hooks/`**: Custom React hooks. `useAuth.tsx` is the most critical one, handling session state.
 - **`src/lib/`**: Core utilities. 
@@ -43,8 +44,9 @@ Handles logging in, signing up, OTPs, and device sessions.
 - **Frontend Files**: `src/pages/Auth.tsx`, `src/pages/VerifyOtp.tsx`, `src/pages/Profile.tsx`
 - **Database Tables**:
   - `auth.users`: Core Supabase auth table.
-  - `public.profiles`: Stores public user data (name, avatar, username).
+  - `public.profiles`: Stores public user data (name, avatar, username, email_verified).
   - `public.device_sessions`: Tracks logged-in devices.
+  - `public.email_domains`: Caches domain validation results (fake vs real) to save Gemini API calls.
 - **Edge Functions**: 
   - `send-auth-otp`, `verify-auth-otp`, `reset-password-with-otp`
   - `manage-device-session`, `delete-account`
@@ -90,6 +92,7 @@ A unified system for sending native push notifications to Web and Android.
 - **Database Tables**: `site_settings`, `feedback_tickets`
 - **Edge Functions / Cron Jobs**: 
   - `generate-monthly-reports` (Triggered automatically by `pg_cron` in the database).
+  - `cleanup_unverified_users`: Triggered hourly via `pg_cron` to instantly delete any users who haven't verified their email within 24 hours.
   - `cron-ledger-reminders`: Triggered daily at **10:00 PM IST** (`30 16 * * *` UTC) via `pg_cron` (Migration `20260806100000_fix_ledger_reminders_cron.sql`) using hardcoded project credentials to notify Budget Admins of pending ledger expenses.
   - `feedback-ticket-email`, `send-admin-mail`, `toggle-maintenance`.
 

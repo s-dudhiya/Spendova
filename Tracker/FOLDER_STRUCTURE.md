@@ -11,6 +11,13 @@ Contains static assets that are served directly to the browser.
 
 ---
 
+## 📂 `/scripts`
+Contains standalone Node.js utility scripts used for database maintenance and testing outside of the main app.
+- **`test-fake-emails.mjs`**: Tests the database for users who signed up with fake/disposable emails using the Gemini API.
+- **`cleanup-fake-users.mjs`**: Intelligently cleans up fake accounts (Hard Deletes isolated bots, Soft Deletes/Bans bots tied to expenses to preserve ledgers).
+
+---
+
 ## 📂 `/src`
 The heart of the frontend. This contains the entire React (Vite) application.
 
@@ -59,9 +66,9 @@ The backend configuration, living entirely outside of the React app.
 
 ### 📁 `/supabase/migrations`
 Contains `.sql` files. These files dictate exactly how your PostgreSQL database is structured.
-- It contains `CREATE TABLE` commands.
+- It contains `CREATE TABLE` commands (e.g., creating the `email_domains` caching table).
 - It contains **Row Level Security (RLS)** policies (which ensure users can't read other people's data).
-- It contains `pg_cron` jobs (like the database telling the server to delete old data every midnight).
+- It contains `pg_cron` jobs (like the database telling the server to delete unverified users every hour and old data every midnight).
 
 ### 📁 `/supabase/functions`
 Contains **Edge Functions**. This is your serverless backend code (written in Deno/TypeScript).
