@@ -761,7 +761,7 @@ const DateFilterControls = ({
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
   threeMonthsAgo.setDate(1);
   const minFilterDate = threeMonthsAgo.toISOString().split("T")[0];
-  
+
   return (
     <div className="space-y-2.5">
       <FilterField label="Date" value={value} onChange={onDateChange} options={dateFilterOptions} />
@@ -1617,109 +1617,109 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
   const detailTotal = balanceDetail === "owe" ? youOweTotal : youGetTotal;
   return (
     <>
-    <main className="space-y-6">
-      <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
-        <p className="text-sm font-medium text-muted-foreground">Personal spend</p>
-        <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">{money(filteredPersonalSummary.personal)}</p>
-        <div className="mt-5 grid grid-cols-2 items-start gap-4">
-          <button type="button" onClick={() => openBalanceDetail("owe")} className="group flex min-h-[46px] min-w-0 cursor-pointer flex-col items-start justify-start gap-1 rounded-2xl px-2 py-1.5 text-left transition-colors hover:bg-elevated/60 active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <span className="flex max-w-full items-center gap-1 text-xs font-semibold leading-4 text-muted-foreground">
-              <span>You Owe</span>
-              <ChevronRight className="size-3 opacity-60 transition-transform group-hover:translate-x-0.5" />
-            </span>
-            <span className={`spendova-money-value block max-w-full text-sm font-bold leading-5 min-[380px]:text-[15px] ${youOweAmountClass}`}>{money(youOweTotal)}</span>
-          </button>
-          <button type="button" onClick={() => openBalanceDetail("get")} className="group flex min-h-[46px] min-w-0 cursor-pointer flex-col items-end justify-start gap-1 rounded-2xl px-2 py-1.5 text-right transition-colors hover:bg-elevated/60 active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <span className="inline-flex max-w-full flex-col items-start gap-1 text-left">
+      <main className="space-y-6">
+        <section className="rounded-[1.25rem] bg-card p-5 shadow-panel">
+          <p className="text-sm font-medium text-muted-foreground">Personal spend</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">{money(filteredPersonalSummary.personal)}</p>
+          <div className="mt-5 grid grid-cols-2 items-start gap-4">
+            <button type="button" onClick={() => openBalanceDetail("owe")} className="group flex min-h-[46px] min-w-0 cursor-pointer flex-col items-start justify-start gap-1 rounded-2xl px-2 py-1.5 text-left transition-colors hover:bg-elevated/60 active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <span className="flex max-w-full items-center gap-1 text-xs font-semibold leading-4 text-muted-foreground">
-                <span>You Get</span>
+                <span>You Owe</span>
                 <ChevronRight className="size-3 opacity-60 transition-transform group-hover:translate-x-0.5" />
               </span>
-              <span className={`spendova-money-value block max-w-full text-sm font-bold leading-5 min-[380px]:text-[15px] ${youGetAmountClass}`}>{money(youGetTotal)}</span>
-            </span>
-          </button>
-        </div>
-      </section>
-      <section className="pb-16">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-bold tracking-tight text-foreground">Personal expenses</h2>
-          <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
-        </div>
-        <div className="space-y-3">
-          {personalExpenses.length === 0 ? (
-            <BeautifulEmptyState
-              icon={Receipt}
-              title="No personal expenses"
-              subtitle="Track your daily un-split expenses here."
-              actionLabel="Add Expense"
-              onAction={() => openModal("add-expense")}
-            />
-          ) : visibleExpenses.length === 0 ? <FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} /> : visibleExpenses.map((expense) => {
-            const display = getPersonalExpenseDisplay(expense, currentUserId, groups, friends, expenses, settlements);
-            return (
-              <article key={expense.id} className="rounded-2xl bg-card p-4 shadow-soft">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-bold text-foreground">{expense.category || "Expense"}</h3>
-                    <CategoryBadge label={categoryLabel(expense, categories)} />
-                    {display.context ? <p className="mt-1 text-sm font-medium text-muted-foreground">{display.context}</p> : null}
-                    <p className="mt-1 text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p>
-                  </div>
-                  <div className="text-right"><p className="font-bold text-foreground">{money(display.amount)}</p><StatusPill status={display.status} /></div>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button onClick={() => openModal("edit-expense", expense.id)} variant="quiet" size="sm"><Pencil />Edit</Button>
-                  <Button onClick={() => openModal("delete-expense", expense.id)} variant="quiet" size="sm"><Trash2 />Delete</Button>
-                  {display.canClear && <Button onClick={() => openModal("clear-expense", expense.id)} variant="quiet" size="sm"><Check />Clear</Button>}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </section>
-      <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Personal expense filters" onClear={clearFilters}>
-        <FilterField label="Status" value={filters.status} onChange={(status) => setFilters((current) => ({ ...current, status }))} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "cleared", label: "Cleared" }]} />
-        <DateFilterControls value={filters.date} start={filters.dateStart} end={filters.dateEnd} onDateChange={(date) => setFilters((current) => ({ ...current, date }))} onStartChange={(dateStart) => setFilters((current) => ({ ...current, dateStart }))} onEndChange={(dateEnd) => setFilters((current) => ({ ...current, dateEnd }))} />
-        <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "amount-desc", label: "Amount high to low" }, { value: "amount-asc", label: "Amount low to high" }]} />
-        <FilterField label="Category" value={filters.category} onChange={(category) => setFilters((current) => ({ ...current, category }))} options={[{ value: "all", label: "All categories" }, { value: UNCATEGORIZED_CATEGORY, label: "Uncategorized" }, ...personalCategories.map((category) => ({ value: category.id, label: category.name }))]} />
-      </FilterSheet>
-      <button onClick={() => openModal("add-expense")} className="fixed bottom-28 right-4 z-20 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-bold text-primary-foreground shadow-primary-action sm:right-8">
-        <Plus className="size-4" />Add expense
-      </button>
-    </main>
-    <Drawer open={Boolean(balanceDetail)} onOpenChange={(open) => !open && setBalanceDetail(null)}>
-      <DrawerContent className="mx-auto max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] max-w-3xl overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <DrawerHeader className="px-0 pb-2 text-left">
-          <DrawerTitle>{balanceDetail === "owe" ? "You Owe" : "You Get"}</DrawerTitle>
-          <DrawerDescription>{balanceDetail === "owe" ? "People you need to pay." : "People who need to pay you."}</DrawerDescription>
-        </DrawerHeader>
-        <div className="max-h-[55dvh] overflow-y-auto overscroll-contain rounded-2xl bg-elevated/70">
-          {detailRows.map((row, index) => (
-            <div key={`${row.name}-${index}`} className={`flex items-center justify-between gap-3 px-4 py-3 text-sm ${index < detailRows.length - 1 ? "border-b border-border/60" : ""}`}>
-              <div className="flex-1 min-w-0 flex items-center justify-between mr-2">
-                <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
-                <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
-              </div>
-              <Button 
-                onClick={() => {
-                  setBalanceDetail(null);
-                  setTimeout(() => openModal("settle-up", row.settleId), 150);
-                }} 
-                size="sm" 
-                variant="outline" 
-                className="h-7 px-3 text-xs font-bold shrink-0 rounded-lg bg-background"
-              >
-                Settle
-              </Button>
-            </div>
-          ))}
-          <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm">
-            <span className="font-black text-foreground">Total</span>
-            <span className={`spendova-money-value shrink-0 font-black ${balanceDetail === "owe" ? "text-warning" : "text-success"}`}>{money(detailTotal)}</span>
+              <span className={`spendova-money-value block max-w-full text-sm font-bold leading-5 min-[380px]:text-[15px] ${youOweAmountClass}`}>{money(youOweTotal)}</span>
+            </button>
+            <button type="button" onClick={() => openBalanceDetail("get")} className="group flex min-h-[46px] min-w-0 cursor-pointer flex-col items-end justify-start gap-1 rounded-2xl px-2 py-1.5 text-right transition-colors hover:bg-elevated/60 active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <span className="inline-flex max-w-full flex-col items-start gap-1 text-left">
+                <span className="flex max-w-full items-center gap-1 text-xs font-semibold leading-4 text-muted-foreground">
+                  <span>You Get</span>
+                  <ChevronRight className="size-3 opacity-60 transition-transform group-hover:translate-x-0.5" />
+                </span>
+                <span className={`spendova-money-value block max-w-full text-sm font-bold leading-5 min-[380px]:text-[15px] ${youGetAmountClass}`}>{money(youGetTotal)}</span>
+              </span>
+            </button>
           </div>
-        </div>
-      </DrawerContent>
-    </Drawer>
+        </section>
+        <section className="pb-16">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-base font-bold tracking-tight text-foreground">Personal expenses</h2>
+            <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
+          </div>
+          <div className="space-y-3">
+            {personalExpenses.length === 0 ? (
+              <BeautifulEmptyState
+                icon={Receipt}
+                title="No personal expenses"
+                subtitle="Track your daily un-split expenses here."
+                actionLabel="Add Expense"
+                onAction={() => openModal("add-expense")}
+              />
+            ) : visibleExpenses.length === 0 ? <FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} /> : visibleExpenses.map((expense) => {
+              const display = getPersonalExpenseDisplay(expense, currentUserId, groups, friends, expenses, settlements);
+              return (
+                <article key={expense.id} className="rounded-2xl bg-card p-4 shadow-soft">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold text-foreground">{expense.category || "Expense"}</h3>
+                      <CategoryBadge label={categoryLabel(expense, categories)} />
+                      {display.context ? <p className="mt-1 text-sm font-medium text-muted-foreground">{display.context}</p> : null}
+                      <p className="mt-1 text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p>
+                    </div>
+                    <div className="text-right"><p className="font-bold text-foreground">{money(display.amount)}</p><StatusPill status={display.status} /></div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button onClick={() => openModal("edit-expense", expense.id)} variant="quiet" size="sm"><Pencil />Edit</Button>
+                    <Button onClick={() => openModal("delete-expense", expense.id)} variant="quiet" size="sm"><Trash2 />Delete</Button>
+                    {display.canClear && <Button onClick={() => openModal("clear-expense", expense.id)} variant="quiet" size="sm"><Check />Clear</Button>}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+        <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Personal expense filters" onClear={clearFilters}>
+          <FilterField label="Status" value={filters.status} onChange={(status) => setFilters((current) => ({ ...current, status }))} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "cleared", label: "Cleared" }]} />
+          <DateFilterControls value={filters.date} start={filters.dateStart} end={filters.dateEnd} onDateChange={(date) => setFilters((current) => ({ ...current, date }))} onStartChange={(dateStart) => setFilters((current) => ({ ...current, dateStart }))} onEndChange={(dateEnd) => setFilters((current) => ({ ...current, dateEnd }))} />
+          <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "amount-desc", label: "Amount high to low" }, { value: "amount-asc", label: "Amount low to high" }]} />
+          <FilterField label="Category" value={filters.category} onChange={(category) => setFilters((current) => ({ ...current, category }))} options={[{ value: "all", label: "All categories" }, { value: UNCATEGORIZED_CATEGORY, label: "Uncategorized" }, ...personalCategories.map((category) => ({ value: category.id, label: category.name }))]} />
+        </FilterSheet>
+        <button onClick={() => openModal("add-expense")} className="fixed bottom-28 right-4 z-20 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-bold text-primary-foreground shadow-primary-action sm:right-8">
+          <Plus className="size-4" />Add expense
+        </button>
+      </main>
+      <Drawer open={Boolean(balanceDetail)} onOpenChange={(open) => !open && setBalanceDetail(null)}>
+        <DrawerContent className="mx-auto max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] max-w-3xl overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+          <DrawerHeader className="px-0 pb-2 text-left">
+            <DrawerTitle>{balanceDetail === "owe" ? "You Owe" : "You Get"}</DrawerTitle>
+            <DrawerDescription>{balanceDetail === "owe" ? "People you need to pay." : "People who need to pay you."}</DrawerDescription>
+          </DrawerHeader>
+          <div className="max-h-[55dvh] overflow-y-auto overscroll-contain rounded-2xl bg-elevated/70">
+            {detailRows.map((row, index) => (
+              <div key={`${row.name}-${index}`} className={`flex items-center justify-between gap-3 px-4 py-3 text-sm ${index < detailRows.length - 1 ? "border-b border-border/60" : ""}`}>
+                <div className="flex-1 min-w-0 flex items-center justify-between mr-2">
+                  <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
+                  <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
+                </div>
+                <Button
+                  onClick={() => {
+                    setBalanceDetail(null);
+                    setTimeout(() => openModal("settle-up", row.settleId), 150);
+                  }}
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-3 text-xs font-bold shrink-0 rounded-lg bg-background"
+                >
+                  Settle
+                </Button>
+              </div>
+            ))}
+            <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm">
+              <span className="font-black text-foreground">Total</span>
+              <span className={`spendova-money-value shrink-0 font-black ${balanceDetail === "owe" ? "text-warning" : "text-success"}`}>{money(detailTotal)}</span>
+            </div>
+          </div>
+        </DrawerContent>
+      </Drawer>
     </>
   );
 };
@@ -1879,16 +1879,16 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
               />
             ) : <FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} />) : filteredFriends.map(({ friend, net }) => {
               return (
-              <button key={friend.user_id} onClick={() => openDetail("friend", friend.user_id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="grid size-11 place-items-center rounded-full bg-elevated font-bold text-primary">{displayName(friend).charAt(0).toUpperCase()}</span>
-                  <div className="min-w-0"><h3 className="truncate font-bold text-foreground">{displayName(friend)}</h3><p className="truncate text-sm text-muted-foreground">@{friend.username || "user"}</p></div>
-                </div>
-                <div className="max-w-[48%] shrink-0 text-right">
-                  <p className={`text-sm font-bold ${net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground"}`}>{net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled"}</p>
-                  <ChevronRight className="ml-auto mt-1 size-4 text-muted-foreground" />
-                </div>
-              </button>
+                <button key={friend.user_id} onClick={() => openDetail("friend", friend.user_id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="grid size-11 place-items-center rounded-full bg-elevated font-bold text-primary">{displayName(friend).charAt(0).toUpperCase()}</span>
+                    <div className="min-w-0"><h3 className="truncate font-bold text-foreground">{displayName(friend)}</h3><p className="truncate text-sm text-muted-foreground">@{friend.username || "user"}</p></div>
+                  </div>
+                  <div className="max-w-[48%] shrink-0 text-right">
+                    <p className={`text-sm font-bold ${net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground"}`}>{net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled"}</p>
+                    <ChevronRight className="ml-auto mt-1 size-4 text-muted-foreground" />
+                  </div>
+                </button>
               );
             })}
           </div>
@@ -2168,106 +2168,106 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
           </div>
         </header>
 
-      <section className="flex items-center gap-4">
-        <div className="grid size-14 shrink-0 place-items-center rounded-full bg-primary text-xl font-bold text-primary-foreground shadow-primary-action">
-          {displayName(friend).charAt(0).toUpperCase()}
-        </div>
-        <div className="min-w-0">
-          <h2 className="truncate text-xl font-bold tracking-tight text-foreground">{displayName(friend)}</h2>
-          <p className="text-sm font-medium text-muted-foreground">@{friend.username || "user"}</p>
-          <p className={`mt-1 text-sm font-bold ${filteredBalanceClass}`}>{filteredBalanceText}</p>
-        </div>
-      </section>
+        <section className="flex items-center gap-4">
+          <div className="grid size-14 shrink-0 place-items-center rounded-full bg-primary text-xl font-bold text-primary-foreground shadow-primary-action">
+            {displayName(friend).charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <h2 className="truncate text-xl font-bold tracking-tight text-foreground">{displayName(friend)}</h2>
+            <p className="text-sm font-medium text-muted-foreground">@{friend.username || "user"}</p>
+            <p className={`mt-1 text-sm font-bold ${filteredBalanceClass}`}>{filteredBalanceText}</p>
+          </div>
+        </section>
 
-      <section className="grid grid-cols-2 gap-3">
-        <Button onClick={() => openModal("add-expense", friend.user_id)} className="h-11 rounded-2xl shadow-primary-action"><Plus />Add Expense</Button>
-        <Button onClick={() => filteredNet !== 0 && openModal("settle-up", friend.user_id)} disabled={filteredNet === 0} variant="outline" className="h-11 rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary">
-          <Check />{filteredNet === 0 ? "Settled" : `Settle ${money(Math.abs(filteredNet))}`}
-        </Button>
-      </section>
+        <section className="grid grid-cols-2 gap-3">
+          <Button onClick={() => openModal("add-expense", friend.user_id)} className="h-11 rounded-2xl shadow-primary-action"><Plus />Add Expense</Button>
+          <Button onClick={() => filteredNet !== 0 && openModal("settle-up", friend.user_id)} disabled={filteredNet === 0} variant="outline" className="h-11 rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary">
+            <Check />{filteredNet === 0 ? "Settled" : `Settle ${money(Math.abs(filteredNet))}`}
+          </Button>
+        </section>
 
-      <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-foreground">Activity</h2>
-          <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
-        </div>
-        <div className="overflow-hidden rounded-2xl bg-card shadow-soft">
-          {activity.length === 0 ? (
-            <div className="grid min-h-44 place-items-center px-4 py-8 text-center">
-              <div>
-                <p className="font-bold text-foreground">No activity yet</p>
-                <p className="mt-1 text-sm text-muted-foreground">Add your first expense</p>
-                <Button onClick={() => openModal("add-expense", friend.user_id)} className="mt-4 h-10 rounded-2xl shadow-primary-action"><Plus />Add Expense</Button>
+        <section>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-foreground">Activity</h2>
+            <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
+          </div>
+          <div className="overflow-hidden rounded-2xl bg-card shadow-soft">
+            {activity.length === 0 ? (
+              <div className="grid min-h-44 place-items-center px-4 py-8 text-center">
+                <div>
+                  <p className="font-bold text-foreground">No activity yet</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Add your first expense</p>
+                  <Button onClick={() => openModal("add-expense", friend.user_id)} className="mt-4 h-10 rounded-2xl shadow-primary-action"><Plus />Add Expense</Button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="relative">
-              <span className="absolute left-9 top-8 bottom-8 w-px bg-border/70" aria-hidden="true" />
-              {filteredActivity.length === 0 ? (
-                <div className="p-4"><FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} /></div>
-              ) : filteredActivity.map((item, index) => {
-                const Icon = item.icon;
-                const isPositiveDisplay = item.kind === "settlement" ? item.paidById !== currentUserId : item.impact > 0;
-                const impactClass = isPositiveDisplay ? "text-success" : (item.impact < 0 || item.kind === "settlement") ? "text-foreground" : "text-muted-foreground";
-                const statusLabel = item.status === "paid" ? "Paid" : item.status === "partial" ? "Partial" : "Pending";
-                const statusClass = item.status === "paid" ? "bg-success/15 text-success" : item.status === "partial" ? "bg-primary/10 text-primary" : "bg-warning/15 text-warning";
-                const iconBgClass = item.kind === "settlement" ? "bg-success/15" : !isPositiveDisplay ? "bg-warning/15" : "bg-primary/10";
-                const iconTextClass = item.kind === "settlement" ? "text-success" : !isPositiveDisplay ? "text-warning" : "text-primary";
-                return (
-                  <div
-                    key={`${item.kind}-${item.id}`}
-                    role="button"
-                    tabIndex={0}
-                    aria-label="Open activity details"
-                    onClick={() => openActivity(item)}
-                    onKeyDown={(event) => handleActivityKeyDown(event, item)}
-                    className={`relative flex w-full cursor-pointer items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-elevated/70 active:bg-elevated ${index < activity.length - 1 ? "border-b border-border/60" : ""}`}
-                  >
-                    <span className={`relative z-10 grid size-10 shrink-0 place-items-center rounded-full bg-card ${iconTextClass}`}>
-                      <span className={`absolute inset-0 rounded-full ${iconBgClass}`} />
-                      <Icon className="relative size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="truncate text-sm font-bold text-foreground">{item.title}</h3>
-                      <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground">{item.detail}</p>
-                      <p className="mt-1 text-xs font-medium text-muted-foreground">{dateLabel(item.created_at)}</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <div className="text-right">
-                        <p className={`text-sm font-bold ${impactClass}`}>{isPositiveDisplay ? "+" : ""}{money(Math.abs(item.impact))}</p>
-                        {item.kind === "expense" ? (
-                          <div className="mt-1 flex flex-col items-end gap-1">
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${statusClass}`}>{statusLabel}</span>
-                            {item.status === "partial" ? <span className="text-[10px] font-semibold text-muted-foreground">{money(Math.abs(item.remainingImpact))} pending</span> : null}
-                          </div>
-                        ) : null}
+            ) : (
+              <div className="relative">
+                <span className="absolute left-9 top-8 bottom-8 w-px bg-border/70" aria-hidden="true" />
+                {filteredActivity.length === 0 ? (
+                  <div className="p-4"><FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} /></div>
+                ) : filteredActivity.map((item, index) => {
+                  const Icon = item.icon;
+                  const isPositiveDisplay = item.kind === "settlement" ? item.paidById !== currentUserId : item.impact > 0;
+                  const impactClass = isPositiveDisplay ? "text-success" : (item.impact < 0 || item.kind === "settlement") ? "text-foreground" : "text-muted-foreground";
+                  const statusLabel = item.status === "paid" ? "Paid" : item.status === "partial" ? "Partial" : "Pending";
+                  const statusClass = item.status === "paid" ? "bg-success/15 text-success" : item.status === "partial" ? "bg-primary/10 text-primary" : "bg-warning/15 text-warning";
+                  const iconBgClass = item.kind === "settlement" ? "bg-success/15" : !isPositiveDisplay ? "bg-warning/15" : "bg-primary/10";
+                  const iconTextClass = item.kind === "settlement" ? "text-success" : !isPositiveDisplay ? "text-warning" : "text-primary";
+                  return (
+                    <div
+                      key={`${item.kind}-${item.id}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Open activity details"
+                      onClick={() => openActivity(item)}
+                      onKeyDown={(event) => handleActivityKeyDown(event, item)}
+                      className={`relative flex w-full cursor-pointer items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-elevated/70 active:bg-elevated ${index < activity.length - 1 ? "border-b border-border/60" : ""}`}
+                    >
+                      <span className={`relative z-10 grid size-10 shrink-0 place-items-center rounded-full bg-card ${iconTextClass}`}>
+                        <span className={`absolute inset-0 rounded-full ${iconBgClass}`} />
+                        <Icon className="relative size-4" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="truncate text-sm font-bold text-foreground">{item.title}</h3>
+                        <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground">{item.detail}</p>
+                        <p className="mt-1 text-xs font-medium text-muted-foreground">{dateLabel(item.created_at)}</p>
                       </div>
-                      <button
-                        type="button"
-                        aria-label="Open activity actions"
-                        onClick={(event) => openActionMenu(event, item)}
-                        onKeyDown={(event) => event.stopPropagation()}
-                        className="grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <MoreVertical className="pointer-events-none size-4" />
-                      </button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <div className="text-right">
+                          <p className={`text-sm font-bold ${impactClass}`}>{isPositiveDisplay ? "+" : ""}{money(Math.abs(item.impact))}</p>
+                          {item.kind === "expense" ? (
+                            <div className="mt-1 flex flex-col items-end gap-1">
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${statusClass}`}>{statusLabel}</span>
+                              {item.status === "partial" ? <span className="text-[10px] font-semibold text-muted-foreground">{money(Math.abs(item.remainingImpact))} pending</span> : null}
+                            </div>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          aria-label="Open activity actions"
+                          onClick={(event) => openActionMenu(event, item)}
+                          onKeyDown={(event) => event.stopPropagation()}
+                          className="grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <MoreVertical className="pointer-events-none size-4" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </section>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
 
-      <button onClick={() => openModal("remove-friend", friend.user_id)} className="flex w-full items-center gap-3 rounded-2xl bg-card p-4 text-left shadow-soft">
-        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-destructive/10 text-destructive"><AlertTriangle className="size-4" /></span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold text-destructive">Remove Friend</span>
-          <span className="mt-0.5 block text-xs font-medium text-muted-foreground">This will not delete any existing expenses.</span>
-        </span>
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-      </button>
+        <button onClick={() => openModal("remove-friend", friend.user_id)} className="flex w-full items-center gap-3 rounded-2xl bg-card p-4 text-left shadow-soft">
+          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-destructive/10 text-destructive"><AlertTriangle className="size-4" /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-bold text-destructive">Remove Friend</span>
+            <span className="mt-0.5 block text-xs font-medium text-muted-foreground">This will not delete any existing expenses.</span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </button>
       </main>
 
       <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Activity filters" onClear={clearFilters}>
@@ -2549,78 +2549,78 @@ const ExpenseDetailView = ({ expense, settlements, categories, currentUserId, op
 
   return (
     <>
-    <main className="space-y-5 pt-4">
-      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-bold text-primary"><ArrowLeft className="size-4" />Back to Split</button>
-      <section className="rounded-2xl bg-card p-4 shadow-soft">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-xs font-bold uppercase text-muted-foreground">Expense Detail</p>
-            <h1 className="mt-1 truncate text-2xl font-bold text-foreground">{expense.category || "Expense"}</h1>
-            {expense.note ? <p className="mt-1 text-sm text-muted-foreground">{expense.note}</p> : null}
+      <main className="space-y-5 pt-4">
+        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-bold text-primary"><ArrowLeft className="size-4" />Back to Split</button>
+        <section className="rounded-2xl bg-card p-4 shadow-soft">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase text-muted-foreground">Expense Detail</p>
+              <h1 className="mt-1 truncate text-2xl font-bold text-foreground">{expense.category || "Expense"}</h1>
+              {expense.note ? <p className="mt-1 text-sm text-muted-foreground">{expense.note}</p> : null}
+            </div>
+            <p className="shrink-0 text-xl font-bold text-foreground">{money(expense.amount)}</p>
           </div>
-          <p className="shrink-0 text-xl font-bold text-foreground">{money(expense.amount)}</p>
-        </div>
-      </section>
+        </section>
 
-      <section className="rounded-2xl bg-card px-4 shadow-soft">
-        <DetailRow label="Description" value={expense.note || expense.category || "Expense"} />
-        <DetailRow label="Category" value={categoryLabel(expense, categories)} />
-        <DetailRow label="Amount" value={money(expense.amount)} />
-        <DetailRow label="Paid by" value={paidBy} />
-        <DetailRow label="Split type" value={expense.split_type || "none"} />
-        <DetailRow label="Date" value={dateLabel(expense.created_at)} />
-        <DetailRow label="Status" value={<StatusPill status={expenseStatus} />} />
-        <DetailRow label="Remaining unpaid" value={money(remainingUnpaid)} />
-        <DetailRow label="Balance impact" value={<span className={balanceImpact > 0 ? "text-success" : balanceImpact < 0 ? "text-destructive" : "text-muted-foreground"}>{balanceImpact > 0 ? "+" : balanceImpact < 0 ? "-" : ""}{money(Math.abs(balanceImpact))}</span>} />
-      </section>
+        <section className="rounded-2xl bg-card px-4 shadow-soft">
+          <DetailRow label="Description" value={expense.note || expense.category || "Expense"} />
+          <DetailRow label="Category" value={categoryLabel(expense, categories)} />
+          <DetailRow label="Amount" value={money(expense.amount)} />
+          <DetailRow label="Paid by" value={paidBy} />
+          <DetailRow label="Split type" value={expense.split_type || "none"} />
+          <DetailRow label="Date" value={dateLabel(expense.created_at)} />
+          <DetailRow label="Status" value={<StatusPill status={expenseStatus} />} />
+          <DetailRow label="Remaining unpaid" value={money(remainingUnpaid)} />
+          <DetailRow label="Balance impact" value={<span className={balanceImpact > 0 ? "text-success" : balanceImpact < 0 ? "text-destructive" : "text-muted-foreground"}>{balanceImpact > 0 ? "+" : balanceImpact < 0 ? "-" : ""}{money(Math.abs(balanceImpact))}</span>} />
+        </section>
 
-      <section>
-        <h2 className="mb-2 text-sm font-bold text-foreground">Participants</h2>
-        <div className="overflow-hidden rounded-2xl bg-card shadow-soft">
-          {participants.map((participant, index) => (
-            <div key={`${participant.id}-${participant.role}-${index}`} className={`flex items-center justify-between gap-3 px-4 py-3 ${index < participants.length - 1 ? "border-b border-border/60" : ""}`}>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-foreground">{participant.name}</p>
-                <p className="text-xs font-medium text-muted-foreground">{participant.role}</p>
+        <section>
+          <h2 className="mb-2 text-sm font-bold text-foreground">Participants</h2>
+          <div className="overflow-hidden rounded-2xl bg-card shadow-soft">
+            {participants.map((participant, index) => (
+              <div key={`${participant.id}-${participant.role}-${index}`} className={`flex items-center justify-between gap-3 px-4 py-3 ${index < participants.length - 1 ? "border-b border-border/60" : ""}`}>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-foreground">{participant.name}</p>
+                  <p className="text-xs font-medium text-muted-foreground">{participant.role}</p>
+                </div>
+                <p className="text-sm font-bold text-foreground">{money(participant.amount)}</p>
               </div>
-              <p className="text-sm font-bold text-foreground">{money(participant.amount)}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
 
-      <section>
-        <h2 className="mb-2 text-sm font-bold text-foreground">Settlement history</h2>
-        <div className="overflow-hidden rounded-2xl bg-card shadow-soft">
-          {expenseSettlements.length === 0 ? (
-            <div className="px-4 py-5 text-sm font-medium text-muted-foreground">No settlements recorded for this expense.</div>
-          ) : expenseSettlements.map((settlement, index) => (
-            <div key={settlement.id} className={`flex items-center justify-between gap-3 px-4 py-3 ${index < expenseSettlements.length - 1 ? "border-b border-border/60" : ""}`}>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-foreground">{settlement.from_user_id === currentUserId ? "You" : displayName(settlement.from_profile)} paid {settlement.to_user_id === currentUserId ? "you" : displayName(settlement.to_profile)}</p>
-                <p className="text-xs font-medium text-muted-foreground">{dateLabel(settlement.created_at)}{settlement.note ? ` - ${settlement.note}` : ""}</p>
+        <section>
+          <h2 className="mb-2 text-sm font-bold text-foreground">Settlement history</h2>
+          <div className="overflow-hidden rounded-2xl bg-card shadow-soft">
+            {expenseSettlements.length === 0 ? (
+              <div className="px-4 py-5 text-sm font-medium text-muted-foreground">No settlements recorded for this expense.</div>
+            ) : expenseSettlements.map((settlement, index) => (
+              <div key={settlement.id} className={`flex items-center justify-between gap-3 px-4 py-3 ${index < expenseSettlements.length - 1 ? "border-b border-border/60" : ""}`}>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-foreground">{settlement.from_user_id === currentUserId ? "You" : displayName(settlement.from_profile)} paid {settlement.to_user_id === currentUserId ? "you" : displayName(settlement.to_profile)}</p>
+                  <p className="text-xs font-medium text-muted-foreground">{dateLabel(settlement.created_at)}{settlement.note ? ` - ${settlement.note}` : ""}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-sm font-bold text-success">{money(settlement.amount)}</p>
+                  <div className="mt-1"><PaymentProofDisplay path={settlement.payment_proof_path} deletedAt={settlement.payment_proof_deleted_at} /></div>
+                </div>
               </div>
-              <div className="shrink-0 text-right">
-                <p className="text-sm font-bold text-success">{money(settlement.amount)}</p>
-                <div className="mt-1"><PaymentProofDisplay path={settlement.payment_proof_path} deletedAt={settlement.payment_proof_deleted_at} /></div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
 
-      <section className="grid grid-cols-2 gap-3">
-        {myRemaining > 0 ? <Button onClick={() => setProofPromptOpen(true)} className="col-span-2 h-11 rounded-2xl shadow-primary-action" disabled={settling}><Check />{settling ? "Saving..." : `Settle this expense (${money(myRemaining)})`}</Button> : null}
-        <Button onClick={() => openModal("edit-expense", expense.id)} className="h-11 rounded-2xl shadow-primary-action"><Pencil />Edit expense</Button>
-        <Button onClick={() => openModal("delete-expense", expense.id)} variant="destructive" className="h-11 rounded-2xl"><Trash2 />Delete expense</Button>
-      </section>
-    </main>
-    <PaymentProofPrompt
-      open={proofPromptOpen}
-      submitting={settling}
-      onCancel={() => setProofPromptOpen(false)}
-      onContinue={settleMyShare}
-    />
+        <section className="grid grid-cols-2 gap-3">
+          {myRemaining > 0 ? <Button onClick={() => setProofPromptOpen(true)} className="col-span-2 h-11 rounded-2xl shadow-primary-action" disabled={settling}><Check />{settling ? "Saving..." : `Settle this expense (${money(myRemaining)})`}</Button> : null}
+          <Button onClick={() => openModal("edit-expense", expense.id)} className="h-11 rounded-2xl shadow-primary-action"><Pencil />Edit expense</Button>
+          <Button onClick={() => openModal("delete-expense", expense.id)} variant="destructive" className="h-11 rounded-2xl"><Trash2 />Delete expense</Button>
+        </section>
+      </main>
+      <PaymentProofPrompt
+        open={proofPromptOpen}
+        submitting={settling}
+        onCancel={() => setProofPromptOpen(false)}
+        onContinue={settleMyShare}
+      />
     </>
   );
 };
@@ -2660,7 +2660,7 @@ const NotificationsList = ({ data, currentUserId, openModal }: { data: AppData; 
       openModal("friend-requests");
       return;
     }
-    
+
     if (item.entity_type === "expense" && item.entity_id) {
       navigate(`/split/expense/${item.entity_id}`);
       openModal(null);
@@ -2855,7 +2855,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const filteredGroupExpenses = filteredGroupActivity.filter((item): item is Extract<GroupActivityItem, { kind: "expense" }> => item.kind === "expense").map((item) => item.expense);
   const filteredGroupSettlements = filteredGroupActivity.filter((item): item is Extract<GroupActivityItem, { kind: "settlement" }> => item.kind === "settlement").map((item) => item.settlement);
   const filteredTotalSpent = filteredGroupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
-  
+
   const balances = computeGroupBalances(groupExpenses, groupSettlements, group, currentUserId);
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
@@ -2907,7 +2907,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
                   openModal("remove-group-member", `${group.id}:${member.user_id}`);
                 }
               };
-              
+
               return (
                 <div key={member.user_id} className="w-16 shrink-0 overflow-visible text-center">
                   <div
@@ -3187,7 +3187,7 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
       } else {
         if (active) setPushPermission("unsupported");
       }
-      
+
       if (userId) {
         const { checkPushEnabled } = await import("@/lib/notifications");
         const isEnabled = await checkPushEnabled(userId);
@@ -3236,7 +3236,7 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
         }
 
         await initializeNotifications(userId, true);
-        
+
         if (Capacitor.isNativePlatform()) {
           try {
             const { PushNotifications } = await import("@capacitor/push-notifications");
@@ -3310,10 +3310,10 @@ const ProfileView = ({ userId, profile, email, createdAt, theme, onThemeToggle, 
                   {pushPermission === "denied"
                     ? "Blocked in browser settings (Tap for help)"
                     : pushPermission === "unsupported"
-                    ? "Not supported on this browser"
-                    : pushEnabled
-                    ? "Active for this account"
-                    : "Disabled for this account"}
+                      ? "Not supported on this browser"
+                      : pushEnabled
+                        ? "Active for this account"
+                        : "Disabled for this account"}
                 </span>
               </span>
             </span>
@@ -3999,17 +3999,17 @@ const SettleForm = ({ group, settlement, balances, currentUserId, onSubmit, onCa
     () => balances.filter((balance) => balance.fromUserId === currentUserId || balance.toUserId === currentUserId),
     [balances, currentUserId],
   );
-  
+
   const selectedBalances = visibleBalances.filter((balance) => selectedSuggestionKeys.includes(`${balance.fromUserId}-${balance.toUserId}-${balance.groupId || "personal"}`));
   const canSubmit = selectedBalances.length > 0 && !submitting;
-  
+
   const toggleSelection = (balance: DebtBalance) => {
     const key = `${balance.fromUserId}-${balance.toUserId}-${balance.groupId || "personal"}`;
-    setSelectedSuggestionKeys((prev) => 
+    setSelectedSuggestionKeys((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
   };
-  
+
   const toggleAll = () => {
     if (selectedSuggestionKeys.length === visibleBalances.length) {
       setSelectedSuggestionKeys([]);
@@ -4029,7 +4029,7 @@ const SettleForm = ({ group, settlement, balances, currentUserId, onSubmit, onCa
 
   const buildPayloads = (): SettlementPayload[] | null => {
     if (selectedBalances.length === 0) return null;
-    
+
     return selectedBalances.map(b => ({
       settlementId: settlement?.id,
       from_user_id: b.fromUserId,
@@ -4043,114 +4043,114 @@ const SettleForm = ({ group, settlement, balances, currentUserId, onSubmit, onCa
 
   return (
     <>
-    <form className="space-y-4" onSubmit={async (event) => {
-      event.preventDefault();
-      if (selectedBalances.length === 0 || submitting) return;
-      const payloads = buildPayloads();
-      if (payloads && payloads.length > 0) setPendingPayloads(payloads);
-    }}>
-      <p className="text-sm font-semibold text-muted-foreground">
-        {selectedBalances.length > 0 ? "Review settlement details and confirm." : "Choose expenses to settle."}
-      </p>
-      {visibleBalances.length > 0 && (
-        <div className="space-y-3 rounded-2xl border border-primary/15 bg-elevated p-3 shadow-soft">
-          <div className="flex items-center justify-between gap-3 px-1">
-            <p className="text-xs font-bold uppercase tracking-wide text-foreground">Pending Settlements</p>
-            {visibleBalances.length > 1 && (
-              <button type="button" onClick={toggleAll} className="text-[11px] font-bold text-primary active:opacity-70">
-                {selectedSuggestionKeys.length === visibleBalances.length ? "Deselect all" : "Select all"}
-              </button>
-            )}
-          </div>
-          <div className="space-y-2">
-            {visibleBalances.map((balance) => {
-              const suggestionKey = `${balance.fromUserId}-${balance.toUserId}-${balance.groupId || "personal"}`;
-              const selected = selectedSuggestionKeys.includes(suggestionKey);
-              return (
-                <button
-                  key={suggestionKey}
-                  type="button"
-                  onClick={() => toggleSelection(balance)}
-                  className={`flex min-h-[64px] w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition-all active:scale-[0.99] ${selected ? "border-primary bg-primary/10 shadow-primary-action" : "border-border/70 bg-background hover:border-primary/40 hover:bg-primary/5"}`}
-                  aria-pressed={selected}
-                >
-                  <span className="min-w-0">
-                    <span className="block font-black text-foreground">{balance.fromName} pay {balance.toName}</span>
-                    <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">{balance.contextName || (selected ? "Selected to settle" : "Tap to select")}</span>
-                  </span>
-                  <span className="flex shrink-0 items-center gap-2">
-                    <span className="text-base font-black text-primary">{money(balance.amount)}</span>
-                    <span className={`grid size-6 place-items-center rounded-md border-2 ${selected ? "bg-primary border-primary text-primary-foreground" : "border-primary/30 text-transparent"}`}>
-                      <Check className="size-3.5" />
-                    </span>
-                  </span>
+      <form className="space-y-4" onSubmit={async (event) => {
+        event.preventDefault();
+        if (selectedBalances.length === 0 || submitting) return;
+        const payloads = buildPayloads();
+        if (payloads && payloads.length > 0) setPendingPayloads(payloads);
+      }}>
+        <p className="text-sm font-semibold text-muted-foreground">
+          {selectedBalances.length > 0 ? "Review settlement details and confirm." : "Choose expenses to settle."}
+        </p>
+        {visibleBalances.length > 0 && (
+          <div className="space-y-3 rounded-2xl border border-primary/15 bg-elevated p-3 shadow-soft">
+            <div className="flex items-center justify-between gap-3 px-1">
+              <p className="text-xs font-bold uppercase tracking-wide text-foreground">Pending Settlements</p>
+              {visibleBalances.length > 1 && (
+                <button type="button" onClick={toggleAll} className="text-[11px] font-bold text-primary active:opacity-70">
+                  {selectedSuggestionKeys.length === visibleBalances.length ? "Deselect all" : "Select all"}
                 </button>
-              );
-            })}
+              )}
+            </div>
+            <div className="space-y-2">
+              {visibleBalances.map((balance) => {
+                const suggestionKey = `${balance.fromUserId}-${balance.toUserId}-${balance.groupId || "personal"}`;
+                const selected = selectedSuggestionKeys.includes(suggestionKey);
+                return (
+                  <button
+                    key={suggestionKey}
+                    type="button"
+                    onClick={() => toggleSelection(balance)}
+                    className={`flex min-h-[64px] w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition-all active:scale-[0.99] ${selected ? "border-primary bg-primary/10 shadow-primary-action" : "border-border/70 bg-background hover:border-primary/40 hover:bg-primary/5"}`}
+                    aria-pressed={selected}
+                  >
+                    <span className="min-w-0">
+                      <span className="block font-black text-foreground">{balance.fromName} pay {balance.toName}</span>
+                      <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">{balance.contextName || (selected ? "Selected to settle" : "Tap to select")}</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span className="text-base font-black text-primary">{money(balance.amount)}</span>
+                      <span className={`grid size-6 place-items-center rounded-md border-2 ${selected ? "bg-primary border-primary text-primary-foreground" : "border-primary/30 text-transparent"}`}>
+                        <Check className="size-3.5" />
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
-      {selectedBalances.length > 0 ? (() => {
-        let net = 0;
-        let fromUserName = currentUserId;
-        let toUserName = currentUserId;
-        selectedBalances.forEach(b => {
-          if (b.fromUserId === currentUserId) net -= b.amount;
-          else net += b.amount;
-          if (b.fromUserId === currentUserId) {
-            fromUserName = b.fromName;
-            toUserName = b.toName;
-          } else {
-            toUserName = b.fromName;
-            fromUserName = b.toName;
+        )}
+        {selectedBalances.length > 0 ? (() => {
+          let net = 0;
+          let fromUserName = currentUserId;
+          let toUserName = currentUserId;
+          selectedBalances.forEach(b => {
+            if (b.fromUserId === currentUserId) net -= b.amount;
+            else net += b.amount;
+            if (b.fromUserId === currentUserId) {
+              fromUserName = b.fromName;
+              toUserName = b.toName;
+            } else {
+              toUserName = b.fromName;
+              fromUserName = b.toName;
+            }
+          });
+          const isCurrentUserPaying = net <= 0;
+          const absNet = Math.abs(net);
+          return (
+            <div className="space-y-3 rounded-2xl border border-success/20 bg-success/10 p-4">
+              <div className="flex items-center gap-2">
+                <span className="grid size-8 place-items-center rounded-full bg-success text-success-foreground">
+                  <Check className="size-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-black text-foreground">Settlement Summary</p>
+                  <p className="text-xs font-semibold text-muted-foreground">{selectedBalances.length} expenses selected</p>
+                </div>
+              </div>
+              <div className="grid gap-2 text-sm">
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-background/70 px-3 py-2">
+                  <span className="font-semibold text-muted-foreground">Net Amount</span>
+                  <span className="font-black text-foreground">{money(absNet)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-background/70 px-3 py-2">
+                  <span className="font-semibold text-muted-foreground">Payment Flow</span>
+                  <span className="text-right font-black text-foreground">{isCurrentUserPaying ? fromUserName : toUserName} pay {isCurrentUserPaying ? toUserName : fromUserName}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })() : null}
+        {settlement ? <Field label="Date" type="date" value={date} onChange={setDate} /> : null}
+        <Textarea label="Note (optional)" placeholder="Paid by UPI, cash..." value={note} onChange={setNote} />
+        <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button type="submit" className="flex-1" disabled={!canSubmit}>{submitting ? "Saving..." : selectedBalances.length > 0 ? "Confirm Settlement" : "Select expenses first"}</Button></div>
+      </form>
+      <PaymentProofPrompt
+        open={Boolean(pendingPayloads)}
+        description="Optional screenshot"
+        submitting={submitting}
+        onCancel={() => setPendingPayloads(null)}
+        onContinue={async (file) => {
+          if (!pendingPayloads || submitting) return;
+          setSubmitting(true);
+          try {
+            await onSubmit(pendingPayloads, file);
+            setPendingPayloads(null);
+          } finally {
+            setSubmitting(false);
           }
-        });
-        const isCurrentUserPaying = net <= 0;
-        const absNet = Math.abs(net);
-        return (
-          <div className="space-y-3 rounded-2xl border border-success/20 bg-success/10 p-4">
-            <div className="flex items-center gap-2">
-              <span className="grid size-8 place-items-center rounded-full bg-success text-success-foreground">
-                <Check className="size-4" />
-              </span>
-              <div>
-                <p className="text-sm font-black text-foreground">Settlement Summary</p>
-                <p className="text-xs font-semibold text-muted-foreground">{selectedBalances.length} expenses selected</p>
-              </div>
-            </div>
-            <div className="grid gap-2 text-sm">
-              <div className="flex items-center justify-between gap-3 rounded-xl bg-background/70 px-3 py-2">
-                <span className="font-semibold text-muted-foreground">Net Amount</span>
-                <span className="font-black text-foreground">{money(absNet)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-3 rounded-xl bg-background/70 px-3 py-2">
-                <span className="font-semibold text-muted-foreground">Payment Flow</span>
-                <span className="text-right font-black text-foreground">{isCurrentUserPaying ? fromUserName : toUserName} pay {isCurrentUserPaying ? toUserName : fromUserName}</span>
-              </div>
-            </div>
-          </div>
-        );
-      })() : null}
-      {settlement ? <Field label="Date" type="date" value={date} onChange={setDate} /> : null}
-      <Textarea label="Note (optional)" placeholder="Paid by UPI, cash..." value={note} onChange={setNote} />
-      <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel}>Cancel</Button><Button type="submit" className="flex-1" disabled={!canSubmit}>{submitting ? "Saving..." : selectedBalances.length > 0 ? "Confirm Settlement" : "Select expenses first"}</Button></div>
-    </form>
-    <PaymentProofPrompt
-      open={Boolean(pendingPayloads)}
-      description="Optional screenshot"
-      submitting={submitting}
-      onCancel={() => setPendingPayloads(null)}
-      onContinue={async (file) => {
-        if (!pendingPayloads || submitting) return;
-        setSubmitting(true);
-        try {
-          await onSubmit(pendingPayloads, file);
-          setPendingPayloads(null);
-        } finally {
-          setSubmitting(false);
-        }
-      }}
-    />
+        }}
+      />
     </>
   );
 };
@@ -4190,46 +4190,46 @@ const ActionModal = ({
   const friendBalances = useMemo(() => {
     const targetId = friend?.user_id || (type === "settle-up" && !group ? modal.item : undefined);
     if (!targetId) return [];
-    
+
     // 1. Fetch personal balances
     const personalBalances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: targetId, groupId: null })
       .map(b => ({ ...b, groupId: null, contextName: "Personal split" }));
-      
+
     // 2. Fetch group balances for all shared groups
     const sharedGroups = data.groups.filter(g => g.group_members.some(m => m.user_id === targetId));
-    const groupBalances = sharedGroups.flatMap(g => 
+    const groupBalances = sharedGroups.flatMap(g =>
       buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: targetId, groupId: g.id })
         .map(b => ({ ...b, groupId: g.id, contextName: `${g.name} split` }))
     );
-    
+
     return [...personalBalances, ...groupBalances].filter(b => b.amount > 0.009);
   }, [friend, type, group, modal.item, data.expenses, data.settlements, data.groups, currentUserId]);
 
   const title =
     type === "add-expense" ? "Add expense" :
-    type === "group-expense" ? `Add expense - ${group?.name || ""}` :
-    type === "chart-details" ? "Spending details" :
-    type === "edit-expense" ? "Edit expense" :
-    type === "delete-expense" ? "Delete expense" :
-    type === "clear-expense" ? "Mark as cleared" :
-    type === "create-group" ? "Create group" :
-    type === "choose-friend-expense" ? "Choose friend" :
-    type === "choose-group-expense" ? "Choose group" :
-    type === "edit-group" ? "Edit group" :
-    type === "delete-group" ? "Delete group" :
-    type === "leave-group" ? "Leave group" :
-    type === "remove-group-member" ? "Member actions" :
-    type === "invite-members" ? "Invite members" :
-    type === "group-details" ? group?.name || "Group details" :
-    type === "friend-details" ? `${displayName(friend)} details` :
-    type === "add-friend" ? "Add friend" :
-    type === "remove-friend" ? "Remove friend" :
-    type === "friend-requests" ? "Friend requests" :
-    type === "settle-up" ? `Settle up - ${group?.name || (friend ? displayName(friend) : (friendBalances.length > 0 ? (friendBalances[0].fromUserId === currentUserId ? friendBalances[0].toName : friendBalances[0].fromName) : ""))}` :
-    type === "logout" ? "Logout" :
-    type === "delete-account" ? "Delete Account" :
-    type === "feedback-support" ? "Feedback & Support" :
-    type === "notifications" ? "Notifications" : "Saved";
+      type === "group-expense" ? `Add expense - ${group?.name || ""}` :
+        type === "chart-details" ? "Spending details" :
+          type === "edit-expense" ? "Edit expense" :
+            type === "delete-expense" ? "Delete expense" :
+              type === "clear-expense" ? "Mark as cleared" :
+                type === "create-group" ? "Create group" :
+                  type === "choose-friend-expense" ? "Choose friend" :
+                    type === "choose-group-expense" ? "Choose group" :
+                      type === "edit-group" ? "Edit group" :
+                        type === "delete-group" ? "Delete group" :
+                          type === "leave-group" ? "Leave group" :
+                            type === "remove-group-member" ? "Member actions" :
+                              type === "invite-members" ? "Invite members" :
+                                type === "group-details" ? group?.name || "Group details" :
+                                  type === "friend-details" ? `${displayName(friend)} details` :
+                                    type === "add-friend" ? "Add friend" :
+                                      type === "remove-friend" ? "Remove friend" :
+                                        type === "friend-requests" ? "Friend requests" :
+                                          type === "settle-up" ? `Settle up - ${group?.name || (friend ? displayName(friend) : (friendBalances.length > 0 ? (friendBalances[0].fromUserId === currentUserId ? friendBalances[0].toName : friendBalances[0].fromName) : ""))}` :
+                                            type === "logout" ? "Logout" :
+                                              type === "delete-account" ? "Delete Account" :
+                                                type === "feedback-support" ? "Feedback & Support" :
+                                                  type === "notifications" ? "Notifications" : "Saved";
 
   const closeAndRefresh = async () => {
     await refresh();
@@ -4433,18 +4433,18 @@ const ActionModal = ({
 
   const saveSettlement = async (payloads: SettlementPayload[], proofFile?: File | null) => {
     if (!payloads || payloads.length === 0) return;
-    
+
     let proofPath: string | null = null;
     let proofUploaded = false;
-    
+
     try {
       if (proofFile) {
         proofPath = await uploadPaymentProof(currentUserId, payloads[0].group_id || "friend-settlement", proofFile);
         proofUploaded = true;
       }
-      
+
       let firstSettlementId: string | null = null;
-      
+
       for (let i = 0; i < payloads.length; i++) {
         const payload = payloads[i];
         const { data: settlementId, error } = await supabase.rpc("record_split_settlement" as never, {
@@ -4455,15 +4455,15 @@ const ActionModal = ({
           p_expense_id: null,
           p_note: payload.note || null,
         } as never);
-        
+
         if (error) {
           throw error;
         }
-        
+
         if (i === 0 && settlementId) {
           firstSettlementId = settlementId;
         }
-        
+
         notifySharedAction({
           type: payload.group_id ? "group_settled" : "split_settled",
           recipients: [payload.from_user_id, payload.to_user_id],
@@ -4475,7 +4475,7 @@ const ActionModal = ({
           group_name: payload.group_id ? data.groups.find((item) => item.id === payload.group_id)?.name : null,
         });
       }
-      
+
       if (proofPath && firstSettlementId) {
         try {
           await attachPaymentProofToSettlement(firstSettlementId, proofPath);
@@ -4491,7 +4491,7 @@ const ActionModal = ({
       toast({ title: isProofError ? "Proof upload failed" : "Settlement failed", description: isProofError ? getPaymentProofErrorMessage(error) : getFriendlyErrorMessage(error, "settlement"), variant: "destructive" });
       throw error;
     }
-    
+
     toast({ title: payloads.length > 1 ? "Settlements saved" : "Settlement saved", description: "Balances were updated." });
     await closeAndRefresh();
   };
@@ -4659,7 +4659,7 @@ const ActionModal = ({
 
   const leaveGroup = async () => {
     if (!group) return;
-    
+
     if (group.created_by === currentUserId) {
       if (group.group_members.length > 1) {
         toast({ title: "Cannot leave group", description: "Make someone group admin before leaving.", variant: "destructive" });
@@ -4739,74 +4739,74 @@ const ActionModal = ({
           {(type === "create-group" || type === "edit-group") && <CreateGroupForm friends={data.friends} group={type === "edit-group" ? group : undefined} onSubmit={saveGroup} onCancel={onClose} />}
 
           {type === "group-details" && group && (
-          <div className="space-y-3">
-            <div className="rounded-2xl bg-elevated p-4 text-sm"><p className="font-semibold text-foreground">Balance: {money(groupExpenses.reduce((sum, item) => sum + item.amount, 0))}</p><p className="mt-1 text-muted-foreground">{group.group_members.length} active members - Latest: {groupExpenses[0]?.category || "None"}</p></div>
-            <div className="space-y-2">
-              {group.group_members.map((member) => {
-                const isFriend = data.friends.some(f => f.user_id === member.user_id);
-                const isPending = data.outgoingRequests.some(r => r.receiver_id === member.user_id) || data.incomingRequests.some(r => r.requester_id === member.user_id);
-                return (
-                  <div key={member.user_id} className="flex items-center justify-between rounded-2xl bg-elevated p-3 text-sm">
-                    <span className="font-semibold text-foreground">{member.user_id === currentUserId ? "You" : displayName(member.profiles)}</span>
-                    <div className="flex items-center gap-3">
-                      {member.user_id !== currentUserId && !isFriend && !isPending && (
-                        <button
-                          onClick={async () => {
-                            const { data: connection, error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: member.user_id, status: "pending" }).select("id").single();
-                            if (error) {
-                              toast({ title: getFriendlyErrorTitle(error, "friend"), description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" });
-                            } else {
-                              notifySharedAction({ type: "friend_request_received", recipients: [member.user_id], title: "New friend request", message: `${actorName} sent you a friend request.`, entity_type: "connection", entity_id: connection?.id || null });
-                              toast({ title: "Friend request sent" });
-                              await closeAndRefresh();
-                            }
-                          }}
-                          className="flex items-center gap-1 text-xs font-bold text-primary"
-                        >
-                          <UserPlus className="size-3.5" /> Add Friend
-                        </button>
-                      )}
-                      {group.created_by === currentUserId && member.user_id !== currentUserId && member.user_id !== group.created_by ? (
-                        <button onClick={() => openModal("remove-group-member", `${group.id}:${member.user_id}`)} className="text-xs font-bold text-primary">Manage</button>
-                      ) : null}
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-elevated p-4 text-sm"><p className="font-semibold text-foreground">Balance: {money(groupExpenses.reduce((sum, item) => sum + item.amount, 0))}</p><p className="mt-1 text-muted-foreground">{group.group_members.length} active members - Latest: {groupExpenses[0]?.category || "None"}</p></div>
+              <div className="space-y-2">
+                {group.group_members.map((member) => {
+                  const isFriend = data.friends.some(f => f.user_id === member.user_id);
+                  const isPending = data.outgoingRequests.some(r => r.receiver_id === member.user_id) || data.incomingRequests.some(r => r.requester_id === member.user_id);
+                  return (
+                    <div key={member.user_id} className="flex items-center justify-between rounded-2xl bg-elevated p-3 text-sm">
+                      <span className="font-semibold text-foreground">{member.user_id === currentUserId ? "You" : displayName(member.profiles)}</span>
+                      <div className="flex items-center gap-3">
+                        {member.user_id !== currentUserId && !isFriend && !isPending && (
+                          <button
+                            onClick={async () => {
+                              const { data: connection, error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: member.user_id, status: "pending" }).select("id").single();
+                              if (error) {
+                                toast({ title: getFriendlyErrorTitle(error, "friend"), description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" });
+                              } else {
+                                notifySharedAction({ type: "friend_request_received", recipients: [member.user_id], title: "New friend request", message: `${actorName} sent you a friend request.`, entity_type: "connection", entity_id: connection?.id || null });
+                                toast({ title: "Friend request sent" });
+                                await closeAndRefresh();
+                              }
+                            }}
+                            className="flex items-center gap-1 text-xs font-bold text-primary"
+                          >
+                            <UserPlus className="size-3.5" /> Add Friend
+                          </button>
+                        )}
+                        {group.created_by === currentUserId && member.user_id !== currentUserId && member.user_id !== group.created_by ? (
+                          <button onClick={() => openModal("remove-group-member", `${group.id}:${member.user_id}`)} className="text-xs font-bold text-primary">Manage</button>
+                        ) : null}
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
+              <div className="space-y-2">
+                {groupExpenses.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between rounded-2xl bg-elevated p-3 text-sm">
+                    <span className="font-semibold text-foreground">{item.category}</span>
+                    <span className="font-bold">{money(item.amount)}</span>
                   </div>
-                );
-              })}
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {group.created_by === currentUserId ? <Button variant="quiet" onClick={() => openModal("edit-group", group.id)}><Pencil />Edit</Button> : null}
+                <Button variant="destructive" onClick={() => openModal("leave-group", group.id)}><UserMinus />Leave</Button>
+                {group.created_by === currentUserId ? <Button variant="destructive" onClick={() => openModal("delete-group", group.id)}><Trash2 />Delete</Button> : null}
+              </div>
             </div>
-            <div className="space-y-2">
-              {groupExpenses.map((item) => (
-                <div key={item.id} className="flex items-center justify-between rounded-2xl bg-elevated p-3 text-sm">
-                  <span className="font-semibold text-foreground">{item.category}</span>
-                  <span className="font-bold">{money(item.amount)}</span>
-                </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {group.created_by === currentUserId ? <Button variant="quiet" onClick={() => openModal("edit-group", group.id)}><Pencil />Edit</Button> : null}
-              <Button variant="destructive" onClick={() => openModal("leave-group", group.id)}><UserMinus />Leave</Button>
-              {group.created_by === currentUserId ? <Button variant="destructive" onClick={() => openModal("delete-group", group.id)}><Trash2 />Delete</Button> : null}
-            </div>
-          </div>
           )}
 
           {type === "invite-members" && group && <InviteMembers group={group} invites={data.groupInvites[group.id] || []} currentUserId={currentUserId} onInvite={sendInvite} onAddByUsername={addMemberByUsername} />}
           {type === "add-friend" && <AddFriendForm currentUserId={currentUserId} friends={data.friends} requests={[...data.incomingRequests, ...data.outgoingRequests]} onRequest={async (receiverId) => { if (receiverId === currentUserId) { toast({ title: "Cannot add yourself", description: "Choose another Spendova user to send a friend request.", variant: "destructive" }); return; } const { data: connection, error } = await supabase.from("connections").insert({ requester_id: currentUserId, receiver_id: receiverId, status: "pending" }).select("id").single(); if (error) toast({ title: getFriendlyErrorTitle(error, "friend"), description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); else { notifySharedAction({ type: "friend_request_received", recipients: [receiverId], title: "New friend request", message: `${actorName} sent you a friend request.`, entity_type: "connection", entity_id: connection?.id || null }); await closeAndRefresh(); } }} onCancel={onClose} />}
 
           {type === "friend-requests" && (
-          <div className="space-y-4">
-            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Incoming</p><div className="space-y-2">{data.incomingRequests.length === 0 ? <EmptyCard text="No incoming requests." /> : data.incomingRequests.map((request) => <RequestCard key={request.id} request={request} onAccept={async () => { const { error } = await supabase.from("connections").update({ status: "accepted" }).eq("id", request.id); if (error) { toast({ title: "Accept failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } notifySharedAction({ type: "friend_request_accepted", recipients: [request.requester_id], title: "Friend request accepted", message: `${actorName} accepted your friend request.`, entity_type: "connection", entity_id: request.id }); await closeAndRefresh(); }} onReject={async () => { const { error } = await supabase.from("connections").update({ status: "rejected" }).eq("id", request.id); if (error) { toast({ title: "Reject failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeAndRefresh(); }} />)}</div></div>
-            <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Outgoing</p><div className="space-y-2">{data.outgoingRequests.length === 0 ? <EmptyCard text="No outgoing requests." /> : data.outgoingRequests.map((request) => <div key={request.id} className="flex items-center justify-between rounded-2xl bg-elevated p-3"><div><p className="font-bold text-foreground">{displayName(request.profiles)}</p><p className="text-xs text-muted-foreground">@{request.profiles.username}</p></div><Button size="sm" variant="quiet" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", request.id); if (error) { toast({ title: "Cancel failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeAndRefresh(); }}>Cancel</Button></div>)}</div></div>
-          </div>
+            <div className="space-y-4">
+              <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Incoming</p><div className="space-y-2">{data.incomingRequests.length === 0 ? <EmptyCard text="No incoming requests." /> : data.incomingRequests.map((request) => <RequestCard key={request.id} request={request} onAccept={async () => { const { error } = await supabase.from("connections").update({ status: "accepted" }).eq("id", request.id); if (error) { toast({ title: "Accept failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } notifySharedAction({ type: "friend_request_accepted", recipients: [request.requester_id], title: "Friend request accepted", message: `${actorName} accepted your friend request.`, entity_type: "connection", entity_id: request.id }); await closeAndRefresh(); }} onReject={async () => { const { error } = await supabase.from("connections").update({ status: "rejected" }).eq("id", request.id); if (error) { toast({ title: "Reject failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeAndRefresh(); }} />)}</div></div>
+              <div><p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Outgoing</p><div className="space-y-2">{data.outgoingRequests.length === 0 ? <EmptyCard text="No outgoing requests." /> : data.outgoingRequests.map((request) => <div key={request.id} className="flex items-center justify-between rounded-2xl bg-elevated p-3"><div><p className="font-bold text-foreground">{displayName(request.profiles)}</p><p className="text-xs text-muted-foreground">@{request.profiles.username}</p></div><Button size="sm" variant="quiet" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", request.id); if (error) { toast({ title: "Cancel failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeAndRefresh(); }}>Cancel</Button></div>)}</div></div>
+            </div>
           )}
 
           {type === "friend-details" && friend && (
-          <div className="space-y-3">
-            <div className="space-y-2 rounded-2xl bg-elevated p-4 text-sm">
-              {data.expenses.filter((expense) => expense.paid_by === friend.user_id || expense.expense_splits?.some((split) => split.user_id === friend.user_id)).slice(0, 4).map((item) => <div key={item.id} className="flex justify-between"><span className="text-muted-foreground">{item.category}</span><span className="font-semibold text-foreground">{money(item.amount)}</span></div>)}
+            <div className="space-y-3">
+              <div className="space-y-2 rounded-2xl bg-elevated p-4 text-sm">
+                {data.expenses.filter((expense) => expense.paid_by === friend.user_id || expense.expense_splits?.some((split) => split.user_id === friend.user_id)).slice(0, 4).map((item) => <div key={item.id} className="flex justify-between"><span className="text-muted-foreground">{item.category}</span><span className="font-semibold text-foreground">{money(item.amount)}</span></div>)}
+              </div>
+              <Button variant="destructive" className="w-full" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeRefreshAndReturnToSplitList("friends"); }}><UserMinus />Remove friend</Button>
             </div>
-            <Button variant="destructive" className="w-full" onClick={async () => { const { error } = await supabase.from("connections").delete().eq("id", friend.connection_id); if (error) { toast({ title: "Remove failed", description: getFriendlyErrorMessage(error, "friend"), variant: "destructive" }); return; } await closeRefreshAndReturnToSplitList("friends"); }}><UserMinus />Remove friend</Button>
-          </div>
           )}
 
           {type === "settle-up" && (group || friend || (!group && modal.item)) && (
@@ -4823,11 +4823,11 @@ const ActionModal = ({
                 <p className="font-bold text-foreground">{displayName(memberToRemove.profiles)}</p>
                 <p className="mt-1 text-muted-foreground">Member of {memberGroup.name}</p>
               </div>
-              
+
               {(() => {
                 const isFriend = data.friends.some((f) => f.user_id === memberUserId);
                 const isPending = data.outgoingRequests.some((r) => r.receiver_id === memberUserId) || data.incomingRequests.some((r) => r.requester_id === memberUserId);
-                
+
                 if (!isFriend && !isPending) {
                   return (
                     <Button
@@ -5043,9 +5043,8 @@ const SupportCoffeeWidget = () => {
   return (
     <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+7.25rem)] right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end sm:bottom-6 sm:right-6">
       <div
-        className={`mb-3 w-[min(20rem,calc(100vw-2rem))] origin-bottom-right rounded-[1.25rem] border border-border/80 bg-card p-4 shadow-panel transition-all duration-300 ease-out ${
-          open ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-3 scale-95 opacity-0"
-        } ${open ? "pointer-events-auto" : ""}`}
+        className={`mb-3 w-[min(20rem,calc(100vw-2rem))] origin-bottom-right rounded-[1.25rem] border border-border/80 bg-card p-4 shadow-panel transition-all duration-300 ease-out ${open ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-3 scale-95 opacity-0"
+          } ${open ? "pointer-events-auto" : ""}`}
         aria-hidden={!open}
       >
         <div className="mb-3 flex items-start justify-between gap-3">
@@ -5205,7 +5204,7 @@ const Index = () => {
               );
             })}
           </div>
-          
+
           {/* Center Button */}
           <button
             type="button"
@@ -5218,7 +5217,7 @@ const Index = () => {
           >
             <Plus className="size-8" />
           </button>
-          
+
           {/* Right Pill */}
           <div className="flex flex-1 items-center justify-around rounded-[1.4rem] border border-border/80 bg-card/95 p-1 shadow-panel">
             {tabs.slice(2).map((tab) => {
@@ -5234,8 +5233,8 @@ const Index = () => {
           </div>
         </div>
       </nav>
-      <SupportCoffeeWidget />
-      
+      {/* <SupportCoffeeWidget /> */}
+
       <UniversalAddDrawer
         open={modal.type === "universal-add"}
         onOpenChange={(open) => {
