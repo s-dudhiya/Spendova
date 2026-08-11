@@ -118,8 +118,12 @@ export function getFriendlyErrorMessage(error: unknown, context: ErrorContext = 
     text.includes("email address is invalid") ||
     text.includes("email is invalid") ||
     text.includes("invalid format") ||
-    text.includes("email_address_invalid")
+    text.includes("email_address_invalid") ||
+    text.includes("fake or temporary")
   ) {
+    if (text.includes("fake or temporary")) {
+      return "Fake or temporary email addresses are not allowed. Please use a valid email.";
+    }
     return "Please enter a valid email address.";
   }
 

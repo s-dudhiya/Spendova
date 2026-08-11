@@ -22,6 +22,42 @@ function cleanEmail(email: string) {
   return String(email || '').trim().toLowerCase()
 }
 
+async function isFakeEmail(email: string): Promise<boolean> {
+  const apiKey = Deno.env.get('GEMINI_API_KEY')
+  if (!apiKey) {
+    console.warn('GEMINI_API_KEY is not set, skipping fake email check')
+    return false // fail open if key is not configured
+  }
+  
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: `Analyze this email address: "${email}". Is it from a known temporary, disposable, or fake email service (like 10minutemail, mailinator, telegram bot emails, etc)? Reply with ONLY "true" if it is fake/disposable, or "false" if it is a standard/valid email provider.`
+          }]
+        }]
+      })
+    })
+    
+    if (!response.ok) {
+      console.warn('Gemini API returned error status:', response.status)
+      return false
+    }
+
+    const data = await response.json()
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()?.toLowerCase()
+    
+    // Gemini may sometimes reply with "true." or other punctuation, so we check if it starts with true
+    return text === 'true' || text?.startsWith('true')
+  } catch (error) {
+    console.error('Error checking fake email:', error)
+    return false
+  }
+}
+
 function generateOtp() {
   return String(Math.floor(100000 + Math.random() * 900000))
 }
@@ -107,6 +143,11 @@ serve(async (req) => {
     await cleanupAuthOtps(supabaseAdmin)
 
     if (purpose === 'signup_verify') {
+      const isFake = await isFakeEmail(email)
+      if (isFake) {
+        return json({ error: 'Fake or temporary email addresses are not allowed. Please use a valid email.' }, 400)
+      }
+
       const password = String(body.password || '')
       const fullName = String(body.fullName || '').trim()
       const username = String(body.username || '').trim().toLowerCase()
