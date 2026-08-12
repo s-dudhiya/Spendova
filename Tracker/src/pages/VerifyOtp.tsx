@@ -114,6 +114,7 @@ export default function VerifyOtp() {
         const { data, error } = await supabase.functions.invoke("verify-auth-otp", { body: { email, purpose, otp, redirectTo: redirectUrl } });
         if (error) throw error;
         if (data.actionLink) {
+          safeStorage.setItem("spendova_otp_login_pending", "true");
           toast({ title: "Logged in successfully", description: "Welcome back." });
           window.location.assign(data.actionLink);
           return;

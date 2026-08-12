@@ -109,7 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     enforceDeviceSession(user);
-    const interval = window.setInterval(async () => {
+
+    const checkSessionActivity = async () => {
       try {
         const result = await checkDeviceSession();
         if (!result.valid) {
@@ -124,9 +125,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.warn("Device session check unavailable; continuing without blocking app load.", error);
       }
-    }, DEVICE_SESSION_CHECK_INTERVAL);
+    };
 
-    return () => window.clearInterval(interval);
+    const interval = window.setInterval(checkSessionActivity, DEVICE_SESSION_CHECK_INTERVAL);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkSessionActivity();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [clearLocalAuthState, enforceDeviceSession, toast, user]);
 
   // Listen for auth state changes
@@ -149,20 +162,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === "SIGNED_IN" && session?.user) {
         safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
         markFreshLoginUnlocked(session.user.id);
-        if (lastRegisteredUserRef.current !== session.user.id) {
-          registeringRef.current = true;
-          registerDeviceSession()
-            .then(() => {
-              lastRegisteredUserRef.current = session.user.id;
-              safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
-            })
-            .catch(() => {
-              lastRegisteredUserRef.current = session.user.id;
-            })
-            .finally(() => {
-              registeringRef.current = false;
-            });
-        }
       }
       setSession(session);
       setUser(session?.user ?? null);
@@ -178,6 +177,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data: { session } } = await withTimeout(supabase.auth.getSession(), STARTUP_TIMEOUT, "supabase session restore");
         bootLog("supabase getSession end", Boolean(session?.user));
         if (!mounted) return;
+
+        if (session?.user && safeStorage.getItem("spendova_otp_login_pending") === "true") {
+          safeStorage.removeItem("spendova_otp_login_pending");
+          safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
+          markFreshLoginUnlocked(session.user.id);
+          registeringRef.current = true;
+          try {
+            await registerDeviceSession();
+            lastRegisteredUserRef.current = session.user.id;
+            safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
+            bootLog("otp sign-in device session registered");
+          } catch (deviceError) {
+            console.warn("Device session registration unavailable; continuing without blocking sign-in.", deviceError);
+            lastRegisteredUserRef.current = session.user.id;
+          } finally {
+            registeringRef.current = false;
+          }
+        }
+
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) fetchProfile(session.user.id);

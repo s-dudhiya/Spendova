@@ -1,0 +1,333 @@
+﻿diff --git a/Tracker/src/hooks/useAuth.tsx b/Tracker/src/hooks/useAuth.tsx
+index 772a834..5e3cfe9 100644
+--- a/Tracker/src/hooks/useAuth.tsx
++++ b/Tracker/src/hooks/useAuth.tsx
+@@ -109,7 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
+     }
+ 
+     enforceDeviceSession(user);
+-    const interval = window.setInterval(async () => {
++
++    const checkSessionActivity = async () => {
+       try {
+         const result = await checkDeviceSession();
+         if (!result.valid) {
+@@ -124,9 +125,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
+       } catch (error) {
+         console.warn("Device session check unavailable; continuing without blocking app load.", error);
+       }
+-    }, DEVICE_SESSION_CHECK_INTERVAL);
++    };
++
++    const interval = window.setInterval(checkSessionActivity, DEVICE_SESSION_CHECK_INTERVAL);
++
++    const handleVisibilityChange = () => {
++      if (document.visibilityState === 'visible') {
++        checkSessionActivity();
++      }
++    };
++    document.addEventListener("visibilitychange", handleVisibilityChange);
+ 
+-    return () => window.clearInterval(interval);
++    return () => {
++      window.clearInterval(interval);
++      document.removeEventListener("visibilitychange", handleVisibilityChange);
++    };
+   }, [clearLocalAuthState, enforceDeviceSession, toast, user]);
+ 
+   // Listen for auth state changes
+@@ -148,6 +161,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
+       bootLog("auth state change", event, Boolean(session?.user));
+       if (event === "SIGNED_IN" && session?.user) {
+         safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
++        markFreshLoginUnlocked(session.user.id);
++        if (lastRegisteredUserRef.current !== session.user.id) {
++          registeringRef.current = true;
++          registerDeviceSession()
++            .then(() => {
++              lastRegisteredUserRef.current = session.user.id;
++              safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
++            })
++            .catch(() => {
++              lastRegisteredUserRef.current = session.user.id;
++            })
++            .finally(() => {
++              registeringRef.current = false;
++            });
++        }
+       }
+       setSession(session);
+       setUser(session?.user ?? null);
+@@ -163,6 +191,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
+         const { data: { session } } = await withTimeout(supabase.auth.getSession(), STARTUP_TIMEOUT, "supabase session restore");
+         bootLog("supabase getSession end", Boolean(session?.user));
+         if (!mounted) return;
++
++        if (session?.user && safeStorage.getItem("spendova_otp_login_pending") === "true") {
++          safeStorage.removeItem("spendova_otp_login_pending");
++          safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
++          markFreshLoginUnlocked(session.user.id);
++          registeringRef.current = true;
++          try {
++            await registerDeviceSession();
++            lastRegisteredUserRef.current = session.user.id;
++            safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
++            bootLog("otp sign-in device session registered");
++          } catch (deviceError) {
++            console.warn("Device session registration unavailable; continuing without blocking sign-in.", deviceError);
++            lastRegisteredUserRef.current = session.user.id;
++          } finally {
++            registeringRef.current = false;
++          }
++        }
++
+         setSession(session);
+         setUser(session?.user ?? null);
+         if (session?.user) fetchProfile(session.user.id);
+diff --git a/Tracker/src/pages/Auth.tsx b/Tracker/src/pages/Auth.tsx
+index 9818446..5d19aeb 100644
+--- a/Tracker/src/pages/Auth.tsx
++++ b/Tracker/src/pages/Auth.tsx
+@@ -57,6 +57,7 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
+   const [username, setUsername] = useState("");
+   const [submitting, setSubmitting] = useState(false);
+   const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
++  const [loginMethod, setLoginMethod] = useState<"password" | "otp">("password");
+   const [formError, setFormError] = useState("");
+   const { user, loading, signIn } = useAuth();
+   const { toast } = useToast();
+@@ -98,7 +99,7 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
+       : isReset
+         ? "Enter your email and we will send a verification code."
+         : "Enter your email and we will send a verification code.";
+-  const buttonLabel = submitting ? "Please wait..." : isLogin ? "Login" : isRegister ? "Send verification code" : "Send verification code";
++  const buttonLabel = submitting ? "Please wait..." : isLogin ? (loginMethod === "password" ? "Login" : "Send verification code") : isRegister ? "Send verification code" : "Send verification code";
+   const redirectParam = searchParams.get("redirect");
+   const loginLink = redirectParam ? `/login?redirect=${encodeURIComponent(redirectParam)}` : "/login";
+   const registerLink = redirectParam ? `/register?redirect=${encodeURIComponent(redirectParam)}` : "/register";
+@@ -119,6 +120,12 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
+       toast({ title: "Check your login", description: message, variant: "destructive" });
+       return;
+     }
++    if (isLogin && loginMethod === "otp" && !EMAIL_PATTERN.test(email.trim())) {
++      const message = "Please enter a valid email address to login with a code.";
++      setFormError(message);
++      toast({ title: "Invalid Email", description: message, variant: "destructive" });
++      return;
++    }
+     if (isRegister && password !== confirmPassword) {
+       const message = getFriendlyErrorMessage("passwords do not match", "signup");
+       setFormError(message);
+@@ -140,10 +147,31 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
+     const redirect = searchParams.get("redirect") || undefined;
+     try {
+       if (isLogin) {
+-        const result = await signIn(email, password);
+-        if (result.error) throw result.error;
+-        navigate(redirect || "/dashboard", { replace: true });
+-        return;
++        if (loginMethod === "password") {
++          const result = await signIn(email, password);
++          if (result.error) throw result.error;
++          navigate(redirect || "/dashboard", { replace: true });
++          return;
++        } else {
++          const { error } = await supabase.functions.invoke("send-auth-otp", {
++            body: { email: email.trim().toLowerCase(), purpose: 'login' },
++          });
++          if (error) {
++            if (error.context && typeof error.context.json === 'function') {
++              const body = await error.context.json().catch(() => null);
++              if (body?.error) throw new Error(body.error);
++            }
++            throw error;
++          }
++          toast({
++            title: "Check your email",
++            description: "We sent a verification code to your email address.",
++          });
++          const params = new URLSearchParams({ purpose: 'login', email: email.trim().toLowerCase() });
++          if (redirect) params.set("redirect", redirect);
++          navigate(`/verify-otp?${params.toString()}`, { replace: true });
++          return;
++        }
+       }
+ 
+       const purpose = isRegister ? "signup_verify" : "reset_password";
+@@ -225,12 +253,23 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
+             )}
+             {!isReset && <TextField label={isLogin ? "Email or username" : "Email"} value={email} onChange={setEmail} placeholder={isLogin ? "Enter email or username" : "Enter email address"} type={isLogin ? "text" : "email"} icon={isLogin ? User : Mail} />}
+             {isReset && <TextField label="Email" value={email} onChange={setEmail} placeholder="Enter email address" type="email" icon={Mail} />}
+-            {!isForgot && !isReset && <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Enter password" />}
++            {!isForgot && !isReset && loginMethod === "password" && (
++              <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Enter password" />
++            )}
+             {isRegister && <PasswordField label="Confirm password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Confirm password" />}
+ 
+             {isLogin && (
+-              <div className="flex justify-end">
+-                <Link to="/forgot-password" className="text-sm font-semibold text-[#6d28d9]">Forgot password?</Link>
++              <div className="flex items-center justify-between">
++                <button
++                  type="button"
++                  onClick={() => setLoginMethod(prev => prev === 'password' ? 'otp' : 'password')}
++                  className="text-sm font-semibold text-[#6d28d9] hover:text-[#5b21b6] transition"
++                >
++                  {loginMethod === 'password' ? 'Login with Email Code instead' : 'Login with Password instead'}
++                </button>
++                {loginMethod === "password" && (
++                  <Link to="/forgot-password" className="text-sm font-semibold text-[#6d28d9] hover:text-[#5b21b6] transition">Forgot password?</Link>
++                )}
+               </div>
+             )}
+ 
+diff --git a/Tracker/src/pages/VerifyOtp.tsx b/Tracker/src/pages/VerifyOtp.tsx
+index 0664fd3..4fdccc0 100644
+--- a/Tracker/src/pages/VerifyOtp.tsx
++++ b/Tracker/src/pages/VerifyOtp.tsx
+@@ -18,7 +18,7 @@ const OTP_TTL_SECONDS = 10 * 60;
+ const RESEND_SECONDS = 60;
+ const MIN_PASSWORD_LENGTH = 6;
+ 
+-type OtpPurpose = "signup_verify" | "reset_password";
++type OtpPurpose = "signup_verify" | "reset_password" | "login";
+ 
+ const PasswordField = ({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) => {
+   const [visible, setVisible] = useState(false);
+@@ -62,6 +62,7 @@ export default function VerifyOtp() {
+   const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
+   const otp = useMemo(() => digits.join(""), [digits]);
+   const isReset = purpose === "reset_password";
++  const isLogin = purpose === "login";
+ 
+   useEffect(() => {
+     const timer = window.setInterval(() => setSecondsLeft((current) => Math.max(0, current - 1)), 1000);
+@@ -74,7 +75,7 @@ export default function VerifyOtp() {
+     return () => window.clearInterval(timer);
+   }, [cooldown]);
+ 
+-  if (!email || !purpose || !["signup_verify", "reset_password"].includes(purpose)) {
++  if (!email || !purpose || !["signup_verify", "reset_password", "login"].includes(purpose)) {
+     return <Navigate to="/login" replace />;
+   }
+ 
+@@ -108,6 +109,18 @@ export default function VerifyOtp() {
+     }
+     setSubmitting(true);
+     try {
++      if (isLogin) {
++        const redirectUrl = window.location.origin + redirect;
++        const { data, error } = await supabase.functions.invoke("verify-auth-otp", { body: { email, purpose, otp, redirectTo: redirectUrl } });
++        if (error) throw error;
++        if (data.actionLink) {
++          safeStorage.setItem("spendova_otp_login_pending", "true");
++          toast({ title: "Logged in successfully", description: "Welcome back." });
++          window.location.assign(data.actionLink);
++          return;
++        }
++      }
++
+       const { data, error } = await supabase.functions.invoke("verify-auth-otp", { body: { email, purpose, otp } });
+       if (error) throw error;
+       if (isReset) {
+diff --git a/Tracker/supabase/functions/send-auth-otp/index.ts b/Tracker/supabase/functions/send-auth-otp/index.ts
+index 095324e..2290962 100644
+--- a/Tracker/supabase/functions/send-auth-otp/index.ts
++++ b/Tracker/supabase/functions/send-auth-otp/index.ts
+@@ -133,7 +133,7 @@ serve(async (req) => {
+     const body = await req.json()
+     const email = cleanEmail(body.email)
+     const purpose = body.purpose
+-    if (!email || !['signup_verify', 'reset_password'].includes(purpose)) return json({ error: 'Invalid request' }, 400)
++    if (!email || !['signup_verify', 'reset_password', 'login'].includes(purpose)) return json({ error: 'Invalid request' }, 400)
+ 
+     const supabaseAdmin = createClient(
+       Deno.env.get('SUPABASE_URL') ?? '',
+@@ -237,6 +237,11 @@ serve(async (req) => {
+       if (!existingUser) return json({ success: true })
+     }
+ 
++    if (purpose === 'login') {
++      const existingUser = await findUserByEmail(supabaseAdmin, email)
++      if (!existingUser) return json({ error: 'Account not found. Please create an account first.' }, 404)
++    }
++
+     const otp = generateOtp()
+     const otpHash = await hashOtp(email, purpose, otp)
+     await cleanupAuthOtps(supabaseAdmin, email, purpose)
+diff --git a/Tracker/supabase/functions/verify-auth-otp/index.ts b/Tracker/supabase/functions/verify-auth-otp/index.ts
+index 6f88bed..681f631 100644
+--- a/Tracker/supabase/functions/verify-auth-otp/index.ts
++++ b/Tracker/supabase/functions/verify-auth-otp/index.ts
+@@ -34,10 +34,10 @@ serve(async (req) => {
+   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+ 
+   try {
+-    const { email: rawEmail, purpose, otp } = await req.json()
++    const { email: rawEmail, purpose, otp, redirectTo } = await req.json()
+     const email = cleanEmail(rawEmail)
+     const token = String(otp || '').trim()
+-    if (!email || !['signup_verify', 'reset_password'].includes(purpose) || !/^\d{6}$/.test(token)) {
++    if (!email || !['signup_verify', 'reset_password', 'login'].includes(purpose) || !/^\d{6}$/.test(token)) {
+       return json({ error: 'Enter the 6-digit code.' }, 400)
+     }
+ 
+@@ -80,6 +80,23 @@ serve(async (req) => {
+       return json({ error: 'Invalid verification code.' }, 400)
+     }
+ 
++    if (purpose === 'login') {
++      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
++        type: 'magiclink',
++        email,
++        options: {
++          redirectTo: redirectTo || undefined
++        }
++      })
++      if (linkError) throw linkError
++      
++      const actionLink = linkData.properties?.action_link
++      if (!actionLink) return json({ error: 'Could not generate session token' }, 500)
++      
++      await supabaseAdmin.from('auth_otps').delete().eq('id', otpRow.id)
++      return json({ success: true, actionLink })
++    }
++
+     if (purpose === 'signup_verify') {
+       const { data: usersData, error: usersError } = await supabaseAdmin.auth.admin.listUsers()
+       if (usersError) throw usersError
+diff --git a/Tracker/supabase/migrations/20260812120000_update_auth_otps_purpose_check.sql b/Tracker/supabase/migrations/20260812120000_update_auth_otps_purpose_check.sql
+new file mode 100644
+index 0000000..a2f2390
+--- /dev/null
++++ b/Tracker/supabase/migrations/20260812120000_update_auth_otps_purpose_check.sql
+@@ -0,0 +1,2 @@
++ALTER TABLE public.auth_otps DROP CONSTRAINT auth_otps_purpose_check;
++ALTER TABLE public.auth_otps ADD CONSTRAINT auth_otps_purpose_check CHECK (purpose IN ('signup_verify', 'reset_password', 'login'));
+diff --git a/Tracker/vite.config.ts.timestamp-1786514398526-f16e152f6de9e8.mjs b/Tracker/vite.config.ts.timestamp-1786514398526-f16e152f6de9e8.mjs
+new file mode 100644
+index 0000000..b396e9f
+--- /dev/null
++++ b/Tracker/vite.config.ts.timestamp-1786514398526-f16e152f6de9e8.mjs
+@@ -0,0 +1,21 @@
++// vite.config.ts
++import { defineConfig } from "file:///C:/ExpenseMate-main/Tracker/node_modules/vite/dist/node/index.js";
++import react from "file:///C:/ExpenseMate-main/Tracker/node_modules/@vitejs/plugin-react-swc/index.js";
++import path from "path";
++var __vite_injected_original_dirname = "C:\\ExpenseMate-main\\Tracker";
++var vite_config_default = defineConfig({
++  server: {
++    host: "::",
++    port: 8080
++  },
++  plugins: [react()],
++  resolve: {
++    alias: {
++      "@": path.resolve(__vite_injected_original_dirname, "./src")
++    }
++  }
++});
++export {
++  vite_config_default as default
++};
++//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsidml0ZS5jb25maWcudHMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbImNvbnN0IF9fdml0ZV9pbmplY3RlZF9vcmlnaW5hbF9kaXJuYW1lID0gXCJDOlxcXFxFeHBlbnNlTWF0ZS1tYWluXFxcXFRyYWNrZXJcIjtjb25zdCBfX3ZpdGVfaW5qZWN0ZWRfb3JpZ2luYWxfZmlsZW5hbWUgPSBcIkM6XFxcXEV4cGVuc2VNYXRlLW1haW5cXFxcVHJhY2tlclxcXFx2aXRlLmNvbmZpZy50c1wiO2NvbnN0IF9fdml0ZV9pbmplY3RlZF9vcmlnaW5hbF9pbXBvcnRfbWV0YV91cmwgPSBcImZpbGU6Ly8vQzovRXhwZW5zZU1hdGUtbWFpbi9UcmFja2VyL3ZpdGUuY29uZmlnLnRzXCI7aW1wb3J0IHsgZGVmaW5lQ29uZmlnIH0gZnJvbSBcInZpdGVcIjtcbmltcG9ydCByZWFjdCBmcm9tIFwiQHZpdGVqcy9wbHVnaW4tcmVhY3Qtc3djXCI7XG5pbXBvcnQgcGF0aCBmcm9tIFwicGF0aFwiO1xuXG4vLyBodHRwczovL3ZpdGVqcy5kZXYvY29uZmlnL1xuZXhwb3J0IGRlZmF1bHQgZGVmaW5lQ29uZmlnKHtcbiAgc2VydmVyOiB7XG4gICAgaG9zdDogXCI6OlwiLFxuICAgIHBvcnQ6IDgwODAsXG4gIH0sXG4gIHBsdWdpbnM6IFtyZWFjdCgpXSxcbiAgcmVzb2x2ZToge1xuICAgIGFsaWFzOiB7XG4gICAgICBcIkBcIjogcGF0aC5yZXNvbHZlKF9fZGlybmFtZSwgXCIuL3NyY1wiKSxcbiAgICB9LFxuICB9LFxufSk7XG4iXSwKICAibWFwcGluZ3MiOiAiO0FBQXlRLFNBQVMsb0JBQW9CO0FBQ3RTLE9BQU8sV0FBVztBQUNsQixPQUFPLFVBQVU7QUFGakIsSUFBTSxtQ0FBbUM7QUFLekMsSUFBTyxzQkFBUSxhQUFhO0FBQUEsRUFDMUIsUUFBUTtBQUFBLElBQ04sTUFBTTtBQUFBLElBQ04sTUFBTTtBQUFBLEVBQ1I7QUFBQSxFQUNBLFNBQVMsQ0FBQyxNQUFNLENBQUM7QUFBQSxFQUNqQixTQUFTO0FBQUEsSUFDUCxPQUFPO0FBQUEsTUFDTCxLQUFLLEtBQUssUUFBUSxrQ0FBVyxPQUFPO0FBQUEsSUFDdEM7QUFBQSxFQUNGO0FBQ0YsQ0FBQzsiLAogICJuYW1lcyI6IFtdCn0K
