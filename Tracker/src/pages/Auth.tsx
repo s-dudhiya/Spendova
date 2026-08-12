@@ -254,24 +254,17 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
             {!isReset && <TextField label={isLogin ? "Email or username" : "Email"} value={email} onChange={setEmail} placeholder={isLogin ? "Enter email or username" : "Enter email address"} type={isLogin ? "text" : "email"} icon={isLogin ? User : Mail} />}
             {isReset && <TextField label="Email" value={email} onChange={setEmail} placeholder="Enter email address" type="email" icon={Mail} />}
             {!isForgot && !isReset && loginMethod === "password" && (
-              <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Enter password" />
-            )}
-            {isRegister && <PasswordField label="Confirm password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Confirm password" />}
-
-            {isLogin && (
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setLoginMethod(prev => prev === 'password' ? 'otp' : 'password')}
-                  className="text-sm font-semibold text-[#6d28d9] hover:text-[#5b21b6] transition"
-                >
-                  {loginMethod === 'password' ? 'Login with Email Code instead' : 'Login with Password instead'}
-                </button>
-                {loginMethod === "password" && (
-                  <Link to="/forgot-password" className="text-sm font-semibold text-[#6d28d9] hover:text-[#5b21b6] transition">Forgot password?</Link>
+              <div>
+                <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Enter password" />
+                {isLogin && (
+                  <div className="mt-2 flex justify-end">
+                    <Link to="/forgot-password" className="text-[13px] font-semibold text-[#6d28d9] hover:text-[#5b21b6] transition">Forgot password?</Link>
+                  </div>
                 )}
               </div>
             )}
+            {isRegister && <PasswordField label="Confirm password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Confirm password" />}
+
 
             {formError && <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">{formError}</p>}
 
@@ -279,6 +272,18 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
               <LogIn className="size-4" strokeWidth={2} />
               {buttonLabel}
             </Button>
+            
+            {isLogin && (
+              <div className="mt-3 text-center">
+                <button
+                  type="button"
+                  onClick={() => setLoginMethod(prev => prev === 'password' ? 'otp' : 'password')}
+                  className="text-sm font-semibold text-[#6d28d9] hover:text-[#5b21b6] transition"
+                >
+                  {loginMethod === 'password' ? 'Login with Email Code instead' : 'Login with Password instead'}
+                </button>
+              </div>
+            )}
           </form>
 
           <div className="mt-4 flex items-center gap-3 text-xs font-medium text-[#81769f]">
