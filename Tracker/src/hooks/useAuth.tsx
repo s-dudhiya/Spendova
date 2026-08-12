@@ -7,21 +7,6 @@ import { getDeviceId, checkDeviceSession, registerDeviceSession, revokeCurrentDe
 import { getFriendlyErrorMessage, getFriendlyErrorTitle } from '@/lib/friendly-error';
 import { bootLog, safeStorage, withTimeout } from '@/lib/startup-safety';
 
-const sendSyncBroadcast = (userId: string) => {
-  const channel = supabase.channel(`device-sync-${userId}`);
-  channel.subscribe((status) => {
-    if (status === 'SUBSCRIBED') {
-      channel.send({
-        type: 'broadcast',
-        event: 'sync_check',
-        payload: { deviceId: getDeviceId() }
-      }).then(() => {
-        window.setTimeout(() => { void supabase.removeChannel(channel); }, 1000);
-      }).catch(console.warn);
-    }
-  });
-};
-
 interface Profile {
   id: string;
   user_id: string;
@@ -64,9 +49,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  const registeringRef = useRef(false);
   const lastRegisteredUserRef = useRef<string | null>(null);
+  const registeringRef = useRef<boolean>(false);
   const currentUserIdRef = useRef<string | null>(null);
+  const syncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const triggerSyncRef = useRef<boolean>(false);
 
   const clearLocalAuthState = useCallback(() => {
     if (currentUserIdRef.current) {
@@ -152,20 +139,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     const sessionChannel = supabase.channel(`device-sync-${user.id}`);
+    syncChannelRef.current = sessionChannel;
     sessionChannel.on('broadcast', { event: 'sync_check' }, (payload) => {
       if (payload.payload?.deviceId !== getDeviceId()) {
         checkSessionActivity();
       }
-    }).subscribe();
+    }).subscribe((status) => {
+      if (status === 'SUBSCRIBED' && triggerSyncRef.current) {
+        sessionChannel.send({
+          type: 'broadcast',
+          event: 'sync_check',
+          payload: { deviceId: getDeviceId() }
+        }).catch(console.warn);
+        triggerSyncRef.current = false;
+      }
+    });
 
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       void supabase.removeChannel(sessionChannel);
+      syncChannelRef.current = null;
     };
   }, [clearLocalAuthState, enforceDeviceSession, toast, user]);
 
-  // Listen for auth state changes
   useEffect(() => {
     bootLog("auth provider start");
     let mounted = true;
@@ -211,7 +208,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             lastRegisteredUserRef.current = session.user.id;
             safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
             bootLog("otp sign-in device session registered");
-            sendSyncBroadcast(session.user.id);
+            triggerSyncRef.current = true;
+            if (syncChannelRef.current) {
+              syncChannelRef.current.send({
+                type: 'broadcast',
+                event: 'sync_check',
+                payload: { deviceId: getDeviceId() }
+              }).catch(console.warn);
+              triggerSyncRef.current = false;
+            }
           } catch (deviceError) {
             console.warn("Device session registration unavailable; continuing without blocking sign-in.", deviceError);
             lastRegisteredUserRef.current = session.user.id;
@@ -303,7 +308,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastRegisteredUserRef.current = data.user.id;
         safeStorage.setItem(getLastActivityKey(data.user.id), String(Date.now()));
         bootLog("sign-in device session registered");
-        sendSyncBroadcast(data.user.id);
+        triggerSyncRef.current = true;
+        if (syncChannelRef.current) {
+          syncChannelRef.current.send({
+            type: 'broadcast',
+            event: 'sync_check',
+            payload: { deviceId: getDeviceId() }
+          }).catch(console.warn);
+          triggerSyncRef.current = false;
+        }
       })
       .catch((deviceError) => {
         console.warn("Device session registration unavailable; continuing without blocking sign-in.", deviceError);
