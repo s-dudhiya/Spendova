@@ -27,7 +27,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const DEVICE_SESSION_CHECK_INTERVAL = 60 * 1000;
+const DEVICE_SESSION_CHECK_INTERVAL = 15 * 1000;
 const STARTUP_TIMEOUT = 5000;
 const LAST_ACTIVITY_PREFIX = "spendova_last_activity_at";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -65,18 +65,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user) return;
-    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
-    const handleActivity = () => safeStorage.setItem(getLastActivityKey(user.id), String(Date.now()));
+    let lastChecked = 0;
+    const handleActivity = () => {
+      safeStorage.setItem(getLastActivityKey(user.id), String(Date.now()));
+      const now = Date.now();
+      if (now - lastChecked > 5000) {
+        lastChecked = now;
+        checkDeviceSession()
+          .then((result) => {
+            if (!result.valid) {
+              supabase.auth.signOut();
+              clearLocalAuthState();
+              toast({
+                title: "Signed Out",
+                description: getDeviceSessionMessage(result.reason),
+                variant: "destructive",
+              });
+            }
+          })
+          .catch(() => undefined);
+      }
+    };
 
     currentUserIdRef.current = user.id;
     safeStorage.setItem(getLastActivityKey(user.id), String(Date.now()));
 
+    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
     activityEvents.forEach(event => document.addEventListener(event, handleActivity, true));
 
     return () => {
       activityEvents.forEach(event => document.removeEventListener(event, handleActivity, true));
     };
-  }, [user]);
+  }, [clearLocalAuthState, toast, user]);
 
   const enforceDeviceSession = useCallback(async (targetUser: User) => {
     if (registeringRef.current || lastRegisteredUserRef.current === targetUser.id) return;
