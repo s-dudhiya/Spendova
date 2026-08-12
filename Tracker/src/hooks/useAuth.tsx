@@ -136,9 +136,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
+    const sessionChannel = supabase.channel(`device-sync-${user.id}`);
+    sessionChannel.on('broadcast', { event: 'sync_check' }, (payload) => {
+      if (payload.payload?.deviceId !== getDeviceId()) {
+        checkSessionActivity();
+      }
+    }).subscribe();
+
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      void supabase.removeChannel(sessionChannel);
     };
   }, [clearLocalAuthState, enforceDeviceSession, toast, user]);
 
@@ -188,6 +196,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             lastRegisteredUserRef.current = session.user.id;
             safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
             bootLog("otp sign-in device session registered");
+            void supabase.channel(`device-sync-${session.user.id}`).send({
+              type: 'broadcast',
+              event: 'sync_check',
+              payload: { deviceId: getDeviceId() }
+            });
           } catch (deviceError) {
             console.warn("Device session registration unavailable; continuing without blocking sign-in.", deviceError);
             lastRegisteredUserRef.current = session.user.id;
@@ -279,6 +292,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastRegisteredUserRef.current = data.user.id;
         safeStorage.setItem(getLastActivityKey(data.user.id), String(Date.now()));
         bootLog("sign-in device session registered");
+        void supabase.channel(`device-sync-${data.user.id}`).send({
+          type: 'broadcast',
+          event: 'sync_check',
+          payload: { deviceId: getDeviceId() }
+        });
       })
       .catch((deviceError) => {
         console.warn("Device session registration unavailable; continuing without blocking sign-in.", deviceError);
