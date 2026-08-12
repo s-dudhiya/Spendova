@@ -110,11 +110,14 @@ export default function VerifyOtp() {
     setSubmitting(true);
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.verifyOtp({ email, token: otp, type: 'email' });
+        const redirectUrl = window.location.origin + redirect;
+        const { data, error } = await supabase.functions.invoke("verify-auth-otp", { body: { email, purpose, otp, redirectTo: redirectUrl } });
         if (error) throw error;
-        toast({ title: "Logged in successfully", description: "Welcome back." });
-        navigate(redirect, { replace: true });
-        return;
+        if (data.actionLink) {
+          toast({ title: "Logged in successfully", description: "Welcome back." });
+          window.location.assign(data.actionLink);
+          return;
+        }
       }
 
       const { data, error } = await supabase.functions.invoke("verify-auth-otp", { body: { email, purpose, otp } });

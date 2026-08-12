@@ -34,7 +34,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { email: rawEmail, purpose, otp } = await req.json()
+    const { email: rawEmail, purpose, otp, redirectTo } = await req.json()
     const email = cleanEmail(rawEmail)
     const token = String(otp || '').trim()
     if (!email || !['signup_verify', 'reset_password', 'login'].includes(purpose) || !/^\d{6}$/.test(token)) {
@@ -84,17 +84,17 @@ serve(async (req) => {
       const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
         type: 'magiclink',
         email,
+        options: {
+          redirectTo: redirectTo || undefined
+        }
       })
       if (linkError) throw linkError
       
       const actionLink = linkData.properties?.action_link
       if (!actionLink) return json({ error: 'Could not generate session token' }, 500)
       
-      const url = new URL(actionLink)
-      const magicToken = url.searchParams.get('token')
-      
       await supabaseAdmin.from('auth_otps').delete().eq('id', otpRow.id)
-      return json({ success: true, magicToken })
+      return json({ success: true, actionLink })
     }
 
     if (purpose === 'signup_verify') {
