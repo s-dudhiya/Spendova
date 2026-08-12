@@ -154,13 +154,8 @@ export default function VerifyOtp() {
     setResending(true);
     setFormError("");
     try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithOtp({ email });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.functions.invoke("send-auth-otp", { body: { email, purpose } });
-        if (error) throw error;
-      }
+      const { error } = await supabase.functions.invoke("send-auth-otp", { body: { email, purpose } });
+      if (error) throw error;
       setSecondsLeft(OTP_TTL_SECONDS);
       setCooldown(RESEND_SECONDS);
       setDigits(Array(OTP_LENGTH).fill(""));

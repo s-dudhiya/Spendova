@@ -109,6 +109,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     enforceDeviceSession(user);
+
+    const handleTabResume = async () => {
+      try {
+        const result = await checkDeviceSession();
+        if (!result.valid) {
+          await supabase.auth.signOut();
+          clearLocalAuthState();
+          toast({
+            title: "Signed Out",
+            description: getDeviceSessionMessage(result.reason),
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.warn("Device session check on tab resume failed:", error);
+      }
+    };
+
+    window.addEventListener("focus", handleTabResume);
+    document.addEventListener("visibilitychange", handleTabResume);
+
     const interval = window.setInterval(async () => {
       try {
         const result = await checkDeviceSession();
@@ -126,7 +147,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }, DEVICE_SESSION_CHECK_INTERVAL);
 
-    return () => window.clearInterval(interval);
+    return () => {
+      window.removeEventListener("focus", handleTabResume);
+      document.removeEventListener("visibilitychange", handleTabResume);
+      window.clearInterval(interval);
+    };
   }, [clearLocalAuthState, enforceDeviceSession, toast, user]);
 
   // Listen for auth state changes
