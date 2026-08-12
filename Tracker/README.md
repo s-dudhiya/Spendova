@@ -46,10 +46,17 @@ Handles logging in, signing up, OTPs, and device sessions.
   - `auth.users`: Core Supabase auth table.
   - `public.profiles`: Stores public user data (name, avatar, username, email_verified).
   - `public.device_sessions`: Tracks logged-in devices.
+  - `public.auth_device_sessions`: (Key Table) Strictly tracks active devices to enforce the Single Device Policy.
   - `public.email_domains`: Caches domain validation results (fake vs real) to save Gemini API calls.
 - **Edge Functions**: 
-  - `send-auth-otp`, `verify-auth-otp`, `reset-password-with-otp`
+  - `send-auth-otp`, `verify-auth-otp`, `reset-password-with-otp`: A custom Resend-based pipeline that bypasses Supabase's native OTP rate limits for a seamless Email Login and Verification experience.
   - `manage-device-session`, `delete-account`
+
+**Architecture Note - Single Device Policy:**
+Spendova strictly enforces that a user can only be active on one device at a time. This is achieved via a robust combination of:
+1. **Database Tracking**: The `auth_device_sessions` table and `manage-device-session` edge function coordinate to mark only the latest device as active.
+2. **Realtime Broadcasts**: `useAuth.tsx` utilizes Supabase Realtime (`device-sync-uid` channel) to instantly broadcast a "sync_check" signal when a new login occurs, forcing all other active browser tabs to log out instantly.
+3. **Polling Fallback**: A 60-second polling interval ensures devices that miss the broadcast are eventually logged out.
 
 ### 2. Friends & Group Splitting (Splitwise-style)
 Allows users to split expenses with friends or within groups.

@@ -39,7 +39,7 @@ Custom React hooks that manage state and frontend business logic.
 ### 📁 `/src/lib`
 Utility files, scripts, and SDK initializations.
 - **`notifications.ts`**: The central brain for Push Notifications on the frontend. It automatically detects if the user is on the Web or a Native Android APK, asks for the correct permissions, and saves their device token to the database.
-- **`device-session.ts`**: Tracks active logins so users can see (and remotely log out) other devices they are logged into.
+- **`device-session.ts`**: Tracks active logins and contains the utility functions for checking session validity with the edge function, powering the Single Device Policy.
 - **`friendly-error.ts`**: Translates ugly database errors into friendly, human-readable text.
 
 ### 📁 `/src/pages`
@@ -76,6 +76,8 @@ Contains **Edge Functions**. This is your serverless backend code (written in De
 - **`/send-ledger-notification`**: Handled via frontend triggers to notify Budget Admins of new expenses, or users of paid expenses.
 - **`/cron-ledger-reminders`**: Triggered daily at 10 PM IST via `pg_cron` to remind Budget Admins of unpaid ledger expenses.
 - **`/send-invite` & `/send-ledger-invite`**: Triggered by the frontend to send beautifully formatted HTML emails using Nodemailer.
-- **`/send-auth-otp` & `/reset-password-with-otp`**: Securely handles sending passwords and verification codes to users.
+- **`/send-auth-otp` & `/verify-auth-otp`**: Securely handles sending custom 6-digit email OTPs using Resend, bypassing the native Supabase rate limits for a seamless custom authentication experience.
+- **`/reset-password-with-otp`**: Securely handles password resets using the custom OTP pipeline.
+- **`/manage-device-session`**: Powers the Single Device Policy by verifying and invalidating device sessions in the `auth_device_sessions` table.
 - **`/generate-monthly-reports`**: Triggered automatically by a cron job on the 1st of every month to email PDF summaries to users.
 - **`/send-shared-notification` & `/send-expense-notification`**: These handle inserting rows into the `notifications` table. *(Note: Their email-sending logic is currently commented out to prevent spam, favoring push notifications instead).*
