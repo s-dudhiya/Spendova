@@ -18,7 +18,7 @@ const OTP_TTL_SECONDS = 10 * 60;
 const RESEND_SECONDS = 60;
 const MIN_PASSWORD_LENGTH = 6;
 
-type OtpPurpose = "signup_verify" | "reset_password";
+type OtpPurpose = "signup_verify" | "reset_password" | "login";
 
 const PasswordField = ({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) => {
   const [visible, setVisible] = useState(false);
@@ -62,6 +62,7 @@ export default function VerifyOtp() {
   const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
   const otp = useMemo(() => digits.join(""), [digits]);
   const isReset = purpose === "reset_password";
+  const isLogin = purpose === "login";
 
   useEffect(() => {
     const timer = window.setInterval(() => setSecondsLeft((current) => Math.max(0, current - 1)), 1000);
@@ -74,7 +75,7 @@ export default function VerifyOtp() {
     return () => window.clearInterval(timer);
   }, [cooldown]);
 
-  if (!email || !purpose || !["signup_verify", "reset_password"].includes(purpose)) {
+  if (!email || !purpose || !["signup_verify", "reset_password", "login"].includes(purpose)) {
     return <Navigate to="/login" replace />;
   }
 
@@ -108,6 +109,14 @@ export default function VerifyOtp() {
     }
     setSubmitting(true);
     try {
+      if (isLogin) {
+        const { error } = await supabase.auth.verifyOtp({ email, token: otp, type: 'email' });
+        if (error) throw error;
+        toast({ title: "Logged in successfully", description: "Welcome back." });
+        navigate(redirect, { replace: true });
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke("verify-auth-otp", { body: { email, purpose, otp } });
       if (error) throw error;
       if (isReset) {
@@ -142,8 +151,13 @@ export default function VerifyOtp() {
     setResending(true);
     setFormError("");
     try {
-      const { error } = await supabase.functions.invoke("send-auth-otp", { body: { email, purpose } });
-      if (error) throw error;
+      if (isLogin) {
+        const { error } = await supabase.auth.signInWithOtp({ email });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.functions.invoke("send-auth-otp", { body: { email, purpose } });
+        if (error) throw error;
+      }
       setSecondsLeft(OTP_TTL_SECONDS);
       setCooldown(RESEND_SECONDS);
       setDigits(Array(OTP_LENGTH).fill(""));

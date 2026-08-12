@@ -57,6 +57,7 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
   const [username, setUsername] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [loginMethod, setLoginMethod] = useState<"password" | "otp">("password");
   const [formError, setFormError] = useState("");
   const { user, loading, signIn } = useAuth();
   const { toast } = useToast();
@@ -98,7 +99,7 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
       : isReset
         ? "Enter your email and we will send a verification code."
         : "Enter your email and we will send a verification code.";
-  const buttonLabel = submitting ? "Please wait..." : isLogin ? "Login" : isRegister ? "Send verification code" : "Send verification code";
+  const buttonLabel = submitting ? "Please wait..." : isLogin ? (loginMethod === "password" ? "Login" : "Send verification code") : isRegister ? "Send verification code" : "Send verification code";
   const redirectParam = searchParams.get("redirect");
   const loginLink = redirectParam ? `/login?redirect=${encodeURIComponent(redirectParam)}` : "/login";
   const registerLink = redirectParam ? `/register?redirect=${encodeURIComponent(redirectParam)}` : "/register";
@@ -117,6 +118,12 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
       const message = "Please enter your email or username.";
       setFormError(message);
       toast({ title: "Check your login", description: message, variant: "destructive" });
+      return;
+    }
+    if (isLogin && loginMethod === "otp" && !EMAIL_PATTERN.test(email.trim())) {
+      const message = "Please enter a valid email address to login with a code.";
+      setFormError(message);
+      toast({ title: "Invalid Email", description: message, variant: "destructive" });
       return;
     }
     if (isRegister && password !== confirmPassword) {
@@ -140,10 +147,31 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
     const redirect = searchParams.get("redirect") || undefined;
     try {
       if (isLogin) {
-        const result = await signIn(email, password);
-        if (result.error) throw result.error;
-        navigate(redirect || "/dashboard", { replace: true });
-        return;
+        if (loginMethod === "password") {
+          const result = await signIn(email, password);
+          if (result.error) throw result.error;
+          navigate(redirect || "/dashboard", { replace: true });
+          return;
+        } else {
+          const { error } = await supabase.functions.invoke("send-auth-otp", {
+            body: { email: email.trim().toLowerCase(), purpose: 'login' },
+          });
+          if (error) {
+            if (error.context && typeof error.context.json === 'function') {
+              const body = await error.context.json().catch(() => null);
+              if (body?.error) throw new Error(body.error);
+            }
+            throw error;
+          }
+          toast({
+            title: "Check your email",
+            description: "We sent a verification code to your email address.",
+          });
+          const params = new URLSearchParams({ purpose: 'login', email: email.trim().toLowerCase() });
+          if (redirect) params.set("redirect", redirect);
+          navigate(`/verify-otp?${params.toString()}`, { replace: true });
+          return;
+        }
       }
 
       const purpose = isRegister ? "signup_verify" : "reset_password";
@@ -225,12 +253,23 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
             )}
             {!isReset && <TextField label={isLogin ? "Email or username" : "Email"} value={email} onChange={setEmail} placeholder={isLogin ? "Enter email or username" : "Enter email address"} type={isLogin ? "text" : "email"} icon={isLogin ? User : Mail} />}
             {isReset && <TextField label="Email" value={email} onChange={setEmail} placeholder="Enter email address" type="email" icon={Mail} />}
-            {!isForgot && !isReset && <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Enter password" />}
+            {!isForgot && !isReset && loginMethod === "password" && (
+              <PasswordField label="Password" value={password} onChange={setPassword} placeholder="Enter password" />
+            )}
             {isRegister && <PasswordField label="Confirm password" value={confirmPassword} onChange={setConfirmPassword} placeholder="Confirm password" />}
 
             {isLogin && (
-              <div className="flex justify-end">
-                <Link to="/forgot-password" className="text-sm font-semibold text-[#6d28d9]">Forgot password?</Link>
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setLoginMethod(prev => prev === 'password' ? 'otp' : 'password')}
+                  className="text-sm font-semibold text-[#6d28d9] hover:text-[#5b21b6] transition"
+                >
+                  {loginMethod === 'password' ? 'Login with Email Code instead' : 'Login with Password instead'}
+                </button>
+                {loginMethod === "password" && (
+                  <Link to="/forgot-password" className="text-sm font-semibold text-[#6d28d9] hover:text-[#5b21b6] transition">Forgot password?</Link>
+                )}
               </div>
             )}
 

@@ -37,7 +37,7 @@ serve(async (req) => {
     const { email: rawEmail, purpose, otp } = await req.json()
     const email = cleanEmail(rawEmail)
     const token = String(otp || '').trim()
-    if (!email || !['signup_verify', 'reset_password'].includes(purpose) || !/^\d{6}$/.test(token)) {
+    if (!email || !['signup_verify', 'reset_password', 'login'].includes(purpose) || !/^\d{6}$/.test(token)) {
       return json({ error: 'Enter the 6-digit code.' }, 400)
     }
 
@@ -78,6 +78,23 @@ serve(async (req) => {
         await supabaseAdmin.from('auth_otps').update({ attempts: nextAttempts }).eq('id', otpRow.id)
       }
       return json({ error: 'Invalid verification code.' }, 400)
+    }
+
+    if (purpose === 'login') {
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'magiclink',
+        email,
+      })
+      if (linkError) throw linkError
+      
+      const actionLink = linkData.properties?.action_link
+      if (!actionLink) return json({ error: 'Could not generate session token' }, 500)
+      
+      const url = new URL(actionLink)
+      const magicToken = url.searchParams.get('token')
+      
+      await supabaseAdmin.from('auth_otps').delete().eq('id', otpRow.id)
+      return json({ success: true, magicToken })
     }
 
     if (purpose === 'signup_verify') {

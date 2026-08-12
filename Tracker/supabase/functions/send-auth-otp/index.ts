@@ -133,7 +133,7 @@ serve(async (req) => {
     const body = await req.json()
     const email = cleanEmail(body.email)
     const purpose = body.purpose
-    if (!email || !['signup_verify', 'reset_password'].includes(purpose)) return json({ error: 'Invalid request' }, 400)
+    if (!email || !['signup_verify', 'reset_password', 'login'].includes(purpose)) return json({ error: 'Invalid request' }, 400)
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -235,6 +235,11 @@ serve(async (req) => {
     if (purpose === 'reset_password') {
       const existingUser = await findUserByEmail(supabaseAdmin, email)
       if (!existingUser) return json({ success: true })
+    }
+
+    if (purpose === 'login') {
+      const existingUser = await findUserByEmail(supabaseAdmin, email)
+      if (!existingUser) return json({ error: 'Account not found. Please create an account first.' }, 404)
     }
 
     const otp = generateOtp()
