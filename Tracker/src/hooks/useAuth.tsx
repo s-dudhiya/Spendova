@@ -27,7 +27,7 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const DEVICE_SESSION_CHECK_INTERVAL = 15 * 1000;
+const DEVICE_SESSION_CHECK_INTERVAL = 60 * 1000;
 const STARTUP_TIMEOUT = 5000;
 const LAST_ACTIVITY_PREFIX = "spendova_last_activity_at";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -65,38 +65,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user) return;
-    let lastChecked = 0;
-    const handleActivity = () => {
-      safeStorage.setItem(getLastActivityKey(user.id), String(Date.now()));
-      const now = Date.now();
-      if (now - lastChecked > 5000) {
-        lastChecked = now;
-        checkDeviceSession()
-          .then((result) => {
-            if (!result.valid) {
-              supabase.auth.signOut();
-              clearLocalAuthState();
-              toast({
-                title: "Signed Out",
-                description: getDeviceSessionMessage(result.reason),
-                variant: "destructive",
-              });
-            }
-          })
-          .catch(() => undefined);
-      }
-    };
+    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    const handleActivity = () => safeStorage.setItem(getLastActivityKey(user.id), String(Date.now()));
 
     currentUserIdRef.current = user.id;
     safeStorage.setItem(getLastActivityKey(user.id), String(Date.now()));
 
-    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
     activityEvents.forEach(event => document.addEventListener(event, handleActivity, true));
 
     return () => {
       activityEvents.forEach(event => document.removeEventListener(event, handleActivity, true));
     };
-  }, [clearLocalAuthState, toast, user]);
+  }, [user]);
 
   const enforceDeviceSession = useCallback(async (targetUser: User) => {
     if (registeringRef.current || lastRegisteredUserRef.current === targetUser.id) return;
@@ -129,27 +109,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     enforceDeviceSession(user);
-
-    const handleTabResume = async () => {
-      try {
-        const result = await checkDeviceSession();
-        if (!result.valid) {
-          await supabase.auth.signOut();
-          clearLocalAuthState();
-          toast({
-            title: "Signed Out",
-            description: getDeviceSessionMessage(result.reason),
-            variant: "destructive",
-          });
-        }
-      } catch (error) {
-        console.warn("Device session check on tab resume failed:", error);
-      }
-    };
-
-    window.addEventListener("focus", handleTabResume);
-    document.addEventListener("visibilitychange", handleTabResume);
-
     const interval = window.setInterval(async () => {
       try {
         const result = await checkDeviceSession();
@@ -167,11 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }, DEVICE_SESSION_CHECK_INTERVAL);
 
-    return () => {
-      window.removeEventListener("focus", handleTabResume);
-      document.removeEventListener("visibilitychange", handleTabResume);
-      window.clearInterval(interval);
-    };
+    return () => window.clearInterval(interval);
   }, [clearLocalAuthState, enforceDeviceSession, toast, user]);
 
   // Listen for auth state changes
@@ -193,19 +148,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       bootLog("auth state change", event, Boolean(session?.user));
       if (event === "SIGNED_IN" && session?.user) {
         safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
-        markFreshLoginUnlocked(session.user.id);
         if (lastRegisteredUserRef.current !== session.user.id) {
-          registeringRef.current = true;
           registerDeviceSession()
-            .then(() => {
-              lastRegisteredUserRef.current = session.user.id;
-              safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
-              bootLog("onAuthStateChange SIGNED_IN device session registered");
-            })
-            .catch((err) => console.warn("Device session registration on SIGNED_IN failed", err))
-            .finally(() => {
-              registeringRef.current = false;
-            });
+            .then(() => { lastRegisteredUserRef.current = session.user.id; })
+            .catch(() => undefined);
         }
       }
       setSession(session);
