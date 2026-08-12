@@ -84,6 +84,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const result = await checkDeviceSession();
       if (!result.valid) {
+        if (result.reason === "device_session_missing") {
+          try {
+            await registerDeviceSession();
+            lastRegisteredUserRef.current = targetUser.id;
+            return;
+          } catch (regErr) {
+            console.warn("Failed to auto-register missing device session:", regErr);
+          }
+        }
         await supabase.auth.signOut();
         clearLocalAuthState();
         toast({
@@ -148,6 +157,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       bootLog("auth state change", event, Boolean(session?.user));
       if (event === "SIGNED_IN" && session?.user) {
         safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
+        markFreshLoginUnlocked(session.user.id);
+        if (lastRegisteredUserRef.current !== session.user.id) {
+          registeringRef.current = true;
+          registerDeviceSession()
+            .then(() => {
+              lastRegisteredUserRef.current = session.user.id;
+              safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
+              bootLog("onAuthStateChange SIGNED_IN device session registered");
+            })
+            .catch((err) => console.warn("Device session registration on SIGNED_IN failed", err))
+            .finally(() => {
+              registeringRef.current = false;
+            });
+        }
       }
       setSession(session);
       setUser(session?.user ?? null);
