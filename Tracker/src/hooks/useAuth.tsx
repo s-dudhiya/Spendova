@@ -148,10 +148,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       bootLog("auth state change", event, Boolean(session?.user));
       if (event === "SIGNED_IN" && session?.user) {
         safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
+        markFreshLoginUnlocked(session.user.id);
         if (lastRegisteredUserRef.current !== session.user.id) {
+          registeringRef.current = true;
           registerDeviceSession()
-            .then(() => { lastRegisteredUserRef.current = session.user.id; })
-            .catch(() => undefined);
+            .then(() => {
+              lastRegisteredUserRef.current = session.user.id;
+              safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
+            })
+            .catch(() => {
+              lastRegisteredUserRef.current = session.user.id;
+            })
+            .finally(() => {
+              registeringRef.current = false;
+            });
         }
       }
       setSession(session);
