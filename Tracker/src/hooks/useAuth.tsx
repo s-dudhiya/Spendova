@@ -84,15 +84,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const result = await checkDeviceSession();
       if (!result.valid) {
-        if (result.reason === "device_session_missing") {
-          try {
-            await registerDeviceSession();
-            lastRegisteredUserRef.current = targetUser.id;
-            return;
-          } catch (regErr) {
-            console.warn("Failed to auto-register missing device session:", regErr);
-          }
-        }
         await supabase.auth.signOut();
         clearLocalAuthState();
         toast({
