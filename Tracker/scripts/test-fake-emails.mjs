@@ -31,7 +31,7 @@ async function isFakeEmail(email) {
       body: JSON.stringify({
         contents: [{
           parts: [{
-            text: `Analyze this email address: "${email}". Is it from a known temporary, disposable, or fake email service (like 10minutemail, mailinator, telegram bot emails, etc)? Reply with ONLY "true" if it is fake/disposable, or "false" if it is a standard/valid email provider.`
+            text: `Analyze this email address: "${email}". Determine if this domain is a standard, reputable public/corporate/educational email provider, or if it exhibits characteristics of a temporary, disposable, catch-all, bot, or throwaway email service (e.g. 10minutemail, mailinator, telegram bot emails, pseudo-corporate random domain generators, nonsense/disposable domains). Reply with ONLY "true" if it is fake/disposable/suspicious throwaway, or "false" if it is a standard/valid email provider.`
           }]
         }]
       })
