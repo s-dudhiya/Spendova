@@ -3726,6 +3726,7 @@ const ExpenseForm = ({
   userId,
   friends,
   friend,
+  initialSelectedFriendIds,
   group,
   expense,
   categories,
@@ -3738,6 +3739,7 @@ const ExpenseForm = ({
   userId: string;
   friends: FriendProfile[];
   friend?: FriendProfile;
+  initialSelectedFriendIds?: string[];
   group?: GroupRow;
   expense?: ExpenseRow;
   categories: ExpenseCategoryRow[];
@@ -3748,7 +3750,9 @@ const ExpenseForm = ({
   onCancel: () => void;
 }) => {
   const isEdit = Boolean(expense);
-  const baseMembers = group ? group.group_members.map((member) => ({ user_id: member.user_id, name: member.user_id === userId ? "You" : displayName(member.profiles) })) : friend ? [{ user_id: userId, name: "You" }, { user_id: friend.user_id, name: displayName(friend) }] : [{ user_id: userId, name: "You" }, ...friends.map((item) => ({ user_id: item.user_id, name: displayName(item) }))];
+  const baseMembers = group
+    ? group.group_members.map((member) => ({ user_id: member.user_id, name: member.user_id === userId ? "You" : displayName(member.profiles) }))
+    : [{ user_id: userId, name: "You" }, ...friends.map((item) => ({ user_id: item.user_id, name: displayName(item) }))];
   const members = [...baseMembers];
   if (expense) {
     const existingProfiles = [
@@ -3763,7 +3767,11 @@ const ExpenseForm = ({
     if (expense && (expense.expense_splits?.length || expense.group_id)) {
       return [...new Set([expense.paid_by, ...(expense.expense_splits || []).map((split) => split.user_id)].filter(Boolean))];
     }
-    if (group || friend) return members.map((member) => member.user_id);
+    if (initialSelectedFriendIds && initialSelectedFriendIds.length > 0) {
+      return [userId, ...initialSelectedFriendIds];
+    }
+    if (friend) return [userId, friend.user_id];
+    if (group) return members.map((member) => member.user_id);
     return [userId];
   })();
   const initialSplitValues = (() => {
@@ -3785,7 +3793,9 @@ const ExpenseForm = ({
   const [date, setDate] = useState(expense?.created_at?.split("T")[0] || new Date().toISOString().split("T")[0]);
   const [amount, setAmount] = useState(expense ? String(expense.amount) : "");
   const [note, setNote] = useState(expense?.note || "");
-  const initialSplitOn = Boolean(group || friend || expense?.expense_splits?.length);
+  const initialSplitOn = Boolean(
+    group || friend || (initialSelectedFriendIds && initialSelectedFriendIds.length > 0) || expense?.expense_splits?.length
+  );
   const [status, setStatus] = useState<"pending" | "cleared">(initialSplitOn ? "cleared" : expense?.status === "cleared" ? "cleared" : "pending");
   const [splitOn, setSplitOn] = useState(initialSplitOn);
   const [strategy, setStrategy] = useState<SplitStrategy>((expense?.split_type as SplitStrategy) || "equal");
@@ -3794,15 +3804,44 @@ const ExpenseForm = ({
   const [splitValues, setSplitValues] = useState<Record<string, string>>(initialSplitValues);
   const [submitting, setSubmitting] = useState(false);
   const [autoNameCategoryId, setAutoNameCategoryId] = useState<string | null>(null);
+  const [participantSearch, setParticipantSearch] = useState("");
+
+  const sortedMembers = useMemo(() => {
+    return [...members].sort((a, b) => {
+      if (a.user_id === userId) return -1;
+      if (b.user_id === userId) return 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+  }, [members, userId]);
 
   const parsedAmount = Number(amount);
   const hasSettlementState = Boolean(expense?.expense_splits?.some((split) => Number(split.amount_paid || 0) > 0 || split.has_paid));
-  const selectedMembers = members.filter((member) => participants.includes(member.user_id));
+  const selectedMembers = sortedMembers.filter((member) => participants.includes(member.user_id));
   const debtors = selectedMembers.filter((member) => member.user_id !== payer);
   const equalShare = participants.length ? parsedAmount / participants.length : 0;
   const scope = categoryScope(group);
   const availableCategories = scopedCategories(categories, scope, userId, group?.id || null);
   const selectedCategory = availableCategories.find((category) => category.id === categoryId);
+
+  const filteredMembers = useMemo(() => {
+    const q = participantSearch.trim().toLowerCase();
+    if (!q) return sortedMembers;
+    return sortedMembers.filter((m) => m.name.toLowerCase().includes(q));
+  }, [sortedMembers, participantSearch]);
+
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollDown, setCanScrollDown] = useState(false);
+
+  const checkScroll = useCallback(() => {
+    const el = listContainerRef.current;
+    if (!el) return;
+    setCanScrollDown(el.scrollHeight - el.scrollTop - el.clientHeight > 15);
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(checkScroll, 100);
+    return () => clearTimeout(t);
+  }, [filteredMembers, checkScroll]);
 
   const toggleParticipant = (id: string) => {
     setParticipants((prev) => {
@@ -3932,31 +3971,161 @@ const ExpenseForm = ({
         </label>
       )}
       {splitOn && (
-        <div className="space-y-3 rounded-2xl border border-border bg-elevated/40 p-3">
+        <div className="space-y-3 rounded-2xl border border-border bg-elevated/40 p-3.5">
           <div>
-            <p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Participants</p>
-            <div className="flex flex-wrap gap-2">
-              {members.map((member) => {
-                const active = participants.includes(member.user_id);
-                return <button key={member.user_id} type="button" onClick={() => toggleParticipant(member.user_id)} className={`rounded-full px-3 py-1.5 text-xs font-bold ${active ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground border border-input"}`}>{active && <Check className="mr-1 inline size-3" />}{member.name}</button>;
-              })}
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Participants
+                </p>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                  {participants.length} of {members.length}
+                </span>
+              </div>
+            </div>
+
+            {/* Selected Participants oval pills */}
+            {selectedMembers.length > 0 && (
+              <div className="mb-2.5 flex flex-wrap gap-1.5">
+                {selectedMembers.map((member) => (
+                  <div
+                    key={member.user_id}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 border border-primary/20 px-3 py-1 text-xs font-semibold text-primary"
+                  >
+                    <span>{member.name}</span>
+                    {member.user_id !== payer && (
+                      <button
+                        type="button"
+                        onClick={() => toggleParticipant(member.user_id)}
+                        className="rounded-full p-0.5 text-primary/70 hover:bg-primary/20 hover:text-primary transition-colors"
+                        title={`Remove ${member.name}`}
+                      >
+                        <X className="size-3" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {members.length > 5 && (
+              <div className="relative mb-2">
+                <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={participantSearch}
+                  onChange={(e) => setParticipantSearch(e.target.value)}
+                  placeholder="Search friends..."
+                  className="w-full rounded-xl border border-input/60 bg-background/80 py-1.5 pl-8 pr-7 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                {participantSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setParticipantSearch("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* WhatsApp-style Contact List (Alphabetical, Vertical Scroll) */}
+            <div className="relative rounded-xl border border-input/60 bg-background/80 shadow-sm overflow-hidden">
+              <div
+                ref={listContainerRef}
+                onScroll={checkScroll}
+                className="max-h-48 overflow-y-auto overscroll-contain divide-y divide-border/40 [scrollbar-width:thin] [scrollbar-color:hsl(var(--primary)/0.35)_transparent]"
+              >
+                {filteredMembers.map((member) => {
+                  const active = participants.includes(member.user_id);
+                  return (
+                    <button
+                      key={member.user_id}
+                      type="button"
+                      onClick={() => toggleParticipant(member.user_id)}
+                      className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-elevated/70 active:bg-elevated"
+                    >
+                      <span className="truncate text-sm font-semibold text-foreground">
+                        {member.name}
+                      </span>
+                      <div
+                        className={`flex size-5 shrink-0 items-center justify-center rounded-full border transition-all ${
+                          active
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-muted-foreground/40 bg-card/80"
+                        }`}
+                      >
+                        {active && <Check className="size-3 stroke-[2.5]" />}
+                      </div>
+                    </button>
+                  );
+                })}
+                {filteredMembers.length === 0 && (
+                  <p className="w-full p-3 text-center text-xs text-muted-foreground">
+                    No friends match &ldquo;{participantSearch}&rdquo;
+                  </p>
+                )}
+              </div>
+
+              {canScrollDown && (
+                <div className="pointer-events-none absolute bottom-0 inset-x-0 h-8 bg-gradient-to-t from-background via-background/80 to-transparent flex items-end justify-center pb-1">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-card/95 px-2.5 py-0.5 text-[10px] font-semibold text-primary border border-border/40 shadow-xs backdrop-blur-xs">
+                    <ChevronDown className="size-3 animate-bounce" />
+                    <span>Scroll for more</span>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
+
           <div>
-            <p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Strategy</p>
+            <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Strategy</p>
             <div className="flex gap-1 rounded-full bg-background p-1">
               {(["equal", "exact", "percentage"] as const).map((item) => (
-                <button key={item} type="button" onClick={() => setStrategy(item)} className={`flex-1 rounded-full px-3 py-2 text-xs font-bold capitalize ${strategy === item ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{item}</button>
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setStrategy(item)}
+                  className={`flex-1 rounded-full px-3 py-2 text-xs font-bold capitalize transition-colors ${
+                    strategy === item
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {item}
+                </button>
               ))}
             </div>
           </div>
-          {strategy === "equal" && <div className="rounded-xl bg-background p-3 text-xs"><p className="font-semibold text-foreground">Each pays {money(Number(equalShare || 0))}</p><p className="mt-1 text-muted-foreground">Payer does not receive a debt row.</p></div>}
+
+          {strategy === "equal" && (
+            <div className="rounded-xl bg-background/80 p-3 text-xs">
+              <p className="font-semibold text-foreground">
+                Each pays {money(Number(equalShare || 0))}
+              </p>
+              <p className="mt-1 text-muted-foreground">Payer does not receive a debt row.</p>
+            </div>
+          )}
+
           {strategy !== "equal" && (
-            <div className="space-y-2">
+            <div className="max-h-48 space-y-2 overflow-y-auto overscroll-contain pr-1">
               {selectedMembers.map((member) => (
-                <label key={member.user_id} className="flex items-center gap-2 text-xs font-semibold text-foreground">
-                  <span className="w-20 truncate">{member.name}</span>
-                  <input type="number" step="any" value={splitValues[member.user_id] || ""} onChange={(event) => setSplitValues({ ...splitValues, [member.user_id]: event.target.value })} className="flex-1 rounded-full border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring" placeholder={strategy === "percentage" ? "0%" : "0"} />
+                <label
+                  key={member.user_id}
+                  className="flex items-center gap-2 text-xs font-semibold text-foreground"
+                >
+                  <span className="w-24 truncate">{member.name}</span>
+                  <input
+                    type="number"
+                    step="any"
+                    value={splitValues[member.user_id] || ""}
+                    onChange={(event) =>
+                      setSplitValues({ ...splitValues, [member.user_id]: event.target.value })
+                    }
+                    className="flex-1 rounded-full border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
+                    placeholder={strategy === "percentage" ? "0%" : "0"}
+                  />
                 </label>
               ))}
             </div>
@@ -4020,13 +4189,46 @@ const CreateGroupForm = ({ friends, group, onSubmit, onCancel }: { friends: Frie
       <Textarea label="Description" placeholder="What's this group about?" value={description} onChange={setDescription} />
       {!group && (
         <div>
-          <p className="mb-2 text-sm font-semibold text-foreground">Add members</p>
-          <div className="flex flex-wrap gap-2">
-            {friends.map((friend) => {
-              const active = memberIds.includes(friend.user_id);
-              return <button key={friend.user_id} type="button" onClick={() => setMemberIds(active ? memberIds.filter((id) => id !== friend.user_id) : [...memberIds, friend.user_id])} className={`rounded-full px-3 py-1.5 text-xs font-bold ${active ? "bg-primary text-primary-foreground" : "bg-elevated text-foreground"}`}>{displayName(friend)}</button>;
-            })}
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-semibold text-foreground">Add members</p>
+            {friends.length > 0 && (
+              <span className="text-xs font-medium text-muted-foreground">
+                {memberIds.length} selected
+              </span>
+            )}
           </div>
+          {friends.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No friends added yet.</p>
+          ) : (
+            <div className="max-h-32 overflow-y-auto overscroll-contain pr-1">
+              <div className="flex flex-wrap gap-2">
+                {friends.map((friend) => {
+                  const active = memberIds.includes(friend.user_id);
+                  return (
+                    <button
+                      key={friend.user_id}
+                      type="button"
+                      onClick={() =>
+                        setMemberIds(
+                          active
+                            ? memberIds.filter((id) => id !== friend.user_id)
+                            : [...memberIds, friend.user_id]
+                        )
+                      }
+                      className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                        active
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "bg-elevated text-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {active && <Check className="mr-1 inline size-3" />}
+                      {displayName(friend)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
       <div className="flex gap-2 pt-2"><Button type="button" variant="quiet" className="flex-1" onClick={onCancel} disabled={submitting}>Cancel</Button><Button type="submit" className="flex-1" disabled={submitting}>{submitting ? "Saving..." : group ? "Save" : "Create"}</Button></div>
@@ -4071,16 +4273,130 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
   );
 };
 
-const PickerList = ({ items, emptyText, onPick }: { items: Array<{ id: string; title: string; subtitle: string }>; emptyText: string; onPick: (id: string) => void }) => (
-  <div className="space-y-3">
-    {items.length === 0 ? <EmptyCard text={emptyText} /> : items.map((item) => (
-      <button key={item.id} type="button" onClick={() => onPick(item.id)} className="flex w-full items-center justify-between rounded-2xl bg-elevated p-4 text-left shadow-soft">
-        <div><p className="font-bold text-foreground">{item.title}</p><p className="text-sm text-muted-foreground">{item.subtitle}</p></div>
-        <ChevronRight className="size-4 text-muted-foreground" />
-      </button>
-    ))}
-  </div>
-);
+const PickerList = ({
+  items,
+  emptyText,
+  onPick,
+  searchPlaceholder = "Search...",
+  multiSelect = false,
+  onPickMultiple,
+  actionButtonText = "Continue",
+}: {
+  items: Array<{ id: string; title: string; subtitle: string }>;
+  emptyText: string;
+  onPick: (id: string) => void;
+  searchPlaceholder?: string;
+  multiSelect?: boolean;
+  onPickMultiple?: (ids: string[]) => void;
+  actionButtonText?: string;
+}) => {
+  const [query, setQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (item) =>
+        item.title.toLowerCase().includes(q) ||
+        item.subtitle.toLowerCase().includes(q)
+    );
+  }, [items, query]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleItemClick = (id: string) => {
+    if (multiSelect) {
+      toggleSelect(id);
+    } else {
+      onPick(id);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {items.length > 4 && (
+        <div className="relative">
+          <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={searchPlaceholder}
+            autoFocus={false}
+            className="w-full rounded-2xl border border-input bg-card py-2.5 pl-10 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {filtered.length === 0 ? (
+        <EmptyCard text={items.length === 0 ? emptyText : `No results for "${query}"`} />
+      ) : (
+        <div className={`${multiSelect ? "max-h-[44vh]" : "max-h-[52vh]"} space-y-2 overflow-y-auto overscroll-contain pr-1 pb-1`}>
+          {filtered.map((item) => {
+            const isSelected = selectedIds.includes(item.id);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleItemClick(item.id)}
+                className={`flex w-full items-center justify-between rounded-2xl p-3.5 text-left shadow-soft transition-all duration-150 active:scale-[0.99] border ${
+                  isSelected
+                    ? "border-primary/50 bg-primary/10"
+                    : "border-transparent bg-elevated hover:bg-elevated/80"
+                }`}
+              >
+                <div className="min-w-0 pr-3">
+                  <p className="truncate text-sm font-semibold text-foreground">{item.title}</p>
+                  <p className="truncate text-xs text-muted-foreground">{item.subtitle}</p>
+                </div>
+                {multiSelect ? (
+                  <div
+                    className={`flex size-5 shrink-0 items-center justify-center rounded-full border transition-all ${
+                      isSelected
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-muted-foreground/40 bg-card"
+                    }`}
+                  >
+                    {isSelected && <Check className="size-3 stroke-[2.5]" />}
+                  </div>
+                ) : (
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {multiSelect && (
+        <Button
+          type="button"
+          disabled={selectedIds.length === 0}
+          onClick={() => onPickMultiple?.(selectedIds)}
+          className="w-full h-11 rounded-2xl text-sm font-semibold shadow-md transition-all"
+        >
+          {selectedIds.length > 0
+            ? `${actionButtonText} (${selectedIds.length} friend${selectedIds.length > 1 ? "s" : ""})`
+            : "Select friends to continue"}
+        </Button>
+      )}
+    </div>
+  );
+};
 
 const SettleForm = ({ group, settlement, balances, currentUserId, onSubmit, onCancel }: { group?: GroupRow; settlement?: SplitSettlementRow; balances: DebtBalance[]; currentUserId: string; onSubmit: (payloads: SettlementPayload[], proofFile?: File | null) => Promise<void>; onCancel: () => void }) => {
   const [selectedSuggestionKeys, setSelectedSuggestionKeys] = useState<string[]>([]);
@@ -4277,7 +4593,13 @@ const ActionModal = ({
   const memberGroup = memberGroupId ? data.groups.find((item) => item.id === memberGroupId) : undefined;
   const memberToRemove = memberGroup?.group_members.find((member) => member.user_id === memberUserId);
   const settlementFriendId = settlement ? (settlement.from_user_id === currentUserId ? settlement.to_user_id : settlement.from_user_id) : undefined;
-  const friend = data.friends.find((item) => item.user_id === modal.item) || data.friends.find((item) => item.user_id === settlementFriendId);
+  const initialFriendIds = useMemo(() => {
+    if (type === "add-expense" && modal.item) {
+      return modal.item.split(",").filter(Boolean);
+    }
+    return [];
+  }, [type, modal.item]);
+  const friend = data.friends.find((item) => item.user_id === (initialFriendIds[0] || modal.item)) || data.friends.find((item) => item.user_id === settlementFriendId);
   const groupExpenses = group ? data.expenses.filter((item) => item.group_id === group.id) : [];
   const balances = group ? computeGroupBalances(data.expenses, data.settlements, group, currentUserId) : [];
   const friendBalances = useMemo(() => {
@@ -4824,7 +5146,7 @@ const ActionModal = ({
 
   return (
     <Dialog open={type !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] w-[calc(100vw_-_1.5rem)] max-w-[calc(100vw_-_1.5rem)] grid-rows-[auto,minmax(0,1fr)] gap-4 overflow-hidden rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:w-full sm:max-w-md sm:p-6">
+      <DialogContent onOpenAutoFocus={(e) => e.preventDefault()} className="grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] w-[calc(100vw_-_1.5rem)] max-w-[calc(100vw_-_1.5rem)] grid-rows-[auto,minmax(0,1fr)] gap-4 overflow-hidden rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:w-full sm:max-w-md sm:p-6">
         <DialogHeader className="min-w-0 pr-6">
           <DialogTitle className="text-foreground">{title}</DialogTitle>
           <DialogDescription>{type === "notifications" ? "Pending settlements, invites, and recent activity." : type === "feedback-support" ? "Send feedback, bugs, or suggestions." : type === "remove-group-member" ? "Select an action for this member." : type === "saved" ? `${modal.item ?? "Action"} saved.` : "Complete the fields below."}</DialogDescription>
@@ -4832,13 +5154,43 @@ const ActionModal = ({
 
         <div className="spendova-modal-body min-h-0 overflow-y-auto overflow-x-visible overscroll-contain">
           {(type === "add-expense" || type === "group-expense" || type === "edit-expense") && (
-            <ExpenseForm userId={currentUserId} friends={data.friends} friend={type === "add-expense" ? friend : undefined} group={type === "group-expense" || type === "edit-expense" ? group : undefined} expense={type === "edit-expense" ? expense : undefined} categories={data.categories} onCreateCategory={createCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} onSubmit={saveExpense} onCancel={onClose} />
+            <ExpenseForm userId={currentUserId} friends={data.friends} friend={type === "add-expense" ? friend : undefined} initialSelectedFriendIds={initialFriendIds} group={type === "group-expense" || type === "edit-expense" ? group : undefined} expense={type === "edit-expense" ? expense : undefined} categories={data.categories} onCreateCategory={createCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} onSubmit={saveExpense} onCancel={onClose} />
           )}
           {type === "feedback-support" && <FeedbackForm userId={currentUserId} onSubmit={submitFeedback} onCancel={onClose} />}
 
-          {type === "choose-friend-expense" && <PickerList items={data.friends.map((item) => ({ id: item.user_id, title: displayName(item), subtitle: `@${item.username || "user"}` }))} emptyText="Add friends to start splitting expenses" onPick={(id) => openModal("add-expense", id)} />}
-          {type === "choose-group-expense" && <PickerList items={data.groups.map((item) => ({ id: item.id, title: item.name, subtitle: `${item.group_members.length} members` }))} emptyText="Create a group to split shared expenses" onPick={(id) => openModal("group-expense", id)} />}
-          {type === "choose-ledger-expense" && <PickerList items={data.ledgers.map((item) => ({ id: item.id, title: item.name, subtitle: item.ledger_type === "shared" ? "Shared Budget" : "Personal Budget" }))} emptyText="Create a ledger to track expenses" onPick={(id) => openModal("ledger-expense-drawer", id)} />}
+          {type === "choose-friend-expense" && (
+            <PickerList
+              items={[...data.friends]
+                .sort((a, b) => displayName(a).localeCompare(displayName(b), undefined, { sensitivity: "base" }))
+                .map((item) => ({ id: item.user_id, title: displayName(item), subtitle: `@${item.username || "user"}` }))}
+              emptyText="Add friends to start splitting expenses"
+              searchPlaceholder="Search friends by name or username..."
+              multiSelect={true}
+              actionButtonText="Continue"
+              onPick={(id) => openModal("add-expense", id)}
+              onPickMultiple={(ids) => openModal("add-expense", ids.join(","))}
+            />
+          )}
+          {type === "choose-group-expense" && (
+            <PickerList
+              items={[...data.groups]
+                .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+                .map((item) => ({ id: item.id, title: item.name, subtitle: `${item.group_members.length} members` }))}
+              emptyText="Create a group to split shared expenses"
+              searchPlaceholder="Search groups..."
+              onPick={(id) => openModal("group-expense", id)}
+            />
+          )}
+          {type === "choose-ledger-expense" && (
+            <PickerList
+              items={[...data.ledgers]
+                .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+                .map((item) => ({ id: item.id, title: item.name, subtitle: item.ledger_type === "shared" ? "Shared Budget" : "Personal Budget" }))}
+              emptyText="Create a ledger to track expenses"
+              searchPlaceholder="Search ledgers..."
+              onPick={(id) => openModal("ledger-expense-drawer", id)}
+            />
+          )}
           {(type === "create-group" || type === "edit-group") && <CreateGroupForm friends={data.friends} group={type === "edit-group" ? group : undefined} onSubmit={saveGroup} onCancel={onClose} />}
 
           {type === "group-details" && group && (
