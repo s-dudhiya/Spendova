@@ -325,12 +325,12 @@ const AdminDashboard = () => {
   const [blockReasonInput, setBlockReasonInput] = useState("");
   const [savingBlockAction, setSavingBlockAction] = useState(false);
 
-  // Emergency Announcement State
-  const [announcementActive, setAnnouncementActive] = useState(false);
-  const [announcementMessage, setAnnouncementMessage] = useState("");
-  const [announcementLevel, setAnnouncementLevel] = useState<"info" | "warning" | "emergency">("info");
-  const [savingAnnouncement, setSavingAnnouncement] = useState(false);
-  const [announcementPushNotification, setAnnouncementPushNotification] = useState(true);
+  // Direct Push Notification Broadcast State (No in-app banner)
+  const [broadcastPriority, setBroadcastPriority] = useState<"emergency" | "warning" | "info">("emergency");
+  const [broadcastTitle, setBroadcastTitle] = useState("🚨 Emergency Priority Alert");
+  const [broadcastMessage, setBroadcastMessage] = useState("");
+  const [broadcastingPush, setBroadcastingPush] = useState(false);
+  const [lastBroadcastResult, setLastBroadcastResult] = useState<{ time: string; count: number; title: string; level: string } | null>(null);
 
   // Push Notification Testing by Username
   const [testPushUsername, setTestPushUsername] = useState("");
@@ -516,9 +516,6 @@ const AdminDashboard = () => {
     try {
       type SiteSettingsRecord = {
         is_maintenance_mode?: boolean | null;
-        announcement_active?: boolean | null;
-        announcement_message?: string | null;
-        announcement_level?: "info" | "warning" | "emergency" | null;
       };
       type SiteSettingsQueryBuilder = {
         select: (cols: string) => {
@@ -529,15 +526,12 @@ const AdminDashboard = () => {
       };
       const settingsTable = (supabase as unknown as { from: (name: string) => SiteSettingsQueryBuilder }).from("site_settings");
       const { data, error } = await settingsTable
-        .select("is_maintenance_mode, announcement_active, announcement_message, announcement_level")
+        .select("is_maintenance_mode")
         .eq("id", 1)
         .single();
       if (error && error.code !== "PGRST116") throw error;
       if (data) {
         setIsMaintenance(Boolean(data.is_maintenance_mode));
-        setAnnouncementActive(Boolean(data.announcement_active));
-        setAnnouncementMessage(data.announcement_message || "");
-        setAnnouncementLevel(data.announcement_level || "info");
       }
     } catch (error) {
       console.error("Failed to fetch maintenance state", error);
@@ -547,54 +541,53 @@ const AdminDashboard = () => {
     }
   };
 
-  const saveAnnouncementSettings = async (activeState?: boolean) => {
-    setSavingAnnouncement(true);
-    const newActive = activeState !== undefined ? activeState : announcementActive;
+  const handleBroadcastPushNotification = async () => {
+    const cleanMsg = broadcastMessage.trim();
+    if (!cleanMsg) {
+      toast({ title: "Message required", description: "Please enter the push notification text to broadcast.", variant: "destructive" });
+      return;
+    }
+    setBroadcastingPush(true);
     try {
-      type SiteSettingsUpdateBuilder = {
-        update: (values: Record<string, unknown>) => {
-          eq: (col: string, val: number | string) => Promise<{ error: { message: string } | null }>;
-        };
-      };
-      const settingsTable = (supabase as unknown as { from: (name: string) => SiteSettingsUpdateBuilder }).from("site_settings");
-      const { error } = await settingsTable.update({
-        announcement_active: newActive,
-        announcement_message: announcementMessage.trim(),
-        announcement_level: announcementLevel,
-        announcement_updated_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq("id", 1);
-      if (error) throw error;
-      setAnnouncementActive(newActive);
+      const finalTitle = broadcastTitle.trim() || (
+        broadcastPriority === "emergency" ? "🚨 Emergency Priority Alert" :
+        broadcastPriority === "warning" ? "⚠️ Spendova System Notice" : "📢 Spendova Platform Update"
+      );
+      const res = await supabase.functions.invoke("send-push-notification", {
+        body: {
+          broadcast: true,
+          title: finalTitle,
+          body: cleanMsg,
+          level: broadcastPriority,
+        },
+      });
 
-      // If active and push broadcast toggle is enabled, send push notification to all devices
-      if (newActive && announcementPushNotification && announcementMessage.trim()) {
-        supabase.functions.invoke("send-push-notification", {
-          body: {
-            broadcast: true,
-            title: announcementLevel === "emergency" ? "Emergency Priority Alert" : announcementLevel === "warning" ? "Spendova System Notice" : "Spendova Update",
-            body: announcementMessage.trim(),
-            level: announcementLevel,
-          },
-        }).then(({ data, error: pushErr }) => {
-          if (pushErr) console.warn("Broadcast push failed:", pushErr);
-          else if (data?.tokensFound) {
-            console.log(`Broadcast push delivered to ${data.tokensFound} devices.`);
-          }
-        }).catch((err) => console.warn("Broadcast push invoke error:", err));
+      if (res.error) {
+        throw new Error(res.error.message || "Failed to dispatch push notification");
       }
 
-      toast({
-        title: newActive ? "Announcement Broadcasted" : "Announcement Deactivated",
-        description: newActive 
-          ? "Priority notification pushed live across all active Spendova devices." 
-          : "The announcement has been dismissed from user screens.",
+      const deliveredCount = res.data?.tokensFound ?? res.data?.sent ?? 0;
+      setLastBroadcastResult({
+        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        count: deliveredCount,
+        title: finalTitle,
+        level: broadcastPriority,
       });
+
+      toast({
+        title: "Push Notification Broadcasted",
+        description: `Delivered to ${deliveredCount} active device(s) via Firebase Cloud Messaging.`,
+      });
+      setBroadcastMessage("");
     } catch (error) {
-      console.error("Failed to update announcement", error);
-      toast({ title: "Update failed", description: getFriendlyErrorMessage(error, "admin"), variant: "destructive" });
+      console.error("Failed to broadcast push notification", error);
+      toast({
+        title: "Broadcast failed",
+        description: getFriendlyErrorMessage(error, "admin"),
+        variant: "destructive",
+      });
     } finally {
-      setSavingAnnouncement(false);
+      setBroadcastingPush(false);
     }
   };
 
@@ -1313,7 +1306,7 @@ const AdminDashboard = () => {
             {
               id: "controls" as const,
               label: "System Controls & Alerts",
-              badge: isMaintenance ? "Maintenance" : announcementActive ? "Alert Active" : "Normal",
+              badge: isMaintenance ? "Maintenance" : "Live",
               icon: Settings,
             },
             {
@@ -1376,7 +1369,7 @@ const AdminDashboard = () => {
           {[
             { id: "analytics" as const, label: "Telemetry", badge: analyticsData ? `${analyticsData.kpis.active_today}` : null, icon: TrendingUp },
             { id: "users" as const, label: "Users", badge: usersList.length ? `${usersList.length}` : null, icon: Users },
-            { id: "controls" as const, label: "Controls", badge: isMaintenance ? "!" : announcementActive ? "Alert" : null, icon: Settings },
+            { id: "controls" as const, label: "Controls", badge: isMaintenance ? "!" : null, icon: Settings },
             { id: "ratings" as const, label: "Ratings", badge: `${ratingStats.average}★`, icon: Star },
             { id: "tickets" as const, label: "Tickets", badge: feedbackStats.open > 0 ? `${feedbackStats.open}` : null, icon: MessageSquare },
             { id: "broadcast" as const, label: "Broadcast", badge: null, icon: Send },
@@ -2616,71 +2609,88 @@ const AdminDashboard = () => {
         {/* Station 4: System Operations & Infrastructure Telemetry */}
         {adminTab === "controls" && (
           <div className="space-y-5">
-            {/* Global Priority Announcement Controller */}
-            <Card className={`rounded-[1.25rem] border shadow-panel transition-all ${
-              announcementActive
-                ? announcementLevel === "emergency"
-                  ? "border-red-500/50 bg-red-500/5 ring-1 ring-red-500/20"
-                  : announcementLevel === "warning"
-                  ? "border-amber-500/50 bg-amber-500/5 ring-1 ring-amber-500/20"
-                  : "border-primary/50 bg-primary/5 ring-1 ring-primary/20"
-                : "border-border/80 bg-card"
-            }`}>
+            {/* Direct Push App Notification Broadcast (No in-app banner) */}
+            <Card className="rounded-[1.25rem] border border-border/80 bg-card shadow-panel">
               <CardHeader className="pb-3 pt-5 px-5 sm:px-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
                     <div className={`grid size-9 place-items-center rounded-xl ${
-                      announcementActive
-                        ? announcementLevel === "emergency"
-                          ? "bg-red-500/15 text-red-500"
-                          : announcementLevel === "warning"
-                          ? "bg-amber-500/15 text-amber-500"
-                          : "bg-primary/15 text-primary"
-                        : "bg-muted text-muted-foreground"
+                      broadcastPriority === "emergency"
+                        ? "bg-red-500/15 text-red-500"
+                        : broadcastPriority === "warning"
+                        ? "bg-amber-500/15 text-amber-500"
+                        : "bg-primary/15 text-primary"
                     }`}>
                       <Megaphone className="size-5" />
                     </div>
                     <div>
                       <CardTitle className="text-base sm:text-lg font-bold text-foreground">
-                        Global Priority Announcement Banner
+                        Direct Push App Notification Broadcast
                       </CardTitle>
                       <CardDescription className="text-xs">
-                        Instant emergency notification pushed to all active user mobile apps and web screens
+                        Dispatch priority push notifications directly to user mobile lockscreens (Android, iOS & Web). Zero in-app banner clutter.
                       </CardDescription>
                     </div>
                   </div>
                   <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold tracking-wide uppercase ${
-                    announcementActive
-                      ? announcementLevel === "emergency"
-                        ? "bg-red-500/15 text-red-500 border border-red-500/30"
-                        : announcementLevel === "warning"
-                        ? "bg-amber-500/15 text-amber-500 border border-amber-500/30"
-                        : "bg-primary/15 text-primary border border-primary/30"
-                      : "bg-elevated text-muted-foreground border border-border"
+                    broadcastPriority === "emergency"
+                      ? "bg-red-500/15 text-red-500 border border-red-500/30"
+                      : broadcastPriority === "warning"
+                      ? "bg-amber-500/15 text-amber-500 border border-amber-500/30"
+                      : "bg-primary/15 text-primary border border-primary/30"
                   }`}>
-                    <span className={`size-1.5 rounded-full ${announcementActive ? "bg-current animate-ping" : "bg-muted-foreground"}`} />
-                    {announcementActive ? `Live: ${announcementLevel.toUpperCase()}` : "Broadcast Inactive"}
+                    <span className="size-1.5 rounded-full bg-current animate-ping" />
+                    {broadcastPriority === "emergency" ? "🚨 Priority: Emergency" : broadcastPriority === "warning" ? "⚠️ Priority: Warning" : "📢 Priority: Info"}
                   </span>
                 </div>
               </CardHeader>
 
               <CardContent className="space-y-4 px-5 pb-5 sm:px-6 sm:pb-6 pt-1">
                 <div className="space-y-3">
-                  {/* Alert Priority Level Selector */}
+                  {/* Push Priority Level Selector */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Alert Priority Level</Label>
+                    <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notification Priority Level</Label>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       {[
-                        { level: "emergency" as const, label: "Emergency Alert", desc: "Non-dismissible • Red pulsing", color: "border-red-500/50 hover:bg-red-500/10 text-red-500" },
-                        { level: "warning" as const, label: "System Notice", desc: "Dismissible • Maintenance / Caution", color: "border-amber-500/50 hover:bg-amber-500/10 text-amber-500" },
-                        { level: "info" as const, label: "Platform Update", desc: "Dismissible • New features / Info", color: "border-primary/50 hover:bg-primary/10 text-primary" },
+                        {
+                          level: "emergency" as const,
+                          label: "Emergency Priority Alert",
+                          desc: "High Priority • Chime & Vibration Heads-up",
+                          defaultTitle: "🚨 Emergency Priority Alert",
+                          color: "border-red-500/50 hover:bg-red-500/10 text-red-500",
+                        },
+                        {
+                          level: "warning" as const,
+                          label: "System Notice",
+                          desc: "Service Advisory • Maintenance & Caution",
+                          defaultTitle: "⚠️ Spendova System Notice",
+                          color: "border-amber-500/50 hover:bg-amber-500/10 text-amber-500",
+                        },
+                        {
+                          level: "info" as const,
+                          label: "Platform Update",
+                          desc: "Informational • New features & general tips",
+                          defaultTitle: "📢 Spendova Platform Update",
+                          color: "border-primary/50 hover:bg-primary/10 text-primary",
+                        },
                       ].map((item) => {
-                        const active = announcementLevel === item.level;
+                        const active = broadcastPriority === item.level;
                         return (
                           <button
                             key={item.level}
                             type="button"
-                            onClick={() => setAnnouncementLevel(item.level)}
+                            onClick={() => {
+                              setBroadcastPriority(item.level);
+                              // Sync title if unchanged or standard default
+                              if (
+                                !broadcastTitle ||
+                                broadcastTitle.includes("Alert") ||
+                                broadcastTitle.includes("Notice") ||
+                                broadcastTitle.includes("Update")
+                              ) {
+                                setBroadcastTitle(item.defaultTitle);
+                              }
+                            }}
                             className={`rounded-xl border p-2.5 text-left transition-all ${
                               active
                                 ? "border-primary bg-primary/10 ring-1 ring-primary"
@@ -2695,105 +2705,89 @@ const AdminDashboard = () => {
                     </div>
                   </div>
 
-                  {/* Announcement Message Input */}
+                  {/* Broadcast Title Input */}
                   <div className="space-y-1.5">
-                    <Label htmlFor="announcement-msg" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Broadcast Message</Label>
+                    <Label htmlFor="broadcast-title" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notification Title</Label>
+                    <Input
+                      id="broadcast-title"
+                      value={broadcastTitle}
+                      onChange={(e) => setBroadcastTitle(e.target.value)}
+                      placeholder="e.g. 🚨 Emergency Priority Alert"
+                      className="rounded-xl border-input text-xs sm:text-sm font-semibold"
+                    />
+                  </div>
+
+                  {/* Broadcast Message Input */}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="broadcast-msg" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notification Body Message</Label>
                     <Textarea
-                      id="announcement-msg"
-                      value={announcementMessage}
-                      onChange={(e) => setAnnouncementMessage(e.target.value)}
+                      id="broadcast-msg"
+                      value={broadcastMessage}
+                      onChange={(e) => setBroadcastMessage(e.target.value)}
                       placeholder="e.g. Scheduled emergency database maintenance will commence in 15 minutes. Please save your expense edits."
                       rows={2}
                       className="rounded-xl border-input text-xs sm:text-sm resize-none"
                     />
                   </div>
 
-                  {/* Realtime Live Preview Box */}
+                  {/* Native Smartphone Push Notification Lockscreen Preview */}
                   <div className="space-y-1.5">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground block">Real-time Banner Live Preview (What users see):</span>
-                    <div className={`rounded-xl px-3 py-2 text-xs font-medium shadow-md transition-all ${
-                      announcementLevel === "emergency"
-                        ? "bg-gradient-to-r from-red-600 via-rose-600 to-red-600 text-white animate-pulse"
-                        : announcementLevel === "warning"
-                        ? "bg-gradient-to-r from-amber-600 via-yellow-600 to-amber-600 text-white"
-                        : "bg-gradient-to-r from-violet-600 via-primary to-indigo-600 text-white"
-                    }`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="grid size-5 shrink-0 place-items-center rounded-full bg-white/20">
-                            {announcementLevel === "emergency" ? (
-                              <Radio className="size-3 text-white animate-ping" />
-                            ) : announcementLevel === "warning" ? (
-                              <AlertTriangle className="size-3 text-white" />
-                            ) : (
-                              <Bell className="size-3 text-white" />
-                            )}
-                          </span>
-                          <span className="rounded bg-white/25 px-1 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-white">
-                            {announcementLevel === "emergency" ? "Priority Emergency" : announcementLevel === "warning" ? "System Notice" : "Spendova Update"}
-                          </span>
-                          <span className="truncate font-semibold text-white drop-shadow-sm">
-                            {announcementMessage || "Live announcement message text will appear here..."}
-                          </span>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground block">
+                      Lockscreen Push Preview (What appears on user phones):
+                    </span>
+                    <div className="rounded-2xl border border-border/80 bg-gradient-to-b from-card to-elevated p-3.5 shadow-md">
+                      <div className="flex items-start gap-3">
+                        <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-sm">
+                          S
                         </div>
-                        {!announcementLevel.includes("emergency") && (
-                          <span className="grid size-5 shrink-0 place-items-center rounded bg-white/10 text-white">
-                            <X className="size-3" />
-                          </span>
-                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-bold tracking-wider text-foreground uppercase">SPENDOVA</span>
+                              <span className={`rounded px-1.5 py-0.2 text-[9px] font-extrabold uppercase tracking-wide ${
+                                broadcastPriority === "emergency"
+                                  ? "bg-red-500/20 text-red-500"
+                                  : broadcastPriority === "warning"
+                                  ? "bg-amber-500/20 text-amber-500"
+                                  : "bg-primary/20 text-primary"
+                              }`}>
+                                {broadcastPriority === "emergency" ? "Emergency" : broadcastPriority === "warning" ? "Notice" : "Update"}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">now</span>
+                          </div>
+                          <p className="mt-0.5 text-xs font-bold text-foreground">
+                            {broadcastTitle || "Push Notification Title"}
+                          </p>
+                          <p className="text-xs text-muted-foreground leading-snug break-words">
+                            {broadcastMessage || "Direct mobile push notification message will appear on user lockscreens..."}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Push Broadcast Toggle */}
-                  <div className="flex items-center justify-between rounded-xl border border-border/70 bg-elevated/40 p-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="grid size-7 place-items-center rounded-lg bg-primary/10 text-primary">
-                        <Bell className="size-3.5" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-foreground">Dispatch System Push Notification</p>
-                        <p className="text-[10px] text-muted-foreground">Send native FCM push to all registered Android, iOS, and Web devices on publish</p>
-                      </div>
-                    </div>
-                    <Switch
-                      checked={announcementPushNotification}
-                      onCheckedChange={setAnnouncementPushNotification}
-                      className="data-[state=checked]:bg-primary"
-                    />
                   </div>
 
                   {/* Action Controls */}
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                    <p className="text-xs text-muted-foreground">
-                      {announcementActive
-                        ? "Active alerts propagate to all user devices via Supabase Realtime within 500ms."
-                        : "Ready to broadcast instantly across all connected devices."}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      {announcementActive && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => saveAnnouncementSettings(false)}
-                          disabled={savingAnnouncement}
-                          className="h-9 rounded-xl border-destructive/30 text-destructive hover:bg-destructive/10 text-xs font-bold"
-                        >
-                          Deactivate Banner
-                        </Button>
+                    <div className="text-xs text-muted-foreground">
+                      {lastBroadcastResult ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                          ✓ Last dispatched at {lastBroadcastResult.time} to {lastBroadcastResult.count} device(s) ({lastBroadcastResult.level.toUpperCase()}).
+                        </span>
+                      ) : (
+                        <span>Native FCM push broadcasts instantly to all registered user phones. Zero in-app banner.</span>
                       )}
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => saveAnnouncementSettings(true)}
-                        disabled={savingAnnouncement || !announcementMessage.trim()}
-                        className="h-9 rounded-xl bg-primary text-primary-foreground font-bold text-xs shadow-primary-action"
-                      >
-                        <Megaphone className="mr-1.5 size-3.5" />
-                        {savingAnnouncement ? "Saving..." : announcementActive ? "Update Live Broadcast" : "Publish Priority Alert"}
-                      </Button>
                     </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleBroadcastPushNotification}
+                      disabled={broadcastingPush || !broadcastMessage.trim()}
+                      className="h-9 rounded-xl bg-primary text-primary-foreground font-bold text-xs shadow-primary-action"
+                    >
+                      <Megaphone className="mr-1.5 size-3.5" />
+                      {broadcastingPush ? "Broadcasting Push..." : "Broadcast Push to All Devices"}
+                    </Button>
                   </div>
                 </div>
               </CardContent>
