@@ -32,58 +32,129 @@ serve(async (req) => {
   try {
     initFirebase();
     if (!firebaseInitialized) {
-      throw new Error("Firebase is not initialized");
+      throw new Error("Firebase is not initialized. Please ensure FIREBASE_SERVICE_ACCOUNT is set.");
     }
 
-    const { record, type } = await req.json()
-    // This expects a webhook payload from Supabase
-
-    if (type !== 'INSERT') {
-      return new Response(JSON.stringify({ message: "Ignored non-insert event" }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+    const body = await req.json();
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    )
+    );
 
-    const notificationRow = record;
-    if (!notificationRow || !notificationRow.title) {
-      console.log("Invalid payload or not a notification", record);
-      throw new Error("Invalid payload");
+    let title = "";
+    let messageBody = "";
+    let tokens: string[] = [];
+    let targetUserId: string | null = null;
+    let targetUserInfo: any = null;
+
+    if (body.type === 'INSERT' && body.record) {
+      // Webhook payload from Supabase notifications table
+      const notificationRow = body.record;
+      if (!notificationRow || !notificationRow.title) {
+        return new Response(JSON.stringify({ message: "Invalid payload or not a notification" }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      targetUserId = notificationRow.user_id;
+      title = notificationRow.title;
+      messageBody = notificationRow.message || "";
+    } else {
+      // Direct invocation from Admin Console or App Services
+      title = body.title || "Spendova Notification";
+      messageBody = body.body || body.message || "";
+
+      if (body.username) {
+        const cleanUsername = String(body.username).replace(/^@/, '').trim().toLowerCase();
+        const { data: profile, error: profErr } = await supabaseAdmin
+          .from('profiles')
+          .select('user_id, full_name, username')
+          .ilike('username', cleanUsername)
+          .maybeSingle();
+
+        if (profErr || !profile) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: `User with username '@${cleanUsername}' not found in Spendova profiles.`,
+          }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        targetUserId = profile.user_id;
+        targetUserInfo = profile;
+      } else if (body.userId) {
+        targetUserId = body.userId;
+      } else if (body.broadcast) {
+        // Broadcast to all users
+        targetUserId = null;
+      } else {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Either username, userId, broadcast, or webhook record is required.",
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Also persist to in-app notifications table so the user sees it in their notification inbox
+      if (targetUserId) {
+        try {
+          await supabaseAdmin.from('notifications').insert({
+            user_id: targetUserId,
+            type: 'admin_broadcast',
+            title: title,
+            message: messageBody,
+            entity_type: 'admin_alert',
+          });
+        } catch (dbErr) {
+          console.warn("Could not insert notification into DB:", dbErr);
+        }
+      }
     }
 
-    console.log(`Processing notification for user ${notificationRow.user_id}`);
+    // Fetch device tokens for the recipient(s)
+    let tokensQuery = supabaseAdmin.from('user_push_tokens').select('token, platform, user_id');
+    if (targetUserId) {
+      tokensQuery = tokensQuery.eq('user_id', targetUserId);
+    }
+    const { data: tokensData, error: tokensErr } = await tokensQuery;
 
-    // The notifications table already contains the exact user to notify, 
-    // and the exact title and message to send!
-    const userIdToNotify = notificationRow.user_id;
+    if (tokensErr) {
+      console.error("Error querying user_push_tokens:", tokensErr);
+    }
 
-    // 1. Fetch device tokens for this specific user
-    const { data: tokensData } = await supabaseAdmin
-      .from('user_push_tokens')
-      .select('token')
-      .eq('user_id', userIdToNotify);
-
-    const tokens = tokensData?.map(t => t.token) || [];
-    console.log(`Found ${tokens.length} tokens for user ${userIdToNotify}`);
+    const devicePlatforms = (tokensData || []).map((t: any) => t.platform || 'unknown');
+    tokens = Array.from(new Set((tokensData || []).map((t: any) => t.token).filter(Boolean)));
+    console.log(`Found ${tokens.length} device tokens for target: ${targetUserId || 'ALL'}`);
 
     if (tokens.length === 0) {
-      return new Response(JSON.stringify({ success: true, sent: 0, reason: "No tokens found" }), { status: 200, headers: corsHeaders });
+      return new Response(JSON.stringify({
+        success: true,
+        sent: 0,
+        tokensFound: 0,
+        user: targetUserInfo,
+        reason: targetUserInfo
+          ? `User @${targetUserInfo.username} exists, but has 0 active device push tokens registered. The user must open Spendova on Android/iOS APK or allow push notifications in their browser.`
+          : "No device push tokens registered in the system.",
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // 2. Send Firebase Push Notification
+    // Send Firebase Cloud Messaging Multicast
     const payload = {
       notification: {
-        title: notificationRow.title,
-        body: notificationRow.message,
+        title: title,
+        body: messageBody,
       },
       data: {
-        notificationId: notificationRow.id,
-        path: '/dashboard', // Default path, can be customized based on entity_type
+        path: '/dashboard',
+        level: body.level || 'info',
+        ...(body.data || {}),
       },
       tokens: tokens,
     };
@@ -92,16 +163,23 @@ serve(async (req) => {
     const response = await getMessaging().sendEachForMulticast(payload);
     console.log(`FCM success count: ${response.successCount}, failure count: ${response.failureCount}`);
 
-    return new Response(JSON.stringify({ success: true, successCount: response.successCount }), {
+    return new Response(JSON.stringify({
+      success: true,
+      tokensFound: tokens.length,
+      platforms: devicePlatforms,
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+      user: targetUserInfo,
+    }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    });
 
   } catch (error: any) {
-    console.error('send-push-notification error:', error)
+    console.error('send-push-notification error:', error);
     return new Response(JSON.stringify({ error: error?.message || 'Server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    });
   }
-})
+});

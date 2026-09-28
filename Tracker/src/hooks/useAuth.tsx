@@ -29,6 +29,9 @@ interface Profile {
   username: string | null;
   email_verified?: boolean | null;
   last_feedback_round_submitted?: number | null;
+  is_blocked?: boolean | null;
+  blocked_reason?: string | null;
+  blocked_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -254,8 +257,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('user_id', userId)
         .single(), 5000, "profile fetch");
 
-      if (error && error.code !== 'PGRST116') console.error('Error fetching profile:', error);
-      else setProfile(data as Profile);
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching profile:', error);
+      } else if (data) {
+        const userProfile = data as Profile;
+        if (userProfile.is_blocked) {
+          await revokeCurrentDeviceSession().catch(() => undefined);
+          await supabase.auth.signOut().catch(() => undefined);
+          clearLocalAuthState();
+          setProfile(null);
+          setUser(null);
+          setSession(null);
+          toast({
+            title: "Account Suspended",
+            description: userProfile.blocked_reason || "Your Spendova account has been temporarily blocked by administration. Please contact support.",
+            variant: "destructive"
+          });
+          return;
+        }
+        setProfile(userProfile);
+      }
       bootLog("profile fetch end");
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -328,7 +349,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error("Profile verification lookup failed", error);
     }
-    if (profileError) console.error("Profile verification lookup failed", profileError);
+    if (profileData && (profileData as any).is_blocked === true) {
+      await revokeCurrentDeviceSession().catch(() => undefined);
+      await supabase.auth.signOut().catch(() => undefined);
+      clearLocalAuthState();
+      const blockMsg = (profileData as any).blocked_reason || "Your Spendova account has been temporarily blocked by administration. Please contact support.";
+      const blockError = new Error(blockMsg);
+      toast({ title: "Account Suspended", description: blockMsg, variant: "destructive" });
+      return { error: blockError };
+    }
+
     const customSignupPending = data.user.user_metadata?.spendova_custom_pending === true;
     if (profileData && profileData.email_verified === false && customSignupPending) {
       await revokeCurrentDeviceSession().catch(() => undefined);

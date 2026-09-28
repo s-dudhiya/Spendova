@@ -102,9 +102,15 @@ async function initializeWebNotifications(userId: string) {
   if (permission === "granted") {
     const messaging = getMessaging(app);
     try {
+      let swRegistration: ServiceWorkerRegistration | undefined;
+      if ("serviceWorker" in navigator) {
+        swRegistration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+      }
+
       // NOTE: We need the VAPID key to generate web tokens.
       const currentToken = await getToken(messaging, {
         vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+        serviceWorkerRegistration: swRegistration,
       });
 
       if (currentToken) {
