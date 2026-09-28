@@ -5566,13 +5566,18 @@ const Index = () => {
   useEffect(() => {
     if (!user || !profile || feedbackCheckedRef.current) return;
 
-    supabase
-      .from("site_settings" as never)
-      .select("feedback_round, feedback_min_days" as never)
-      .eq("id", 1)
-      .maybeSingle()
-      .then(({ data: settingsData }) => {
-        if (!settingsData) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let isMounted = true;
+
+    const checkFeedbackEligibility = async () => {
+      try {
+        const { data: settingsData } = await supabase
+          .from("site_settings" as never)
+          .select("feedback_round, feedback_min_days" as never)
+          .eq("id", 1)
+          .maybeSingle();
+
+        if (!settingsData || !isMounted) return;
         feedbackCheckedRef.current = true;
         const round = Number((settingsData as { feedback_round?: number }).feedback_round ?? 0);
         const minDays = Number((settingsData as { feedback_min_days?: number }).feedback_min_days ?? 4);
@@ -5587,15 +5592,25 @@ const Index = () => {
         const isOldEnough = accountAgeDays >= minDays;
         const lastSubmitted = Number(profile.last_feedback_round_submitted || 0);
 
-        if (isOldEnough && lastSubmitted < round) {
+        if (isOldEnough && lastSubmitted < round && isMounted) {
           setFeedbackCampaign({ round });
-          const timer = setTimeout(() => {
-            setFeedbackModalOpen(true);
+          timer = setTimeout(() => {
+            if (isMounted) {
+              setFeedbackModalOpen(true);
+            }
           }, 1500);
-          return () => clearTimeout(timer);
         }
-      })
-      .catch((err) => console.warn("Feedback settings lookup error", err));
+      } catch (err: unknown) {
+        console.warn("Feedback settings lookup error", err);
+      }
+    };
+
+    void checkFeedbackEligibility();
+
+    return () => {
+      isMounted = false;
+      if (timer) clearTimeout(timer);
+    };
   }, [user, profile]);
 
   if (!authLoading && !user) return <Navigate to="/login" replace />;
