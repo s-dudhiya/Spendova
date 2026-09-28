@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CategoryPicker } from "@/components/CategoryPicker";
+import { RatingFeedbackModal } from "@/components/RatingFeedbackModal";
 import { useExpenseCategories } from "@/hooks/useExpenseCategories";
 import {
   ArrowLeft,
@@ -5558,6 +5559,44 @@ const Index = () => {
   const [modal, setModal] = useState<ModalState>({ type: null });
   const { data, loading, refresh } = useSpendovaData(user?.id);
   const { toast } = useToast();
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+  const [feedbackCampaign, setFeedbackCampaign] = useState<{ round: number } | null>(null);
+  const feedbackCheckedRef = useRef(false);
+
+  useEffect(() => {
+    if (!user || !profile || feedbackCheckedRef.current) return;
+
+    supabase
+      .from("site_settings" as never)
+      .select("feedback_round, feedback_min_days" as never)
+      .eq("id", 1)
+      .maybeSingle()
+      .then(({ data: settingsData }) => {
+        if (!settingsData) return;
+        feedbackCheckedRef.current = true;
+        const round = Number((settingsData as { feedback_round?: number }).feedback_round ?? 0);
+        const minDays = Number((settingsData as { feedback_min_days?: number }).feedback_min_days ?? 4);
+
+        // Feedback campaign is inactive until Admin rolls it out (round > 0)
+        if (round <= 0) return;
+
+        const createdAt = profile.created_at || user.created_at;
+        if (!createdAt) return;
+
+        const accountAgeDays = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);
+        const isOldEnough = accountAgeDays >= minDays;
+        const lastSubmitted = Number(profile.last_feedback_round_submitted || 0);
+
+        if (isOldEnough && lastSubmitted < round) {
+          setFeedbackCampaign({ round });
+          const timer = setTimeout(() => {
+            setFeedbackModalOpen(true);
+          }, 1500);
+          return () => clearTimeout(timer);
+        }
+      })
+      .catch((err) => console.warn("Feedback settings lookup error", err));
+  }, [user, profile]);
 
   if (!authLoading && !user) return <Navigate to="/login" replace />;
 
@@ -5709,6 +5748,19 @@ const Index = () => {
       />
 
       <ActionModal modal={modal} data={data} currentUserId={user.id} currentProfile={profile} onClose={() => setModal({ type: null })} refresh={refresh} openModal={openModal} />
+
+      {user && feedbackCampaign && (
+        <RatingFeedbackModal
+          open={feedbackModalOpen}
+          onOpenChange={setFeedbackModalOpen}
+          userId={user.id}
+          roundNumber={feedbackCampaign.round}
+          userName={profile?.full_name || undefined}
+          onSubmitted={() => {
+            void refresh({ silent: true });
+          }}
+        />
+      )}
     </div>
   );
 };

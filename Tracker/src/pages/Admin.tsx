@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, CheckCircle2, Clock, Eye, FileText, History, Inbox, Lock, LogOut, Mail, MessageSquare, Paperclip, Search, Send, Settings, Trash2, Users, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Eye, FileText, History, Inbox, Lock, LogOut, Mail, MessageSquare, Paperclip, RefreshCw, Search, Send, Settings, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -43,6 +44,18 @@ type FeedbackReport = {
   user_update_message: string | null;
   created_at: string;
   updated_at: string;
+  profiles?: { user_id: string; full_name: string | null; username: string | null } | null;
+};
+
+type AppRating = {
+  id: string;
+  user_id: string;
+  rating: number;
+  sentiment: "positive" | "negative" | "neutral";
+  selected_tags: string[];
+  comment: string | null;
+  round_number: number;
+  created_at: string;
   profiles?: { user_id: string; full_name: string | null; username: string | null } | null;
 };
 
@@ -264,9 +277,130 @@ const AdminDashboard = () => {
     critical: feedbackReports.filter((report) => report.priority === "critical").length,
   }), [feedbackReports]);
 
+  const [adminTab, setAdminTab] = useState<"tickets" | "ratings">("tickets");
+  const [appRatings, setAppRatings] = useState<AppRating[]>([]);
+  const [currentRound, setCurrentRound] = useState<number>(0);
+  const [ratingsLoading, setRatingsLoading] = useState(false);
+  const [rollingOutRound, setRollingOutRound] = useState(false);
+  const [ratingFilters, setRatingFilters] = useState({ rating: "all", sentiment: "all", round: "all", search: "" });
+
+  const fetchAppRatings = async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setRatingsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("app_ratings" as never)
+        .select(`
+          id,
+          user_id,
+          rating,
+          sentiment,
+          selected_tags,
+          comment,
+          round_number,
+          created_at,
+          profiles!app_ratings_user_id_fkey(user_id, full_name, username)
+        ` as never)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.warn("Could not fetch app ratings", error);
+      } else {
+        setAppRatings((data as unknown as AppRating[]) || []);
+      }
+
+      const { data: settingsData } = await supabase
+        .from("site_settings" as never)
+        .select("feedback_round" as never)
+        .eq("id", 1)
+        .maybeSingle();
+
+      if (settingsData && typeof (settingsData as { feedback_round?: number }).feedback_round === "number") {
+        setCurrentRound(Number((settingsData as { feedback_round?: number }).feedback_round));
+      }
+    } catch (err) {
+      console.warn("Could not fetch app ratings", err);
+    } finally {
+      if (!options?.silent) setRatingsLoading(false);
+    }
+  };
+
+  const [showRolloutModal, setShowRolloutModal] = useState(false);
+
+  const executeRollout = async () => {
+    const isFirstRollout = currentRound === 0;
+    const nextRound = isFirstRollout ? 1 : currentRound + 1;
+
+    setRollingOutRound(true);
+    try {
+      const { data, error } = await supabase.rpc("roll_out_feedback_round" as never);
+      if (error) throw error;
+      const newRoundNumber = Number(data) || nextRound;
+      setCurrentRound(newRoundNumber);
+      setShowRolloutModal(false);
+      toast({
+        title: isFirstRollout ? "Feedback Campaign Rolled Out!" : "Feedback Round Rolled Out!",
+        description: `Round ${newRoundNumber} is now active. All users with accounts 4+ days old will receive the feedback modal on their next app visit.`,
+      });
+      await fetchAppRatings();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Rollout failed";
+      toast({
+        title: "Rollout failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setRollingOutRound(false);
+    }
+  };
+
+  const availableRounds = useMemo(() => {
+    const set = new Set<number>([
+      ...(currentRound > 0 ? [currentRound] : []),
+      ...appRatings.map((r) => r.round_number),
+    ]);
+    return Array.from(set).sort((a, b) => b - a);
+  }, [appRatings, currentRound]);
+
+  const filteredRatings = useMemo(() => {
+    return appRatings.filter((item) => {
+      const q = ratingFilters.search.trim().toLowerCase();
+      const userName = `${item.profiles?.full_name || ""} ${item.profiles?.username || ""} ${item.comment || ""} ${(item.selected_tags || []).join(" ")}`.toLowerCase();
+      if (q && !userName.includes(q)) return false;
+      if (ratingFilters.rating !== "all" && item.rating !== Number(ratingFilters.rating)) return false;
+      if (ratingFilters.sentiment !== "all" && item.sentiment !== ratingFilters.sentiment) return false;
+      if (ratingFilters.round !== "all" && item.round_number !== Number(ratingFilters.round)) return false;
+      return true;
+    });
+  }, [appRatings, ratingFilters]);
+
+  const ratingStats = useMemo(() => {
+    const total = appRatings.length;
+    if (!total)
+      return { average: "0.0", total: 0, positive: 0, negative: 0, neutral: 0, breakdown: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } };
+    const sum = appRatings.reduce((acc, r) => acc + r.rating, 0);
+    const avg = (sum / total).toFixed(1);
+    const breakdown = {
+      5: appRatings.filter((r) => r.rating === 5).length,
+      4: appRatings.filter((r) => r.rating === 4).length,
+      3: appRatings.filter((r) => r.rating === 3).length,
+      2: appRatings.filter((r) => r.rating === 2).length,
+      1: appRatings.filter((r) => r.rating === 1).length,
+    };
+    return {
+      average: avg,
+      total,
+      positive: appRatings.filter((r) => r.sentiment === "positive").length,
+      negative: appRatings.filter((r) => r.sentiment === "negative").length,
+      neutral: appRatings.filter((r) => r.sentiment === "neutral").length,
+      breakdown,
+    };
+  }, [appRatings]);
+
   useEffect(() => {
     fetchMaintenanceState();
     fetchFeedbackReports();
+    fetchAppRatings({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -275,6 +409,7 @@ const AdminDashboard = () => {
       .channel("admin-feedback-reports")
       .on("postgres_changes", { event: "*", schema: "public", table: "feedback_reports" }, () => void fetchFeedbackReports({ silent: true }))
       .on("postgres_changes", { event: "*", schema: "public", table: "feedback_report_events" }, () => void fetchFeedbackEvents({ silent: true }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "app_ratings" }, () => void fetchAppRatings({ silent: true }))
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
@@ -527,7 +662,39 @@ const AdminDashboard = () => {
           </Button>
         </header>
 
+        {/* Admin Navigation Switcher */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 pb-1">
+          <button
+            type="button"
+            onClick={() => setAdminTab("tickets")}
+            className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition-all ${
+              adminTab === "tickets"
+                ? "bg-primary text-primary-foreground shadow-primary-action"
+                : "bg-card text-muted-foreground hover:bg-elevated hover:text-foreground"
+            }`}
+          >
+            <MessageSquare className="size-4" />
+            <span>Support Tickets ({feedbackReports.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAdminTab("ratings");
+              if (!appRatings.length) void fetchAppRatings();
+            }}
+            className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-semibold transition-all ${
+              adminTab === "ratings"
+                ? "bg-primary text-primary-foreground shadow-primary-action"
+                : "bg-card text-muted-foreground hover:bg-elevated hover:text-foreground"
+            }`}
+          >
+            <Star className="size-4 fill-amber-400 text-amber-400" />
+            <span>In-App Ratings & Reviews ({ratingStats.average}★ · {ratingStats.total})</span>
+          </button>
+        </div>
+
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.85fr)]">
+          {adminTab === "tickets" ? (
           <Card className="rounded-[1.25rem] border-primary/20 bg-card shadow-panel">
             <CardHeader className="space-y-4 pb-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -692,6 +859,251 @@ const AdminDashboard = () => {
               </div>
             </CardContent>
           </Card>
+          ) : (
+          /* User Ratings & Reviews Dashboard */
+          <Card className="rounded-[1.25rem] border-primary/20 bg-card shadow-panel">
+            <CardHeader className="space-y-4 pb-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-foreground">
+                    <Star className="size-5 fill-amber-400 text-amber-400" /> In-App Ratings & User Reviews
+                  </CardTitle>
+                  <CardDescription>
+                    Real-time user satisfaction, ratings, and feedback campaign rollout.
+                  </CardDescription>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => setShowRolloutModal(true)}
+                    disabled={rollingOutRound}
+                    className="h-9 rounded-xl bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-primary-action transition-all hover:opacity-90"
+                  >
+                    <Sparkles className="mr-1.5 size-3.5" />
+                    {rollingOutRound
+                      ? "Rolling out..."
+                      : currentRound === 0
+                      ? "Roll Out Feedback to Users"
+                      : `Roll Out Round ${currentRound + 1}`}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fetchAppRatings()}
+                    disabled={ratingsLoading}
+                    className="h-9 rounded-xl text-xs font-semibold"
+                  >
+                    <RefreshCw className={`mr-1 size-3.5 ${ratingsLoading ? "animate-spin" : ""}`} />
+                    Refresh
+                  </Button>
+                </div>
+              </div>
+
+              {/* Metrics Grid */}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                <div className="rounded-2xl border border-border bg-elevated p-3 shadow-soft">
+                  <div className="flex items-center justify-between gap-2 text-xs font-semibold text-muted-foreground">
+                    <span>Average Rating</span>
+                    <Star className="size-4 fill-amber-400 text-amber-400" />
+                  </div>
+                  <p className="mt-1 text-2xl font-bold text-foreground">★ {ratingStats.average}</p>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-elevated p-3 shadow-soft">
+                  <div className="flex items-center justify-between gap-2 text-xs font-semibold text-muted-foreground">
+                    <span>Total Reviews</span>
+                    <Users className="size-4 text-primary" />
+                  </div>
+                  <p className="mt-1 text-2xl font-bold text-foreground">{ratingStats.total}</p>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-elevated p-3 shadow-soft">
+                  <div className="flex items-center justify-between gap-2 text-xs font-semibold text-muted-foreground">
+                    <span>Positive (4-5★)</span>
+                    <ThumbsUp className="size-4 text-success" />
+                  </div>
+                  <p className="mt-1 text-2xl font-bold text-success">{ratingStats.positive}</p>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-elevated p-3 shadow-soft">
+                  <div className="flex items-center justify-between gap-2 text-xs font-semibold text-muted-foreground">
+                    <span>Needs Attention (1-3★)</span>
+                    <ThumbsDown className="size-4 text-warning" />
+                  </div>
+                  <p className="mt-1 text-2xl font-bold text-warning">{ratingStats.negative + ratingStats.neutral}</p>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-elevated p-3 shadow-soft">
+                  <div className="flex items-center justify-between gap-2 text-xs font-semibold text-muted-foreground">
+                    <span>Campaign Status</span>
+                    <Sparkles className="size-4 text-primary" />
+                  </div>
+                  <p className={`mt-1 text-base font-bold ${currentRound === 0 ? "text-amber-500" : "text-primary"}`}>
+                    {currentRound === 0 ? "Not Rolled Out" : `Round ${currentRound} Active`}
+                  </p>
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+              {/* Filter bar */}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={ratingFilters.search}
+                    onChange={(e) => setRatingFilters((prev) => ({ ...prev, search: e.target.value }))}
+                    placeholder="Search by user or review..."
+                    className="h-11 rounded-2xl pl-9 focus-visible:ring-inset"
+                  />
+                </div>
+                <AdminSelect
+                  value={ratingFilters.rating}
+                  onChange={(rating) => setRatingFilters((prev) => ({ ...prev, rating }))}
+                  options={[
+                    { value: "all", label: "All Ratings" },
+                    { value: "5", label: "5 Stars (★★★★★)" },
+                    { value: "4", label: "4 Stars (★★★★)" },
+                    { value: "3", label: "3 Stars (★★★)" },
+                    { value: "2", label: "2 Stars (★★)" },
+                    { value: "1", label: "1 Star (★)" },
+                  ]}
+                />
+                <AdminSelect
+                  value={ratingFilters.sentiment}
+                  onChange={(sentiment) => setRatingFilters((prev) => ({ ...prev, sentiment }))}
+                  options={[
+                    { value: "all", label: "All Sentiments" },
+                    { value: "positive", label: "Positive (4-5★)" },
+                    { value: "neutral", label: "Neutral (3★)" },
+                    { value: "negative", label: "Needs Improvement (1-2★)" },
+                  ]}
+                />
+                <AdminSelect
+                  value={ratingFilters.round}
+                  onChange={(round) => setRatingFilters((prev) => ({ ...prev, round }))}
+                  options={[
+                    { value: "all", label: "All Rounds" },
+                    ...availableRounds.map((r) => ({ value: String(r), label: `Round ${r}` })),
+                  ]}
+                />
+              </div>
+
+              {/* Reviews List */}
+              <div className="max-h-[640px] space-y-3 overflow-y-auto overscroll-contain pr-1">
+                {filteredRatings.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-border bg-elevated p-8 text-center">
+                    <Star className="size-8 text-muted-foreground/40 mb-2" />
+                    <p className="text-sm font-semibold text-foreground">No ratings found</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {currentRound === 0
+                        ? "Campaign is currently inactive (Round 0). Click 'Roll Out Feedback to Users' above to launch it."
+                        : appRatings.length === 0
+                        ? "Campaign is active! Eligible users (4+ days old) will receive the feedback modal on their next app open."
+                        : "Try adjusting your filters above."}
+                    </p>
+                  </div>
+                ) : (
+                  filteredRatings.map((review) => {
+                    const isPositive = review.rating >= 4;
+                    const isCritical = review.rating <= 2;
+                    const userName = review.profiles?.full_name || "Spendova User";
+                    const username = review.profiles?.username ? `@${review.profiles.username}` : "";
+                    const dateFormatted = new Date(review.created_at).toLocaleDateString("en-IN", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    });
+
+                    return (
+                      <div
+                        key={review.id}
+                        className="rounded-2xl border border-border bg-elevated p-4 shadow-soft transition-all hover:border-primary/30"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <span className="grid size-10 place-items-center rounded-full bg-card text-sm font-bold text-primary">
+                              {userName.charAt(0).toUpperCase()}
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className="text-sm font-bold text-foreground">{userName}</h4>
+                                {username && (
+                                  <span className="text-xs text-muted-foreground">{username}</span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">{dateFormatted}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold text-muted-foreground border border-border/40">
+                              Round {review.round_number}
+                            </span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                isPositive
+                                  ? "bg-success/15 text-success"
+                                  : isCritical
+                                  ? "bg-destructive/15 text-destructive"
+                                  : "bg-warning/15 text-warning"
+                              }`}
+                            >
+                              {review.sentiment.toUpperCase()}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Star Rating display */}
+                        <div className="mt-3 flex items-center gap-1.5">
+                          <div className="flex items-center">
+                            {[1, 2, 3, 4, 5].map((s) => (
+                              <Star
+                                key={s}
+                                className={`size-4 ${
+                                  s <= review.rating
+                                    ? "fill-amber-400 text-amber-400"
+                                    : "text-muted-foreground/30"
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-xs font-bold text-foreground">
+                            {review.rating} of 5
+                          </span>
+                        </div>
+
+                        {/* Selected Tags */}
+                        {review.selected_tags && review.selected_tags.length > 0 && (
+                          <div className="mt-2.5 flex flex-wrap gap-1.5">
+                            {review.selected_tags.map((tag) => (
+                              <span
+                                key={tag}
+                                className="rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-[11px] font-medium text-primary"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Review text */}
+                        {review.comment && (
+                          <div className="mt-2.5 rounded-xl bg-card/60 p-3 border border-border/30 text-xs text-foreground leading-relaxed">
+                            &ldquo;{review.comment}&rdquo;
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </CardContent>
+          </Card>
+          )}
 
           <div className="space-y-5">
             <Card className="rounded-[1.25rem] border-primary/20 bg-card shadow-panel">
@@ -786,6 +1198,101 @@ const AdminDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Modern Feedback Rollout Confirmation Modal */}
+      <Dialog open={showRolloutModal} onOpenChange={setShowRolloutModal}>
+        <DialogContent
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="w-[calc(100vw_-_1.5rem)] max-w-md overflow-hidden rounded-[1.5rem] border-border bg-card p-0 shadow-panel sm:w-full"
+        >
+          <div className="relative p-6 sm:p-7">
+            {/* Spendova Brand Logo Header */}
+            <div className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl border border-primary/20 bg-primary/10 p-2.5 shadow-soft">
+              <img
+                src="/brand/spendova-symbol.png"
+                alt="Spendova"
+                className="size-8 object-contain drop-shadow-sm"
+              />
+            </div>
+
+            {/* Title & Tag */}
+            <div className="text-center">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                {currentRound === 0 ? "Initial Rollout" : `Round ${currentRound + 1}`}
+              </div>
+              <h3 className="mt-3 text-lg font-bold text-foreground sm:text-xl">
+                {currentRound === 0
+                  ? "Roll Out Feedback Campaign?"
+                  : `Launch Campaign Round ${currentRound + 1}?`}
+              </h3>
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+                {currentRound === 0
+                  ? "This will activate Round 1 across Spendova. Eligible users will be prompted for in-app feedback on their next visit."
+                  : `This will start Round ${currentRound + 1}. All existing ratings from earlier rounds remain safely preserved.`}
+              </p>
+            </div>
+
+            {/* Highlight Criteria Box */}
+            <div className="mt-5 space-y-2 rounded-2xl border border-border/80 bg-elevated/70 p-3.5 text-xs text-foreground">
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                  <Clock className="size-3.5" />
+                </span>
+                <span className="text-muted-foreground">
+                  <strong className="text-foreground">Eligibility:</strong> Users with accounts &ge; 4 days old
+                </span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-success/15 text-success">
+                  <CheckCircle2 className="size-3.5" />
+                </span>
+                <span className="text-muted-foreground">
+                  <strong className="text-foreground">Frequency:</strong> Prompts once per launch until submitted
+                </span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                  <Users className="size-3.5" />
+                </span>
+                <span className="text-muted-foreground">
+                  <strong className="text-foreground">New users:</strong> Prompted automatically once they reach day 4
+                </span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowRolloutModal(false)}
+                disabled={rollingOutRound}
+                className="h-10 rounded-xl px-4 text-xs font-semibold sm:w-auto"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={executeRollout}
+                disabled={rollingOutRound}
+                className="h-10 rounded-xl bg-primary px-5 text-xs font-bold text-primary-foreground shadow-primary-action transition-all hover:opacity-90 sm:w-auto"
+              >
+                {rollingOutRound ? (
+                  <>
+                    <RefreshCw className="mr-2 size-3.5 animate-spin" />
+                    Rolling Out...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-1.5 size-3.5" />
+                    {currentRound === 0 ? "Confirm & Roll Out" : `Launch Round ${currentRound + 1}`}
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

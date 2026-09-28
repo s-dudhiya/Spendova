@@ -28,6 +28,7 @@ interface Profile {
   full_name: string | null;
   username: string | null;
   email_verified?: boolean | null;
+  last_feedback_round_submitted?: number | null;
   created_at: string;
   updated_at: string;
 }
