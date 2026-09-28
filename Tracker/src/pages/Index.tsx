@@ -1059,6 +1059,15 @@ function isPersonalOnlyExpense(expense: ExpenseRow) {
     && (!expense.expense_splits || expense.expense_splits.length === 0);
 }
 
+function isUserInExpenseSplit(expense: ExpenseRow, userId: string): boolean {
+  if (expense.paid_by === userId) return true;
+  return Boolean(
+    expense.expense_splits?.some(
+      (split) => split.user_id === userId && Number(split.amount_owed || 0) > 0
+    )
+  );
+}
+
 function splitRemaining(split?: ExpenseSplitRow) {
   if (!split) return 0;
   const paid = Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0);
@@ -2555,12 +2564,14 @@ const ExpenseDetailView = ({ expense, settlements, categories, currentUserId, op
     : -Number(mySplit?.amount_owed || 0);
   const participants = [
     { id: expense.paid_by, name: paidBy, amount: expense.amount, role: "Paid" },
-    ...(expense.expense_splits || []).map((split) => ({
-      id: split.user_id,
-      name: split.user_id === currentUserId ? "You" : displayName(split.profiles),
-      amount: Number(split.amount_owed || 0),
-      role: Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0) >= Number(split.amount_owed || 0) ? "Settled share" : "Share",
-    })),
+    ...(expense.expense_splits || [])
+      .filter((split) => Number(split.amount_owed || 0) > 0)
+      .map((split) => ({
+        id: split.user_id,
+        name: split.user_id === currentUserId ? "You" : displayName(split.profiles),
+        amount: Number(split.amount_owed || 0),
+        role: Number(split.amount_paid || (split.has_paid ? split.amount_owed : 0) || 0) >= Number(split.amount_owed || 0) ? "Settled share" : "Share",
+      })),
   ];
   const settleMyShare = async (proofFile?: File | null) => {
     if (!mySplit || myRemaining <= 0 || settling) return;
@@ -2817,9 +2828,18 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const defaultFilters = { status: "all", paidBy: "anyone", date: "month", dateStart: "", dateEnd: "", sort: "newest", splitType: "all", category: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
-  const groupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), getExpenseTimelineCreatedAt);
+  const allGroupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), getExpenseTimelineCreatedAt);
+  const groupExpenses = allGroupExpenses.filter((expense) => isUserInExpenseSplit(expense, currentUserId));
   const groupCategories = scopedCategories(data.categories, "group", currentUserId, group.id);
-  const groupSettlements = data.settlements.filter((settlement) => settlement.group_id === group.id && isSettlementParticipant(settlement, currentUserId));
+  const allGroupSettlements = data.settlements.filter((settlement) => settlement.group_id === group.id);
+  const groupSettlements = allGroupSettlements.filter((settlement) => isSettlementParticipant(settlement, currentUserId));
+  const getExpenseParticipants = (exp: ExpenseRow) => {
+    const splits = (exp.expense_splits || []).filter((s) => Number(s.amount_owed || 0) > 0);
+    const participantUserIds = new Set<string>();
+    if (exp.paid_by) participantUserIds.add(exp.paid_by);
+    splits.forEach((s) => participantUserIds.add(s.user_id));
+    return group.group_members.filter((member) => participantUserIds.has(member.user_id));
+  };
   // Balances calculation moved down to use filtered data
   const isOwner = group.created_by === currentUserId;
   const memberMap = Object.fromEntries(group.group_members.map((member) => [member.user_id, member]));
@@ -2926,7 +2946,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const filteredGroupSettlements = filteredGroupActivity.filter((item): item is Extract<GroupActivityItem, { kind: "settlement" }> => item.kind === "settlement").map((item) => item.settlement);
   const filteredTotalSpent = filteredGroupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
-  const balances = computeGroupBalances(groupExpenses, groupSettlements, group, currentUserId);
+  const balances = computeGroupBalances(allGroupExpenses, allGroupSettlements, group, currentUserId);
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const net = owedToMe - iOwe;
@@ -3076,7 +3096,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
                           <div className="flex justify-between gap-3"><span className="text-muted-foreground">Status</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${yourPaid ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>{yourPaid ? "Paid" : "Pending"}</span></div>
                           <div className="flex justify-between gap-3"><span className="text-muted-foreground">Split type</span><span className="font-bold capitalize text-foreground">{expense.split_type || "equal"} split</span></div>
                           <button type="button" onClick={(event) => { event.stopPropagation(); setParticipantsExpense(expense); }} className="mt-2 flex w-full items-center justify-between border-t border-border/60 pt-3 text-left font-bold text-primary">
-                            <span>View participants ({group.group_members.length})</span>
+                            <span>View participants ({getExpenseParticipants(expense).length})</span>
                             <ChevronRight className="size-4 text-muted-foreground" />
                           </button>
                         </div>
@@ -3132,20 +3152,23 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
           </DrawerHeader>
           {participantsExpense ? (
             <div className="overflow-hidden rounded-2xl bg-elevated/70">
-              {group.group_members.map((member, index) => {
-                const split = participantsExpense.expense_splits?.find((item) => item.user_id === member.user_id);
-                const isPayer = participantsExpense.paid_by === member.user_id;
-                const share = split ? Number(split.amount_owed || 0) : isPayer ? Number(participantsExpense.amount || 0) : 0;
-                const paid = isPayer || Boolean(split?.has_paid);
-                const name = member.user_id === currentUserId ? "You" : displayName(member.profiles);
-                return (
-                  <div key={member.user_id} className={`flex items-center gap-3 px-4 py-3 text-sm ${index < group.group_members.length - 1 ? "border-b border-border/60" : ""}`}>
-                    <span className={`grid size-7 place-items-center rounded-full ${paid ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>{paid ? <Check className="size-4" /> : <CircleDollarSign className="size-4" />}</span>
-                    <span className="min-w-0 flex-1 truncate font-bold text-foreground">{name}</span>
-                    <span className="font-semibold text-muted-foreground">{isPayer ? "paid" : "owes"} {money(share)}</span>
-                  </div>
-                );
-              })}
+              {(() => {
+                const activeMembers = getExpenseParticipants(participantsExpense);
+                return activeMembers.map((member, index) => {
+                  const split = participantsExpense.expense_splits?.find((item) => item.user_id === member.user_id);
+                  const isPayer = participantsExpense.paid_by === member.user_id;
+                  const share = split ? Number(split.amount_owed || 0) : isPayer ? Number(participantsExpense.amount || 0) : 0;
+                  const paid = isPayer || Boolean(split?.has_paid);
+                  const name = member.user_id === currentUserId ? "You" : displayName(member.profiles);
+                  return (
+                    <div key={member.user_id} className={`flex items-center gap-3 px-4 py-3 text-sm ${index < activeMembers.length - 1 ? "border-b border-border/60" : ""}`}>
+                      <span className={`grid size-7 place-items-center rounded-full ${paid ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>{paid ? <Check className="size-4" /> : <CircleDollarSign className="size-4" />}</span>
+                      <span className="min-w-0 flex-1 truncate font-bold text-foreground">{name}</span>
+                      <span className="font-semibold text-muted-foreground">{isPayer ? "paid" : "owes"} {money(share)}</span>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           ) : null}
         </DrawerContent>
@@ -4395,9 +4418,16 @@ const ActionModal = ({
   const saveExpense = async ({ expense: payload, splits, expenseId }: { expense: ExpensePayload; splits: Array<{ user_id: string; amount_owed: number }>; expenseId?: string }) => {
     try {
       const selectedGroup = payload.group_id ? data.groups.find((item) => item.id === payload.group_id) : undefined;
-      const sharedRecipients = payload.group_id
-        ? selectedGroup?.group_members.map((member) => member.user_id) || splits.map((split) => split.user_id)
-        : splits.map((split) => split.user_id);
+      const splitDebtorIds = splits.filter((s) => Number(s.amount_owed || 0) > 0).map((s) => s.user_id);
+      const splitParticipantIds = [
+        ...(payload.paid_by ? [payload.paid_by] : []),
+        ...splitDebtorIds,
+      ];
+      const sharedRecipients = splits.length
+        ? splitParticipantIds
+        : payload.group_id
+          ? selectedGroup?.group_members.map((member) => member.user_id) || []
+          : splits.map((split) => split.user_id);
       const expenseName = payload.category || "Expense";
       if (expenseId) {
         const hasSettlementState = Boolean(
@@ -4463,9 +4493,12 @@ const ActionModal = ({
   const deleteExpense = async () => {
     if (!expense) return;
     const deleteGroup = expense.group_id ? data.groups.find((item) => item.id === expense.group_id) : undefined;
-    const deleteRecipients = expense.group_id
-      ? deleteGroup?.group_members.map((member) => member.user_id) || []
-      : [expense.paid_by, ...(expense.expense_splits || []).map((split) => split.user_id)];
+    const deleteDebtorIds = (expense.expense_splits || []).filter((s) => Number(s.amount_owed || 0) > 0).map((split) => split.user_id);
+    const deleteRecipients = (expense.expense_splits && expense.expense_splits.length > 0)
+      ? [expense.paid_by, ...deleteDebtorIds].filter(Boolean)
+      : expense.group_id
+        ? deleteGroup?.group_members.map((member) => member.user_id) || []
+        : [expense.paid_by];
     const deleteExpenseName = expense.category || "Expense";
     const { error: settlementError } = await supabase.from("split_settlements" as never).delete().eq("expense_id", expense.id);
     if (settlementError) {
