@@ -1405,6 +1405,32 @@ const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal
   const filteredExpenses = rangedExpenses.filter((expense) => status === "all" || expense.status === status);
   const summary = getSummary(filteredExpenses, userId, settlements);
   const allTimeSummary = getSummary(expenses, userId, settlements);
+  const { toast } = useToast();
+  const [balanceDetail, setBalanceDetail] = useState<"owe" | "get" | null>(null);
+  const allTimeBalances = useMemo(
+    () => buildDebtBalances(expenses, settlements, { currentUserId: userId }),
+    [expenses, settlements, userId]
+  );
+  const youOweRows = useMemo(
+    () => allTimeBalances.filter((balance) => balance.fromUserId === userId).map((balance) => ({ name: balance.toName, amount: balance.amount, settleId: balance.toUserId })),
+    [allTimeBalances, userId]
+  );
+  const youGetRows = useMemo(
+    () => allTimeBalances.filter((balance) => balance.toUserId === userId).map((balance) => ({ name: balance.fromName, amount: balance.amount, settleId: balance.fromUserId })),
+    [allTimeBalances, userId]
+  );
+  const youOweTotal = allTimeSummary.totalOwed;
+  const youGetTotal = allTimeSummary.totalLent;
+  const openBalanceDetail = (type: "owe" | "get") => {
+    const total = type === "owe" ? youOweTotal : youGetTotal;
+    if (total <= 0.009) {
+      toast({ title: type === "owe" ? "You currently don't owe anyone." : "Nobody owes you any money right now." });
+      return;
+    }
+    setBalanceDetail(type);
+  };
+  const detailRows = balanceDetail === "owe" ? youOweRows : youGetRows;
+  const detailTotal = balanceDetail === "owe" ? youOweTotal : youGetTotal;
   const recent = filteredExpenses.slice(0, 4);
   const today = new Date();
   const yesterday = new Date(today);
@@ -1449,108 +1475,152 @@ const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal
   };
 
   return (
-    <main className="space-y-6 pb-28">
-      <section className="rounded-[1.4rem] bg-card p-5 shadow-panel sm:p-6">
-        <div>
-          <div className="flex items-start justify-between gap-3">
-            <p className="pt-0.5 text-sm font-semibold text-muted-foreground">Net balance</p>
-            <span title="Compared with yesterday" className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${trendClass}`} aria-label={`${trendLabel} compared with yesterday`}><TrendIcon className="size-3.5" />{trendLabel}</span>
+    <>
+      <main className="space-y-6 pb-28">
+        <section className="rounded-[1.4rem] bg-card p-5 shadow-panel sm:p-6">
+          <div>
+            <div className="flex items-start justify-between gap-3">
+              <p className="pt-0.5 text-sm font-semibold text-muted-foreground">Net balance</p>
+              <button
+                type="button"
+                onClick={() => openModal("chart-details")}
+                title="Compared with yesterday · View spending details"
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold cursor-pointer transition-opacity hover:opacity-80 active:scale-95 ${trendClass}`}
+                aria-label={`${trendLabel} compared with yesterday`}
+              >
+                <TrendIcon className="size-3.5" />
+                {trendLabel}
+              </button>
+            </div>
+            <p className="mt-2 text-4xl font-black leading-tight tracking-tight text-foreground sm:text-5xl">{money(Math.abs(allTimeSummary.net))}</p>
+            <p className="mt-1 max-w-[18rem] text-sm font-medium leading-5 text-muted-foreground sm:max-w-none">Across personal expenses and shared balances</p>
           </div>
-          <p className="mt-2 text-4xl font-black leading-tight tracking-tight text-foreground sm:text-5xl">{money(Math.abs(allTimeSummary.net))}</p>
-          <p className="mt-1 max-w-[18rem] text-sm font-medium leading-5 text-muted-foreground sm:max-w-none">Across personal expenses and shared balances</p>
-        </div>
-        <div className="mt-7 flex w-full items-start justify-between gap-4">
-          <button onClick={() => openModal("chart-details")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
-            <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
-              <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">You Get</span>
-              <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-success sm:text-lg">{money(allTimeSummary.totalLent)}</span>
-            </span>
-          </button>
-          <button onClick={() => openModal("chart-details")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
-            <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
-              <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">You Owe</span>
-              <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-warning sm:text-lg">{money(allTimeSummary.totalOwed)}</span>
-            </span>
-          </button>
-        </div>
-      </section>
+          <div className="mt-7 flex w-full items-start justify-between gap-4">
+            <button type="button" onClick={() => openBalanceDetail("get")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
+              <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
+                <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">You Get</span>
+                <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-success sm:text-lg">{money(allTimeSummary.totalLent)}</span>
+              </span>
+            </button>
+            <button type="button" onClick={() => openBalanceDetail("owe")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
+              <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
+                <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">You Owe</span>
+                <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-warning sm:text-lg">{money(allTimeSummary.totalOwed)}</span>
+              </span>
+            </button>
+          </div>
+        </section>
 
-      <section>
-        <SectionHeader title="Quick action" />
-        <Button onClick={() => openModal("add-expense")} className="h-16 w-full justify-start gap-4 rounded-[1.25rem] px-5 text-left shadow-primary-action"><span className="grid size-10 place-items-center rounded-full bg-primary-foreground/15"><Plus className="size-5" /></span><span><span className="block text-base font-black">Add Expense</span><span className="block text-xs font-semibold opacity-85">Track a new expense</span></span></Button>
-      </section>
+        <section>
+          <SectionHeader title="Quick action" />
+          <Button onClick={() => openModal("add-expense")} className="h-16 w-full justify-start gap-4 rounded-[1.25rem] px-5 text-left shadow-primary-action"><span className="grid size-10 place-items-center rounded-full bg-primary-foreground/15"><Plus className="size-5" /></span><span><span className="block text-base font-black">Add Expense</span><span className="block text-xs font-semibold opacity-85">Track a new expense</span></span></Button>
+        </section>
 
-      <section className="rounded-[1.25rem] bg-card p-4 shadow-panel sm:p-5">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div className="min-w-0"><h2 className="text-base font-black tracking-tight text-foreground">Spending chart</h2><p className="mt-1 text-sm font-medium text-muted-foreground">{chartRangeLabels[chartRange]}</p></div>
-          <div className="flex shrink-0 items-center gap-2"><button type="button" onClick={openChartFilters} className="inline-flex items-center gap-1.5 rounded-full bg-elevated px-3 py-2 text-xs font-bold text-primary sm:hidden"><Filter className="size-3.5" />Filter</button><button type="button" onClick={() => openModal("chart-details")} className="hidden text-sm font-bold text-primary sm:inline">Details</button></div>
-        </div>
-        <div className="mb-4 hidden gap-2 sm:flex sm:flex-wrap">{chartRanges.map((value) => <button key={value} type="button" onClick={() => { setChartRange(value); setActiveBar(null); }} className={`rounded-full px-3 py-2 text-xs font-bold ${chartRange === value ? "bg-primary text-primary-foreground shadow-primary-action" : "bg-elevated text-muted-foreground"}`}>{chartRangeLabels[value]}</button>)}</div>
-        {!hasChartData ? (
-          <div className="rounded-[1.25rem] bg-elevated p-6 text-center shadow-soft"><div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary"><CircleDollarSign className="size-7" /></div><p className="mt-4 text-base font-black text-foreground">No spending yet</p><p className="mt-1 text-sm font-medium text-muted-foreground">Add an expense to see your chart here.</p><Button onClick={() => openModal("add-expense")} variant="quiet" className="mt-4"><Plus />Add Expense</Button></div>
-        ) : (
-          <>
-            <div className="relative w-full max-w-full rounded-[1.25rem] bg-elevated px-1 py-4 shadow-soft sm:p-4">
-              <div className="grid w-full max-w-full grid-cols-[1.55rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2.4rem_minmax(0,1fr)] sm:gap-2">
-                <div className="relative h-40 sm:h-36">
-                  {chartTicks.map((tick, index) => (
-                    <span key={`${tick}-${index}`} className="absolute right-0 -translate-y-1/2 text-[8.5px] font-bold leading-none text-muted-foreground/80 sm:text-[10px]" style={{ top: `${(index / (chartTicks.length - 1)) * 100}%` }}>{compactRupee(tick)}</span>
-                  ))}
-                </div>
-                <div className="min-w-0 overflow-x-auto overflow-y-visible pb-1">
-                  <div className="min-w-full" style={{ minWidth: chartInnerMinWidth }}>
-                    <div className="relative h-40 sm:h-36">
-                      <div className="pointer-events-none absolute inset-0">
-                        {chartTicks.map((tick, index) => (
-                          <span key={`${tick}-${index}`} className="absolute left-0 h-px w-full bg-border/60" style={{ top: `${(index / (chartTicks.length - 1)) * 100}%` }} />
-                        ))}
+        <section className="rounded-[1.25rem] bg-card p-4 shadow-panel sm:p-5">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div className="min-w-0"><h2 className="text-base font-black tracking-tight text-foreground">Spending chart</h2><p className="mt-1 text-sm font-medium text-muted-foreground">{chartRangeLabels[chartRange]}</p></div>
+            <div className="flex shrink-0 items-center gap-2"><button type="button" onClick={openChartFilters} className="inline-flex items-center gap-1.5 rounded-full bg-elevated px-3 py-2 text-xs font-bold text-primary sm:hidden"><Filter className="size-3.5" />Filter</button><button type="button" onClick={() => openModal("chart-details")} className="hidden text-sm font-bold text-primary sm:inline">Details</button></div>
+          </div>
+          <div className="mb-4 hidden gap-2 sm:flex sm:flex-wrap">{chartRanges.map((value) => <button key={value} type="button" onClick={() => { setChartRange(value); setActiveBar(null); }} className={`rounded-full px-3 py-2 text-xs font-bold ${chartRange === value ? "bg-primary text-primary-foreground shadow-primary-action" : "bg-elevated text-muted-foreground"}`}>{chartRangeLabels[value]}</button>)}</div>
+          {!hasChartData ? (
+            <div className="rounded-[1.25rem] bg-elevated p-6 text-center shadow-soft"><div className="mx-auto grid size-14 place-items-center rounded-full bg-primary/15 text-primary"><CircleDollarSign className="size-7" /></div><p className="mt-4 text-base font-black text-foreground">No spending yet</p><p className="mt-1 text-sm font-medium text-muted-foreground">Add an expense to see your chart here.</p><Button onClick={() => openModal("add-expense")} variant="quiet" className="mt-4"><Plus />Add Expense</Button></div>
+          ) : (
+            <>
+              <div className="relative w-full max-w-full rounded-[1.25rem] bg-elevated px-1 py-4 shadow-soft sm:p-4">
+                <div className="grid w-full max-w-full grid-cols-[1.55rem_minmax(0,1fr)] gap-1 sm:grid-cols-[2.4rem_minmax(0,1fr)] sm:gap-2">
+                  <div className="relative h-40 sm:h-36">
+                    {chartTicks.map((tick, index) => (
+                      <span key={`${tick}-${index}`} className="absolute right-0 -translate-y-1/2 text-[8.5px] font-bold leading-none text-muted-foreground/80 sm:text-[10px]" style={{ top: `${(index / (chartTicks.length - 1)) * 100}%` }}>{compactRupee(tick)}</span>
+                    ))}
+                  </div>
+                  <div className="min-w-0 overflow-x-auto overflow-y-visible pb-1">
+                    <div className="min-w-full" style={{ minWidth: chartInnerMinWidth }}>
+                      <div className="relative h-40 sm:h-36">
+                        <div className="pointer-events-none absolute inset-0">
+                          {chartTicks.map((tick, index) => (
+                            <span key={`${tick}-${index}`} className="absolute left-0 h-px w-full bg-border/60" style={{ top: `${(index / (chartTicks.length - 1)) * 100}%` }} />
+                          ))}
+                        </div>
+                        <div className="relative m-0 grid h-full w-full max-w-full items-end gap-1 sm:gap-2" style={{ gridTemplateColumns: `repeat(${chartData.length}, minmax(0, 1fr))` }}>
+                          {chartData.map((item) => {
+                            const key = `${item.label}-${item.date.toISOString()}`;
+                            const selected = activeBar === key;
+                            return <button key={key} type="button" onClick={() => setActiveBar(selected ? null : key)} className="group flex h-full min-w-0 items-end justify-center" aria-label={`${item.label}: ${money(item.value)}`}><span className={`block w-full max-w-10 rounded-t-full transition-all sm:max-w-8 ${selected ? "bg-primary" : item.value > 0 ? "bg-primary/75 group-hover:bg-primary" : "bg-primary/15"}`} style={{ height: item.value > 0 ? `${Math.max(12, (Number(item.value) / chartMax) * 100)}%` : "4px" }} />{selected ? <span className="absolute left-1/2 top-3 max-w-[calc(100%-0.5rem)] -translate-x-1/2 whitespace-nowrap rounded-xl bg-foreground px-2.5 py-1 text-center text-[11px] font-bold leading-tight text-background shadow-panel sm:text-xs"><span className="block">{item.date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span><span className="mt-0.5 block">{money(item.value)}</span></span> : null}</button>;
+                          })}
+                        </div>
                       </div>
-                      <div className="relative m-0 grid h-full w-full max-w-full items-end gap-1 sm:gap-2" style={{ gridTemplateColumns: `repeat(${chartData.length}, minmax(0, 1fr))` }}>
-                        {chartData.map((item) => {
-                          const key = `${item.label}-${item.date.toISOString()}`;
-                          const selected = activeBar === key;
-                          return <button key={key} type="button" onClick={() => setActiveBar(selected ? null : key)} className="group flex h-full min-w-0 items-end justify-center" aria-label={`${item.label}: ${money(item.value)}`}><span className={`block w-full max-w-10 rounded-t-full transition-all sm:max-w-8 ${selected ? "bg-primary" : item.value > 0 ? "bg-primary/75 group-hover:bg-primary" : "bg-primary/15"}`} style={{ height: item.value > 0 ? `${Math.max(12, (Number(item.value) / chartMax) * 100)}%` : "4px" }} />{selected ? <span className="absolute left-1/2 top-3 max-w-[calc(100%-0.5rem)] -translate-x-1/2 whitespace-nowrap rounded-xl bg-foreground px-2.5 py-1 text-center text-[11px] font-bold leading-tight text-background shadow-panel sm:text-xs"><span className="block">{item.date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span><span className="mt-0.5 block">{money(item.value)}</span></span> : null}</button>;
-                        })}
+                      <div className={`mt-3 grid w-full max-w-full items-start gap-1 font-bold text-muted-foreground sm:gap-2 ${chartLabelHeight} ${chartLabelText}`} style={{ gridTemplateColumns: `repeat(${chartData.length}, minmax(0, 1fr))` }}>
+                        {chartLabels.map((item) => <span key={`${item.index}-${item.label}`} className="flex min-w-0 justify-center overflow-visible"><span className={`block max-w-full leading-tight ${rotateChartLabels ? "origin-top -rotate-45 whitespace-nowrap" : "truncate text-center"}`}>{item.label}</span></span>)}
                       </div>
-                    </div>
-                    <div className={`mt-3 grid w-full max-w-full items-start gap-1 font-bold text-muted-foreground sm:gap-2 ${chartLabelHeight} ${chartLabelText}`} style={{ gridTemplateColumns: `repeat(${chartData.length}, minmax(0, 1fr))` }}>
-                      {chartLabels.map((item) => <span key={`${item.index}-${item.label}`} className="flex min-w-0 justify-center overflow-visible"><span className={`block max-w-full leading-tight ${rotateChartLabels ? "origin-top -rotate-45 whitespace-nowrap" : "truncate text-center"}`}>{item.label}</span></span>)}
                     </div>
                   </div>
                 </div>
               </div>
+              <div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total Spending</p><p className="mt-2 text-lg font-black text-foreground">{money(chartTotal)}</p></div><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{chartAverageLabel}</p><p className="mt-2 text-lg font-black text-foreground">{money(chartAverage)}</p></div></div>
+              <p className="mt-3 text-sm font-medium text-muted-foreground">Keep tracking your expenses for better insights.</p>
+            </>
+          )}
+        </section>
+
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-3"><div><h2 className="text-base font-black tracking-tight text-foreground">Recent activity</h2><p className="mt-0.5 text-xs font-medium text-muted-foreground">Latest spending and split updates</p></div><FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} /></div>
+          <div className="space-y-3">{recent.length === 0 ? (expenses.length === 0 ? <EmptyCard text="No activity yet." /> : <FilterEmptyState onClear={clear} isDefault={range === "month"} onViewAll={() => setRange("all")} />) : recent.map((expense) => { const share = getExpenseShare(expense, userId); return <div key={expense.id} className="flex items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-soft"><div className="min-w-0"><h3 className="truncate font-bold text-foreground">{expense.category || "Expense"}</h3><CategoryBadge label={categoryLabel(expense, categories)} /><p className="mt-1 text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p></div><div className="shrink-0 text-right"><p className="font-black text-foreground">{money(share)}</p><StatusPill status={expense.status || "pending"} /></div></div>; })}</div>
+        </section>
+
+        <Drawer open={chartFiltersOpen} onOpenChange={setChartFiltersOpen}>
+          <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+            <DrawerHeader className="shrink-0 px-0 pb-2 text-left"><DrawerTitle>Chart range</DrawerTitle><DrawerDescription>Choose how much spending history to show.</DrawerDescription></DrawerHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+              <div className="space-y-2 pb-3">{chartRanges.map((value) => <button key={value} type="button" onClick={() => setDraftChartRange(value)} className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition-colors ${draftChartRange === value ? "border-primary bg-primary/10 text-foreground shadow-soft" : "border-border bg-elevated text-foreground"}`}><span><span className="block text-sm font-black">{chartRangeLabels[value]}</span><span className="mt-0.5 block text-xs font-semibold text-muted-foreground">{chartRangeHelpers[value]}</span></span>{draftChartRange === value ? <Check className="size-4 text-primary" /> : null}</button>)}</div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Total Spending</p><p className="mt-2 text-lg font-black text-foreground">{money(chartTotal)}</p></div><div className="rounded-2xl bg-elevated p-4 shadow-soft"><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{chartAverageLabel}</p><p className="mt-2 text-lg font-black text-foreground">{money(chartAverage)}</p></div></div>
-            <p className="mt-3 text-sm font-medium text-muted-foreground">Keep tracking your expenses for better insights.</p>
-          </>
-        )}
-      </section>
+            <div className="shrink-0 flex gap-2 border-t border-border/60 bg-card pt-3"><Button type="button" variant="quiet" className="flex-1" onClick={() => setChartFiltersOpen(false)}>Cancel</Button><Button type="button" className="flex-1 shadow-primary-action" onClick={applyChartFilters}>Apply</Button></div>
+          </DrawerContent>
+        </Drawer>
 
-      <section>
-        <div className="mb-3 flex items-center justify-between gap-3"><div><h2 className="text-base font-black tracking-tight text-foreground">Recent activity</h2><p className="mt-0.5 text-xs font-medium text-muted-foreground">Latest spending and split updates</p></div><FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} /></div>
-        <div className="space-y-3">{recent.length === 0 ? (expenses.length === 0 ? <EmptyCard text="No activity yet." /> : <FilterEmptyState onClear={clear} isDefault={range === "month"} onViewAll={() => setRange("all")} />) : recent.map((expense) => { const share = getExpenseShare(expense, userId); return <div key={expense.id} className="flex items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-soft"><div className="min-w-0"><h3 className="truncate font-bold text-foreground">{expense.category || "Expense"}</h3><CategoryBadge label={categoryLabel(expense, categories)} /><p className="mt-1 text-sm text-muted-foreground">{dateLabel(expense.created_at)}</p></div><div className="shrink-0 text-right"><p className="font-black text-foreground">{money(share)}</p><StatusPill status={expense.status || "pending"} /></div></div>; })}</div>
-      </section>
+        <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Overview activity filters" onClear={clear}>
+          <DateFilterControls value={range} start={rangeStart} end={rangeEnd} onDateChange={(value) => setRange(value as DateFilter)} onStartChange={setRangeStart} onEndChange={setRangeEnd} />
+          <FilterField label="Status" value={status} onChange={(value) => setStatus(value as "all" | "pending" | "cleared")} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "cleared", label: "Cleared" }]} />
+        </FilterSheet>
 
-      <Drawer open={chartFiltersOpen} onOpenChange={setChartFiltersOpen}>
-        <DrawerContent className="mx-auto flex max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-          <DrawerHeader className="shrink-0 px-0 pb-2 text-left"><DrawerTitle>Chart range</DrawerTitle><DrawerDescription>Choose how much spending history to show.</DrawerDescription></DrawerHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
-            <div className="space-y-2 pb-3">{chartRanges.map((value) => <button key={value} type="button" onClick={() => setDraftChartRange(value)} className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition-colors ${draftChartRange === value ? "border-primary bg-primary/10 text-foreground shadow-soft" : "border-border bg-elevated text-foreground"}`}><span><span className="block text-sm font-black">{chartRangeLabels[value]}</span><span className="mt-0.5 block text-xs font-semibold text-muted-foreground">{chartRangeHelpers[value]}</span></span>{draftChartRange === value ? <Check className="size-4 text-primary" /> : null}</button>)}</div>
+        <section>
+          <SectionHeader title="Shortcuts" />
+          <div className="space-y-3">{[{ title: "Split", value: money(summary.totalLent + summary.totalOwed), icon: Split, tab: "split" as TabKey }, { title: "Personal", value: money(summary.personal), icon: WalletCards, tab: "personal" as TabKey }].map((item) => <button key={item.title} onClick={() => setTab(item.tab)} className="flex w-full items-center justify-between rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel"><span className="flex min-w-0 items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-full bg-elevated text-primary"><item.icon className="size-4" /></span><span className="min-w-0"><span className="block font-bold text-foreground">{item.title}</span><span className="text-sm text-muted-foreground">Current data</span></span></span><span className="flex shrink-0 items-center gap-2 font-bold text-foreground">{item.value}<ChevronRight className="size-4 text-muted-foreground" /></span></button>)}</div>
+        </section>
+      </main>
+      <Drawer open={Boolean(balanceDetail)} onOpenChange={(open) => !open && setBalanceDetail(null)}>
+        <DrawerContent className="mx-auto max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] max-w-3xl overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+          <DrawerHeader className="px-0 pb-2 text-left">
+            <DrawerTitle>{balanceDetail === "owe" ? "You Owe" : "You Get"}</DrawerTitle>
+            <DrawerDescription>{balanceDetail === "owe" ? "People you need to pay." : "People who need to pay you."}</DrawerDescription>
+          </DrawerHeader>
+          <div className="max-h-[55dvh] overflow-y-auto overscroll-contain rounded-2xl bg-elevated/70">
+            {detailRows.map((row, index) => (
+              <div key={`${row.name}-${index}`} className={`flex items-center justify-between gap-3 px-4 py-3 text-sm ${index < detailRows.length - 1 ? "border-b border-border/60" : ""}`}>
+                <div className="flex-1 min-w-0 flex items-center justify-between mr-2">
+                  <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
+                  <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
+                </div>
+                <Button
+                  onClick={() => {
+                    setBalanceDetail(null);
+                    setTimeout(() => openModal("settle-up", row.settleId), 150);
+                  }}
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-3 text-xs font-bold shrink-0 rounded-lg bg-background"
+                >
+                  Settle
+                </Button>
+              </div>
+            ))}
+            <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm">
+              <span className="font-black text-foreground">Total</span>
+              <span className={`spendova-money-value shrink-0 font-black ${balanceDetail === "owe" ? "text-warning" : "text-success"}`}>{money(detailTotal)}</span>
+            </div>
           </div>
-          <div className="shrink-0 flex gap-2 border-t border-border/60 bg-card pt-3"><Button type="button" variant="quiet" className="flex-1" onClick={() => setChartFiltersOpen(false)}>Cancel</Button><Button type="button" className="flex-1 shadow-primary-action" onClick={applyChartFilters}>Apply</Button></div>
         </DrawerContent>
       </Drawer>
-
-      <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Overview activity filters" onClear={clear}>
-        <DateFilterControls value={range} start={rangeStart} end={rangeEnd} onDateChange={(value) => setRange(value as DateFilter)} onStartChange={setRangeStart} onEndChange={setRangeEnd} />
-        <FilterField label="Status" value={status} onChange={(value) => setStatus(value as "all" | "pending" | "cleared")} options={[{ value: "all", label: "All" }, { value: "pending", label: "Pending" }, { value: "cleared", label: "Cleared" }]} />
-      </FilterSheet>
-
-      <section>
-        <SectionHeader title="Shortcuts" />
-        <div className="space-y-3">{[{ title: "Split", value: money(summary.totalLent + summary.totalOwed), icon: Split, tab: "split" as TabKey }, { title: "Personal", value: money(summary.personal), icon: WalletCards, tab: "personal" as TabKey }].map((item) => <button key={item.title} onClick={() => setTab(item.tab)} className="flex w-full items-center justify-between rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel"><span className="flex min-w-0 items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-full bg-elevated text-primary"><item.icon className="size-4" /></span><span className="min-w-0"><span className="block font-bold text-foreground">{item.title}</span><span className="text-sm text-muted-foreground">Current data</span></span></span><span className="flex shrink-0 items-center gap-2 font-bold text-foreground">{item.value}<ChevronRight className="size-4 text-muted-foreground" /></span></button>)}</div>
-      </section>
-    </main>
+    </>
   );
 };
 
