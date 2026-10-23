@@ -15,6 +15,7 @@ import { consumeFreshLoginUnlocked, isBiometricLockEnabled, unlockWithBiometric 
 import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 import { initializeNotifications } from "@/lib/notifications";
+import { ForceUpdateModal } from "@/components/ForceUpdateModal";
 import Auth from "./pages/Auth";
 
 const Admin = lazy(() => import("./pages/Admin"));
@@ -277,6 +278,7 @@ const App = () => {
           <TooltipProvider>
             <Toaster />
             <Sonner />
+            <ForceUpdateModal />
             <BrowserRouter>
               <BiometricLockGate>
                 <AppRoutes />

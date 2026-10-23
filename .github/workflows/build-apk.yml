@@ -61,15 +61,22 @@ jobs:
           path: release-apk/Spendova-debug.apk
           retention-days: 1
 
+      - name: Extract App Version
+        id: get_version
+        run: |
+          VERSION=$(node -p "const fs=require('fs'); const m=fs.readFileSync('Tracker/src/lib/version.ts','utf8').match(/APP_VERSION\s*=\s*['\"]([^'\"]+)['\"]/); m ? m[1] : '2.1.0'")
+          echo "APP_VERSION=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Publish APK to GitHub Release
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
           tag_name: v-latest
-          name: Spendova Latest Android APK
+          name: Spendova Android APK v${{ steps.get_version.outputs.APP_VERSION }}
           body: |
-            Automated Android debug build for Spendova.
-            Latest commit: ${{ github.sha }}
+            RELEASE_VERSION=${{ steps.get_version.outputs.APP_VERSION }}
+            Automated Android release for Spendova v${{ steps.get_version.outputs.APP_VERSION }}.
+            Commit: ${{ github.sha }}
           files: release-apk/Spendova-debug.apk
           prerelease: false
           make_latest: true

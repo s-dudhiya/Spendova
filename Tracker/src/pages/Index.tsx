@@ -4,6 +4,7 @@ import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "
 import { CategoryPicker } from "@/components/CategoryPicker";
 import { RatingFeedbackModal } from "@/components/RatingFeedbackModal";
 import { useExpenseCategories } from "@/hooks/useExpenseCategories";
+import { APP_VERSION } from "@/lib/version";
 import {
   ArrowLeft,
   ArrowRight,
@@ -372,7 +373,6 @@ const scopedCategories = (categories: ExpenseCategoryRow[], scope: "personal" | 
 );
 const toPaise = (amount: number) => Math.round((Number.isFinite(amount) ? amount : 0) * 100);
 const fromPaise = (paise: number) => Number((paise / 100).toFixed(2));
-const APP_VERSION = "2.1";
 const MAX_FEEDBACK_IMAGE_SIZE = 1024 * 1024;
 const MAX_PAYMENT_PROOF_SOURCE_SIZE = 10 * 1024 * 1024;
 const MAX_PAYMENT_PROOF_UPLOAD_SIZE = 2 * 1024 * 1024;
