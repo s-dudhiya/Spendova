@@ -92,7 +92,7 @@ import { AddExpenseDrawer as LedgerAddExpenseDrawer } from "./Ledger/drawers/Add
 type TabKey = "home" | "split" | "personal" | "ledger";
 type ContentKey = TabKey | "profile";
 type Theme = "light" | "dark";
-type SplitStrategy = "equal" | "exact" | "percentage";
+type SplitStrategy = "equal" | "exact" | "percentage" | "shares";
 type ModalType =
   | "notifications"
   | "feedback-support"
@@ -596,6 +596,53 @@ const allocateEqualSplitDebts = (amount: number, participantIds: string[], payer
       remainder -= 1;
       return { user_id, amount_owed: fromPaise(share) };
     })
+    .filter((split) => split.user_id !== payerId && split.amount_owed > 0);
+};
+const allocateSharesSplitDebts = (
+  amount: number,
+  participantIds: string[],
+  payerId: string,
+  sharesByUserId: Record<string, number | string>
+) => {
+  const totalPaise = toPaise(amount);
+  const count = participantIds.length;
+  if (!count) return [];
+
+  const sharesList = participantIds.map((user_id) => {
+    const raw = sharesByUserId[user_id];
+    const val = raw !== undefined && raw !== "" ? Number(raw) : 1;
+    const shares = Number.isFinite(val) && val >= 0 ? val : 1;
+    return { user_id, shares };
+  });
+
+  const totalShares = sharesList.reduce((sum, item) => sum + item.shares, 0);
+  if (totalShares <= 0) return [];
+
+  let allocatedPaise = 0;
+  const splitCalculations = sharesList.map((item) => {
+    const paise = Math.round((totalPaise * item.shares) / totalShares);
+    allocatedPaise += paise;
+    return { user_id: item.user_id, shares: item.shares, paise };
+  });
+
+  // Distribute rounding remainder (in paise) to members with non-zero shares
+  let remainder = totalPaise - allocatedPaise;
+  if (remainder !== 0) {
+    for (const item of splitCalculations) {
+      if (item.shares > 0) {
+        const adjustment = remainder > 0 ? 1 : -1;
+        item.paise += adjustment;
+        remainder -= adjustment;
+        if (remainder === 0) break;
+      }
+    }
+  }
+
+  return splitCalculations
+    .map((item) => ({
+      user_id: item.user_id,
+      amount_owed: fromPaise(item.paise),
+    }))
     .filter((split) => split.user_id !== payerId && split.amount_owed > 0);
 };
 const StatusPill = ({ status }: { status: string }) => {
@@ -3117,7 +3164,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
         <DateFilterControls value={filters.date} start={filters.dateStart} end={filters.dateEnd} onDateChange={(date) => setFilters((current) => ({ ...current, date }))} onStartChange={(dateStart) => setFilters((current) => ({ ...current, dateStart }))} onEndChange={(dateEnd) => setFilters((current) => ({ ...current, dateEnd }))} />
         <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "newest", label: "Newest first" }, { value: "oldest", label: "Oldest first" }, { value: "amount-desc", label: "Amount high to low" }, { value: "amount-asc", label: "Amount low to high" }]} />
         <FilterField label="Category" value={filters.category} onChange={(category) => setFilters((current) => ({ ...current, category }))} options={[{ value: "all", label: "All categories" }, { value: UNCATEGORIZED_CATEGORY, label: "Uncategorized" }, ...groupCategories.map((category) => ({ value: category.id, label: category.name }))]} />
-        <FilterField label="Split type" value={filters.splitType} onChange={(splitType) => setFilters((current) => ({ ...current, splitType }))} options={[{ value: "all", label: "All" }, { value: "equal", label: "Equal split" }, { value: "exact", label: "Exact split" }, { value: "percentage", label: "Percentage" }]} />
+        <FilterField label="Split type" value={filters.splitType} onChange={(splitType) => setFilters((current) => ({ ...current, splitType }))} options={[{ value: "all", label: "All" }, { value: "equal", label: "Equal split" }, { value: "exact", label: "Exact split" }, { value: "percentage", label: "Percentage" }, { value: "shares", label: "Share split" }]} />
       </FilterSheet>
 
       <Drawer open={Boolean(actionExpense)} onOpenChange={(open) => !open && setActionExpense(null)}>
@@ -3751,15 +3798,51 @@ const ExpenseForm = ({
   onCancel: () => void;
 }) => {
   const isEdit = Boolean(expense);
+  const { toast } = useToast();
+  const { profile: currentAuthProfile } = useAuth();
+  const getMemberUsername = (memberUserId: string, memberProfile?: Profile | null) => {
+    if (memberUserId === userId) {
+      return "You";
+    }
+    if (memberProfile?.username) {
+      return memberProfile.username.trim().replace(/^@+/, "");
+    }
+    return (memberProfile?.full_name || "User").replace(/^@+/, "");
+  };
   const baseMembers = group
-    ? group.group_members.map((member) => ({ user_id: member.user_id, name: member.user_id === userId ? "You" : displayName(member.profiles) }))
-    : [{ user_id: userId, name: "You" }, ...friends.map((item) => ({ user_id: item.user_id, name: displayName(item) }))];
+    ? group.group_members.map((member) => ({
+        user_id: member.user_id,
+        name: member.user_id === userId ? "You" : displayName(member.profiles),
+        username: getMemberUsername(member.user_id, member.profiles),
+      }))
+    : [
+        {
+          user_id: userId,
+          name: "You",
+          username: getMemberUsername(userId, currentAuthProfile),
+        },
+        ...friends.map((item) => ({
+          user_id: item.user_id,
+          name: displayName(item),
+          username: getMemberUsername(item.user_id, item),
+        })),
+      ];
   const members = [...baseMembers];
   if (expense) {
     const existingProfiles = [
-      expense.paid_by ? { user_id: expense.paid_by, name: expense.paid_by === userId ? "You" : displayName(expense.payer_profile) } : null,
-      ...(expense.expense_splits || []).map((split) => ({ user_id: split.user_id, name: split.user_id === userId ? "You" : displayName(split.profiles) })),
-    ].filter((member): member is { user_id: string; name: string } => Boolean(member?.user_id));
+      expense.paid_by
+        ? {
+            user_id: expense.paid_by,
+            name: expense.paid_by === userId ? "You" : displayName(expense.payer_profile),
+            username: getMemberUsername(expense.paid_by, expense.payer_profile),
+          }
+        : null,
+      ...(expense.expense_splits || []).map((split) => ({
+        user_id: split.user_id,
+        name: split.user_id === userId ? "You" : displayName(split.profiles),
+        username: getMemberUsername(split.user_id, split.profiles),
+      })),
+    ].filter((member): member is { user_id: string; name: string; username: string } => Boolean(member?.user_id));
     existingProfiles.forEach((member) => {
       if (!members.some((item) => item.user_id === member.user_id)) members.push(member);
     });
@@ -3776,8 +3859,14 @@ const ExpenseForm = ({
     return [userId];
   })();
   const initialSplitValues = (() => {
-    if (!expense || !["exact", "percentage"].includes(expense.split_type || "")) return {};
+    if (!expense || !["exact", "percentage", "shares", "share"].includes(expense.split_type || "")) return {};
     const values: Record<string, string> = {};
+    if (["shares", "share"].includes(expense.split_type || "")) {
+      initialParticipantIds.forEach((id) => {
+        values[id] = "1";
+      });
+      return values;
+    }
     const totalOwed = (expense.expense_splits || []).reduce((sum, split) => sum + Number(split.amount_owed || 0), 0);
     (expense.expense_splits || []).forEach((split) => {
       const owed = Number(split.amount_owed || 0);
@@ -3799,13 +3888,24 @@ const ExpenseForm = ({
   );
   const [status, setStatus] = useState<"pending" | "cleared">(initialSplitOn ? "cleared" : expense?.status === "cleared" ? "cleared" : "pending");
   const [splitOn, setSplitOn] = useState(initialSplitOn);
-  const [strategy, setStrategy] = useState<SplitStrategy>((expense?.split_type as SplitStrategy) || "equal");
+  const [strategy, setStrategy] = useState<SplitStrategy>(
+    (expense?.split_type === "share" ? "shares" : (expense?.split_type as SplitStrategy)) || "equal"
+  );
   const [participants, setParticipants] = useState<string[]>(initialParticipantIds);
   const [payer, setPayer] = useState(expense?.paid_by || userId);
   const [splitValues, setSplitValues] = useState<Record<string, string>>(initialSplitValues);
   const [submitting, setSubmitting] = useState(false);
   const [autoNameCategoryId, setAutoNameCategoryId] = useState<string | null>(null);
   const [participantSearch, setParticipantSearch] = useState("");
+
+  const totalShares = useMemo(() => {
+    if (strategy !== "shares") return 0;
+    return participants.reduce((sum, id) => {
+      const raw = splitValues[id];
+      const val = raw !== undefined && raw !== "" ? Number(raw) : 1;
+      return sum + (Number.isFinite(val) && val >= 0 ? val : 1);
+    }, 0);
+  }, [strategy, participants, splitValues]);
 
   const sortedMembers = useMemo(() => {
     return [...members].sort((a, b) => {
@@ -3846,7 +3946,12 @@ const ExpenseForm = ({
 
   const toggleParticipant = (id: string) => {
     setParticipants((prev) => {
-      if (!prev.includes(id)) return [...prev, id];
+      if (!prev.includes(id)) {
+        if (strategy === "shares" && (splitValues[id] === undefined || splitValues[id] === "")) {
+          setSplitValues((sPrev) => ({ ...sPrev, [id]: "1" }));
+        }
+        return [...prev, id];
+      }
       const next = prev.filter((item) => item !== id);
       if (!next.length) return prev;
       if (id === payer && next.length) setPayer(next[0]);
@@ -3885,27 +3990,124 @@ const ExpenseForm = ({
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     const expenseName = name.trim() || selectedCategory?.name || "";
-    if (!expenseName || !parsedAmount || parsedAmount <= 0 || submitting) return;
+    if (!expenseName) {
+      toast({
+        title: "Name required",
+        description: "Please enter an expense name or choose a category.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!parsedAmount || parsedAmount <= 0) {
+      toast({
+        title: "Valid amount required",
+        description: "Please enter an expense amount greater than 0.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (submitting) return;
 
     const splits: Array<{ user_id: string; amount_owed: number }> = [];
     if (splitOn) {
-      if (participants.length < 2) return;
+      if (participants.length < 2) {
+        toast({
+          title: "Select participants",
+          description: "Please select at least 2 participants to split this expense.",
+          variant: "destructive",
+        });
+        return;
+      }
       if (strategy === "equal") {
         splits.push(...allocateEqualSplitDebts(parsedAmount, participants, payer));
       } else if (strategy === "exact") {
+        for (const id of participants) {
+          const val = Number(splitValues[id] || 0);
+          if (isNaN(val) || val < 0) {
+            toast({
+              title: "Invalid amount",
+              description: "Amounts cannot be negative. Please enter a valid number for each person.",
+              variant: "destructive",
+            });
+            return;
+          }
+        }
         const total = participants.reduce((sum, id) => sum + Number(splitValues[id] || 0), 0);
-        if (Math.abs(total - parsedAmount) > 0.05) return;
+        if (total > parsedAmount + 0.05) {
+          toast({
+            title: "Amount sum exceeds total",
+            description: `The sum of exact amounts (${money(total)}) exceeds the total expense (${money(parsedAmount)}) by ${money(total - parsedAmount)}. Please adjust.`,
+            variant: "destructive",
+          });
+          return;
+        }
+        if (total < parsedAmount - 0.05) {
+          toast({
+            title: "Amount not fully allocated",
+            description: `Total allocated is ${money(total)}, but expense amount is ${money(parsedAmount)}. You have ${money(parsedAmount - total)} remaining to allocate.`,
+            variant: "destructive",
+          });
+          return;
+        }
         participants.forEach((id) => {
           const amountOwed = Number(splitValues[id] || 0);
           if (id !== payer && amountOwed > 0) splits.push({ user_id: id, amount_owed: amountOwed });
         });
-      } else {
+      } else if (strategy === "percentage") {
+        for (const id of participants) {
+          const val = Number(splitValues[id] || 0);
+          if (isNaN(val) || val < 0) {
+            toast({
+              title: "Invalid percentage",
+              description: "Percentages cannot be negative. Please enter a valid percentage for each person.",
+              variant: "destructive",
+            });
+            return;
+          }
+        }
         const total = participants.reduce((sum, id) => sum + Number(splitValues[id] || 0), 0);
-        if (Math.abs(total - 100) > 0.1) return;
+        if (total > 100.1) {
+          toast({
+            title: "Percentage exceeds 100%",
+            description: `Total percentage is ${Number(total.toFixed(2))}%, which exceeds 100% by ${Number((total - 100).toFixed(2))}%. Please adjust.`,
+            variant: "destructive",
+          });
+          return;
+        }
+        if (total < 99.9) {
+          toast({
+            title: "Percentage must equal 100%",
+            description: `Total percentage is ${Number(total.toFixed(2))}%. You have ${Number((100 - total).toFixed(2))}% remaining to allocate.`,
+            variant: "destructive",
+          });
+          return;
+        }
         participants.forEach((id) => {
           const pct = Number(splitValues[id] || 0);
           if (id !== payer && pct > 0) splits.push({ user_id: id, amount_owed: Number(((parsedAmount * pct) / 100).toFixed(2)) });
         });
+      } else if (strategy === "shares") {
+        for (const id of participants) {
+          const raw = splitValues[id] ?? "1";
+          const val = raw === "" ? 1 : Number(raw);
+          if (isNaN(val) || val < 0) {
+            toast({
+              title: "Invalid share value",
+              description: "Shares cannot be negative. Please enter a valid number of shares.",
+              variant: "destructive",
+            });
+            return;
+          }
+        }
+        if (totalShares <= 0) {
+          toast({
+            title: "Invalid shares",
+            description: "Total shares must be at least 1. Please assign shares to participants.",
+            variant: "destructive",
+          });
+          return;
+        }
+        splits.push(...allocateSharesSplitDebts(parsedAmount, participants, payer, splitValues));
       }
     }
 
@@ -4083,18 +4285,31 @@ const ExpenseForm = ({
           <div>
             <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Strategy</p>
             <div className="flex gap-1 rounded-full bg-background p-1">
-              {(["equal", "exact", "percentage"] as const).map((item) => (
+              {(["equal", "exact", "percentage", "shares"] as const).map((item) => (
                 <button
                   key={item}
                   type="button"
-                  onClick={() => setStrategy(item)}
+                  onClick={() => {
+                    if (strategy !== item) {
+                      setStrategy(item);
+                      if (item === "shares") {
+                        const defaultShares: Record<string, string> = {};
+                        participants.forEach((id) => {
+                          defaultShares[id] = "1";
+                        });
+                        setSplitValues(defaultShares);
+                      } else {
+                        setSplitValues({});
+                      }
+                    }
+                  }}
                   className={`flex-1 rounded-full px-3 py-2 text-xs font-bold capitalize transition-colors ${
                     strategy === item
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  {item}
+                  {item === "shares" ? "Share" : item}
                 </button>
               ))}
             </div>
@@ -4109,26 +4324,199 @@ const ExpenseForm = ({
             </div>
           )}
 
-          {strategy !== "equal" && (
+          {strategy === "shares" && (
+            <div className="rounded-xl bg-background/80 p-3 text-xs">
+              <p className="font-semibold text-foreground">
+                Total: {totalShares} {totalShares === 1 ? "share" : "shares"}
+                {totalShares > 0 && parsedAmount > 0 ? ` (${money(parsedAmount / totalShares)} / share)` : ""}
+              </p>
+              
+            </div>
+          )}
+
+          {strategy === "exact" && (() => {
+            const exactTotal = participants.reduce((sum, id) => sum + (Number(splitValues[id]) || 0), 0);
+            const exactDiff = parsedAmount - exactTotal;
+            const isOver = exactDiff < -0.05;
+            const isMatched = Math.abs(exactDiff) <= 0.05;
+
+            return (
+              <div className="rounded-xl bg-background/80 p-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-foreground">
+                    {parsedAmount > 0 ? (
+                      <>
+                        Total: {money(exactTotal)} of {money(parsedAmount)}
+                      </>
+                    ) : (
+                      "Specify exact amount for each person"
+                    )}
+                  </p>
+                  {parsedAmount > 0 && (
+                    <span
+                      className={`text-[11px] font-bold ${
+                        isOver
+                          ? "text-destructive"
+                          : isMatched
+                          ? "text-foreground"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {isOver
+                        ? `${money(-exactDiff)} over`
+                        : isMatched
+                        ? "Fully allocated"
+                        : `${money(exactDiff)} left`}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {strategy === "exact" && (
             <div className="max-h-48 space-y-2 overflow-y-auto overscroll-contain pr-1">
-              {selectedMembers.map((member) => (
-                <label
-                  key={member.user_id}
-                  className="flex items-center gap-2 text-xs font-semibold text-foreground"
-                >
-                  <span className="w-24 truncate">{member.name}</span>
-                  <input
-                    type="number"
-                    step="any"
-                    value={splitValues[member.user_id] || ""}
-                    onChange={(event) =>
-                      setSplitValues({ ...splitValues, [member.user_id]: event.target.value })
-                    }
-                    className="flex-1 rounded-full border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
-                    placeholder={strategy === "percentage" ? "0%" : "0"}
-                  />
-                </label>
-              ))}
+              {selectedMembers.map((member) => {
+                const memberUsername = member.user_id === userId ? "You" : (member.username || member.name).replace(/^@+/, "");
+
+                return (
+                  <label
+                    key={member.user_id}
+                    className="flex items-center gap-2 text-xs font-semibold text-foreground"
+                  >
+                    <span className="w-24 truncate">{memberUsername}</span>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={splitValues[member.user_id] || ""}
+                      onChange={(event) =>
+                        setSplitValues({ ...splitValues, [member.user_id]: event.target.value })
+                      }
+                      className="flex-1 rounded-full border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
+                      placeholder="0"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          )}
+
+          {strategy === "percentage" && (() => {
+            const totalPct = participants.reduce((sum, id) => sum + (Number(splitValues[id]) || 0), 0);
+            const pctDiff = 100 - totalPct;
+            const isOver = pctDiff < -0.1;
+            const isMatched = Math.abs(pctDiff) <= 0.1;
+
+            return (
+              <div className="rounded-xl bg-background/80 p-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-foreground">
+                    Total: {Number(totalPct.toFixed(2))}% of 100%
+                  </p>
+                  <span
+                    className={`text-[11px] font-bold ${
+                      isOver
+                        ? "text-destructive"
+                        : isMatched
+                        ? "text-foreground"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {isOver
+                      ? `${Number((-pctDiff).toFixed(2))}% over`
+                      : isMatched
+                      ? "Fully allocated"
+                      : `${Number(pctDiff.toFixed(2))}% left`}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {strategy === "percentage" && (
+            <div className="max-h-48 space-y-2 overflow-y-auto overscroll-contain pr-1">
+              {selectedMembers.map((member) => {
+                const currentPct = splitValues[member.user_id] || "";
+                const pctNum = Number(currentPct) || 0;
+                const memberCalculatedAmount = parsedAmount > 0
+                  ? (parsedAmount * pctNum) / 100
+                  : 0;
+                const memberUsername = member.user_id === userId ? "You" : (member.username || member.name).replace(/^@+/, "");
+
+                return (
+                  <div
+                    key={member.user_id}
+                    className="flex items-center justify-between gap-3 text-xs font-semibold text-foreground"
+                  >
+                    <span
+                      className="min-w-0 flex-1 truncate font-medium text-foreground text-xs"
+                      title={memberUsername}
+                    >
+                      {memberUsername}
+                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={currentPct}
+                        onChange={(event) =>
+                          setSplitValues({ ...splitValues, [member.user_id]: event.target.value })
+                        }
+                        className="w-16 sm:w-20 rounded-xl border border-input bg-background px-3 py-1.5 text-center text-sm font-semibold outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
+                        placeholder="0%"
+                      />
+                      <span className="min-w-[3.5rem] sm:min-w-[4.25rem] text-right text-xs font-bold text-muted-foreground shrink-0">
+                        {money(memberCalculatedAmount)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {strategy === "shares" && (
+            <div className="max-h-48 space-y-2 overflow-y-auto overscroll-contain pr-1">
+              {selectedMembers.map((member) => {
+                const currentShare = splitValues[member.user_id] ?? "1";
+                const shareNum = currentShare === "" ? 1 : Math.max(0, Number(currentShare) || 0);
+                const memberCalculatedAmount = totalShares > 0 && parsedAmount > 0
+                  ? (parsedAmount * shareNum) / totalShares
+                  : 0;
+                const memberUsername = member.user_id === userId ? "You" : (member.username || member.name).replace(/^@+/, "");
+
+                return (
+                  <div
+                    key={member.user_id}
+                    className="flex items-center justify-between gap-3 text-xs font-semibold text-foreground"
+                  >
+                    <span
+                      className="min-w-0 flex-1 truncate font-medium text-foreground text-xs"
+                      title={memberUsername}
+                    >
+                      {memberUsername}
+                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={currentShare}
+                        onChange={(event) =>
+                          setSplitValues({ ...splitValues, [member.user_id]: event.target.value })
+                        }
+                        className="w-16 sm:w-20 rounded-xl border border-input bg-background px-3 py-1.5 text-center text-sm font-semibold outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
+                        placeholder="1"
+                      />
+                      <span className="min-w-[3.5rem] sm:min-w-[4.25rem] text-right text-xs font-bold text-muted-foreground shrink-0">
+                        {money(memberCalculatedAmount)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

@@ -12,7 +12,8 @@
     "test:settlements": "node tests/settlement-ledger.test.mjs",
     "test:errors": "node --experimental-strip-types tests/friendly-error.test.mjs",
     "test:invites": "node tests/group-invite-link.test.mjs",
-    "test:chart": "node --experimental-strip-types tests/spending-chart-axis.test.mjs"
+    "test:chart": "node --experimental-strip-types tests/spending-chart-axis.test.mjs",
+    "test:shares": "node tests/shares-split.test.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.1.0",
