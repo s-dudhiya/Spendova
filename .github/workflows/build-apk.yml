@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -45,9 +48,30 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
+      - name: Prepare APK for Release
+        run: |
+          mkdir -p release-apk
+          find Tracker/android -name "*.apk" -exec cp {} release-apk/Spendova-debug.apk \;
+
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: Spendova-Android-APK
-          path: "**/*.apk"
+          path: release-apk/Spendova-debug.apk
           retention-days: 1
+
+      - name: Publish APK to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: v-latest
+          name: Spendova Latest Android APK
+          body: |
+            Automated Android debug build for Spendova.
+            Latest commit: ${{ github.sha }}
+          files: release-apk/Spendova-debug.apk
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
