@@ -50,3 +50,4 @@ jobs:
         with:
           name: Spendova-Android-APK
           path: "**/*.apk"
+          retention-days: 1
