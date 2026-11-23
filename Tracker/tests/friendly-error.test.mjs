@@ -12,7 +12,7 @@ const cases = [
     name: "invalid login credentials",
     error: { message: "Invalid login credentials" },
     context: "auth",
-    expected: "Invalid email or password.",
+    expected: "Invalid email/username or password.",
   },
   {
     name: "invalid email",

@@ -83,6 +83,7 @@ import { canUsePlatformBiometrics, disableBiometricLock, enableBiometricLock, is
 import { getDeviceId, listDeviceSessions, type DeviceSession } from "@/lib/device-session";
 import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-error";
 import { getSpendingChartAverageLabel, getSpendingChartAxisLabels, getSpendingChartSummary, type SpendingChartBucketUnit } from "@/lib/spending-chart";
+import { simplifyGroupDebts, isGroupSimplifyEnabled, setGroupSimplifyEnabled, buildDebtBalances, aggregateDebtsByUser, type DebtBalance, type AggregatedDebtRow } from "@/lib/debt-simplification";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 import { BudgetLedgerView } from "./Ledger";
 import { triggerHaptic } from "@/utils/haptics";
@@ -181,6 +182,7 @@ type GroupRow = {
   name: string;
   emoji?: string | null;
   description?: string | null;
+  simplify_debts?: boolean | null;
   created_by: string;
   created_at: string | null;
   group_members: GroupMemberRow[];
@@ -1199,59 +1201,6 @@ function getPersonalExpenseDisplay(expense: ExpenseRow, currentUserId: string, g
   };
 }
 
-type DebtBalance = { fromUserId: string; toUserId: string; fromName: string; toName: string; amount: number; groupId?: string | null; contextName?: string; isAggregate?: boolean; aggregateBalances?: DebtBalance[] };
-
-function getProfileName(userId: string, profiles: Record<string, string>, currentUserId?: string) {
-  if (currentUserId && userId === currentUserId) return "You";
-  return profiles[userId] || "Unknown";
-}
-
-function buildDebtBalances(expenses: ExpenseRow[], _settlements: SplitSettlementRow[], options: { currentUserId?: string; groupId?: string | null; friendId?: string } = {}) {
-  const profiles: Record<string, string> = {};
-  const pairTotals: Record<string, number> = {};
-  const addName = (profile?: Profile | null) => {
-    if (profile?.user_id) profiles[profile.user_id] = displayName(profile);
-  };
-  const addDebt = (from: string, to: string, amount: number) => {
-    if (!from || !to || from === to || Math.abs(amount) < 0.01) return;
-    const key = `${from}|${to}`;
-    pairTotals[key] = (pairTotals[key] || 0) + amount;
-  };
-
-  expenses.forEach((expense) => {
-    if (options.groupId !== undefined && expense.group_id !== options.groupId) return;
-    addName(expense.payer_profile);
-    addName(expense.profiles);
-    expense.expense_splits?.forEach((split) => {
-      if (Number(split.amount_paid || 0) >= Number(split.amount_owed || 0) || split.has_paid) return;
-      if (options.friendId && expense.paid_by !== options.friendId && split.user_id !== options.friendId) return;
-      addName(split.profiles);
-      addDebt(split.user_id, expense.paid_by, Math.max(Number(split.amount_owed || 0) - Number(split.amount_paid || 0), 0));
-    });
-  });
-
-  const normalized: Record<string, number> = {};
-  Object.entries(pairTotals).forEach(([key, amount]) => {
-    const [from, to] = key.split("|");
-    const reverseKey = `${to}|${from}`;
-    if (normalized[key] !== undefined || normalized[reverseKey] !== undefined) return;
-    const net = amount - (pairTotals[reverseKey] || 0);
-    if (Math.abs(net) < 0.01) return;
-    if (net > 0) normalized[key] = net;
-    else normalized[reverseKey] = Math.abs(net);
-  });
-
-  return Object.entries(normalized).map(([key, amount]) => {
-    const [fromUserId, toUserId] = key.split("|");
-    return {
-      fromUserId,
-      toUserId,
-      fromName: getProfileName(fromUserId, profiles, options.currentUserId),
-      toName: getProfileName(toUserId, profiles, options.currentUserId),
-      amount: Number(amount.toFixed(2)),
-    };
-  });
-}
 
 function getSummary(expenses: ExpenseRow[], userId: string, settlements: SplitSettlementRow[] = []) {
   let totalLent = 0;
@@ -1440,13 +1389,14 @@ function getSpendingAnalytics(expenses: ExpenseRow[], userId: string) {
   return { total, totals, highestCategory: topEntry(byCategory, "high"), lowestCategory: topEntry(byCategory, "low"), averageDaily: total / days, averageWeekly: weekly, averageMonthly: total / months, topDay: topEntry(byDay, "high"), topMonth: topEntry(byMonth, "high"), trend };
 }
 
-function computeGroupBalances(expenses: ExpenseRow[], settlements: SplitSettlementRow[], group: GroupRow, currentUserId?: string) {
-  const balances = buildDebtBalances(expenses, settlements, { currentUserId, groupId: group.id });
+function computeGroupBalances(expenses: ExpenseRow[], settlements: SplitSettlementRow[], group: GroupRow, currentUserId?: string, overrideSimplify?: boolean) {
+  const enabled = overrideSimplify !== undefined ? overrideSimplify : isGroupSimplifyEnabled(group.id, group.simplify_debts);
+  const balances = buildDebtBalances(expenses, settlements, { currentUserId, groupId: group.id, simplifyDebts: enabled });
   const memberNames = Object.fromEntries(group.group_members.map((member) => [member.user_id, member.user_id === currentUserId ? "You" : displayName(member.profiles)]));
   return balances.map((balance) => ({ ...balance, fromName: memberNames[balance.fromUserId] || balance.fromName, toName: memberNames[balance.toUserId] || balance.toName }));
 }
 
-const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; categories: ExpenseCategoryRow[]; userId: string; setTab: (tab: TabKey) => void; openModal: (type: ModalType, item?: string) => void }) => {
+const HomeView = ({ expenses, settlements, categories, groups = [], userId, setTab, openModal }: { expenses: ExpenseRow[]; settlements: SplitSettlementRow[]; categories: ExpenseCategoryRow[]; groups?: GroupRow[]; userId: string; setTab: (tab: TabKey) => void; openModal: (type: ModalType, item?: string) => void }) => {
   const [range, setRange] = useState<DateFilter>("month");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
@@ -1468,16 +1418,21 @@ const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal
     () => buildDebtBalances(expenses, settlements, { currentUserId: userId }),
     [expenses, settlements, userId]
   );
-  const youOweRows = useMemo(
-    () => allTimeBalances.filter((balance) => balance.fromUserId === userId).map((balance) => ({ name: balance.toName, amount: balance.amount, settleId: balance.toUserId })),
-    [allTimeBalances, userId]
+  const groupNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    groups.forEach((g) => {
+      map[g.id] = g.name;
+    });
+    return map;
+  }, [groups]);
+  const aggregatedDebts = useMemo(
+    () => aggregateDebtsByUser(allTimeBalances, userId, groupNames),
+    [allTimeBalances, userId, groupNames]
   );
-  const youGetRows = useMemo(
-    () => allTimeBalances.filter((balance) => balance.toUserId === userId).map((balance) => ({ name: balance.fromName, amount: balance.amount, settleId: balance.fromUserId })),
-    [allTimeBalances, userId]
-  );
-  const youOweTotal = allTimeSummary.totalOwed;
-  const youGetTotal = allTimeSummary.totalLent;
+  const youOweRows = aggregatedDebts.youOweRows;
+  const youGetRows = aggregatedDebts.youGetRows;
+  const youOweTotal = aggregatedDebts.totalOwed;
+  const youGetTotal = aggregatedDebts.totalLent;
   const openBalanceDetail = (type: "owe" | "get") => {
     const total = type === "owe" ? youOweTotal : youGetTotal;
     if (total <= 0.009) {
@@ -1556,13 +1511,13 @@ const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal
             <button type="button" onClick={() => openBalanceDetail("get")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
               <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
                 <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">You Get</span>
-                <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-success sm:text-lg">{money(allTimeSummary.totalLent)}</span>
+                <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-success sm:text-lg">{money(youGetTotal)}</span>
               </span>
             </button>
             <button type="button" onClick={() => openBalanceDetail("owe")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
               <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
                 <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">You Owe</span>
-                <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-warning sm:text-lg">{money(allTimeSummary.totalOwed)}</span>
+                <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-warning sm:text-lg">{money(youOweTotal)}</span>
               </span>
             </button>
           </div>
@@ -1653,9 +1608,14 @@ const HomeView = ({ expenses, settlements, categories, userId, setTab, openModal
           <div className="max-h-[55dvh] overflow-y-auto overscroll-contain rounded-2xl bg-elevated/70">
             {detailRows.map((row, index) => (
               <div key={`${row.name}-${index}`} className={`flex items-center justify-between gap-3 px-4 py-3 text-sm ${index < detailRows.length - 1 ? "border-b border-border/60" : ""}`}>
-                <div className="flex-1 min-w-0 flex items-center justify-between mr-2">
-                  <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
-                  <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
+                <div className="flex-1 min-w-0 mr-2">
+                  <div className="flex items-center justify-between">
+                    <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
+                    <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
+                  </div>
+                  {row.contextName ? (
+                    <p className="truncate text-xs font-medium text-muted-foreground mt-0.5">{row.contextName}</p>
+                  ) : null}
                 </div>
                 <Button
                   onClick={() => {
@@ -1725,11 +1685,25 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
     (expense) => Number(getPersonalExpenseDisplay(expense, currentUserId, groups, friends, expenses, settlements).amount || 0),
   );
   const filteredPersonalSummary = getSummary(visibleExpenses, currentUserId, settlements);
-  const allTimePersonalBalances = buildDebtBalances(personalExpenses, settlements, { currentUserId });
-  const youOweRows = allTimePersonalBalances.filter((balance) => balance.fromUserId === currentUserId).map((balance) => ({ name: balance.toName, amount: balance.amount, settleId: balance.toUserId }));
-  const youGetRows = allTimePersonalBalances.filter((balance) => balance.toUserId === currentUserId).map((balance) => ({ name: balance.fromName, amount: balance.amount, settleId: balance.fromUserId }));
-  const youOweTotal = youOweRows.reduce((sum, row) => sum + row.amount, 0);
-  const youGetTotal = youGetRows.reduce((sum, row) => sum + row.amount, 0);
+  const groupNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    groups.forEach((g) => {
+      map[g.id] = g.name;
+    });
+    return map;
+  }, [groups]);
+  const allTimePersonalBalances = useMemo(
+    () => buildDebtBalances(personalExpenses, settlements, { currentUserId }),
+    [personalExpenses, settlements, currentUserId]
+  );
+  const aggregatedDebts = useMemo(
+    () => aggregateDebtsByUser(allTimePersonalBalances, currentUserId, groupNames),
+    [allTimePersonalBalances, currentUserId, groupNames]
+  );
+  const youOweRows = aggregatedDebts.youOweRows;
+  const youGetRows = aggregatedDebts.youGetRows;
+  const youOweTotal = aggregatedDebts.totalOwed;
+  const youGetTotal = aggregatedDebts.totalLent;
   const youOweAmountClass = youOweTotal > 0.009 ? "text-warning" : "text-muted-foreground";
   const youGetAmountClass = youGetTotal > 0.009 ? "text-success" : "text-muted-foreground";
   const openBalanceDetail = (type: "owe" | "get") => {
@@ -1823,9 +1797,14 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
           <div className="max-h-[55dvh] overflow-y-auto overscroll-contain rounded-2xl bg-elevated/70">
             {detailRows.map((row, index) => (
               <div key={`${row.name}-${index}`} className={`flex items-center justify-between gap-3 px-4 py-3 text-sm ${index < detailRows.length - 1 ? "border-b border-border/60" : ""}`}>
-                <div className="flex-1 min-w-0 flex items-center justify-between mr-2">
-                  <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
-                  <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
+                <div className="flex-1 min-w-0 mr-2">
+                  <div className="flex items-center justify-between">
+                    <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
+                    <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
+                  </div>
+                  {row.contextName ? (
+                    <p className="truncate text-xs font-medium text-muted-foreground mt-0.5">{row.contextName}</p>
+                  ) : null}
                 </div>
                 <Button
                   onClick={() => {
@@ -2876,6 +2855,19 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const defaultFilters = { status: "all", paidBy: "anyone", date: "month", dateStart: "", dateEnd: "", sort: "newest", splitType: "all", category: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
+  const [simplifiedState, setSimplifiedState] = useState<boolean>(() => isGroupSimplifyEnabled(group.id, group.simplify_debts));
+  const isSimplified = simplifiedState;
+
+  const handleToggleSimplifyDebts = (enabled: boolean) => {
+    setGroupSimplifyEnabled(group.id, enabled);
+    setSimplifiedState(enabled);
+    toast({
+      title: enabled ? "Simplify Debts Enabled" : "Simplify Debts Disabled",
+      description: enabled
+        ? "Group debts are now optimized into the fewest possible payments."
+        : "Showing direct, pairwise debts between group members.",
+    });
+  };
   const allGroupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), getExpenseTimelineCreatedAt);
   const groupExpenses = allGroupExpenses.filter((expense) => isUserInExpenseSplit(expense, currentUserId));
   const groupCategories = scopedCategories(data.categories, "group", currentUserId, group.id);
@@ -2994,7 +2986,7 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const filteredGroupSettlements = filteredGroupActivity.filter((item): item is Extract<GroupActivityItem, { kind: "settlement" }> => item.kind === "settlement").map((item) => item.settlement);
   const filteredTotalSpent = filteredGroupExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
-  const balances = computeGroupBalances(allGroupExpenses, allGroupSettlements, group, currentUserId);
+  const balances = computeGroupBalances(allGroupExpenses, allGroupSettlements, group, currentUserId, isSimplified);
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const net = owedToMe - iOwe;
@@ -3074,6 +3066,32 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
         <section className="flex gap-3">
           <Button onClick={() => openModal("group-expense", group.id)} className="h-[52px] flex-1 rounded-2xl shadow-primary-action px-2"><Plus />Add Expense</Button>
           <Button onClick={() => openModal("settle-up", group.id)} variant="outline" className="h-[52px] flex-1 rounded-2xl border-primary bg-transparent text-primary hover:bg-primary/10 hover:text-primary px-2"><Check />Settle Up</Button>
+        </section>
+
+        <section className="rounded-[20px] border border-border/70 bg-card p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <Split className="size-4 text-primary shrink-0" />
+                <h2 className="text-xs font-bold uppercase tracking-wide text-foreground">
+                  Simplify Group Debts
+                </h2>
+              </div>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {isSimplified
+                  ? "Debts are automatically minimized into the fewest payments"
+                  : "Showing direct, unsimplified debts between members"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Switch
+                id="simplify-debts-switch"
+                checked={isSimplified}
+                onCheckedChange={handleToggleSimplifyDebts}
+                aria-label="Toggle Simplify Group Debts"
+              />
+            </div>
+          </div>
         </section>
         <section className="pt-2">
           <div className="mb-3 flex items-center justify-between">
@@ -4549,11 +4567,12 @@ const ExpenseForm = ({
   );
 };
 
-const CreateGroupForm = ({ friends, group, onSubmit, onCancel }: { friends: FriendProfile[]; group?: GroupRow; onSubmit: (payload: { name: string; emoji: string; description: string; memberIds: string[]; groupId?: string }) => Promise<void>; onCancel: () => void }) => {
+const CreateGroupForm = ({ friends, group, onSubmit, onCancel }: { friends: FriendProfile[]; group?: GroupRow; onSubmit: (payload: { name: string; emoji: string; description: string; simplifyDebts?: boolean; memberIds: string[]; groupId?: string }) => Promise<void>; onCancel: () => void }) => {
   const [emoji, setEmoji] = useState(group?.emoji || "🏠");
   const [name, setName] = useState(group?.name || "");
   const [description, setDescription] = useState(group?.description || "");
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [simplifyDebts, setSimplifyDebts] = useState<boolean>(() => group ? isGroupSimplifyEnabled(group.id, group.simplify_debts) : true);
   const [submitting, setSubmitting] = useState(false);
   return (
     <form className="space-y-3" onSubmit={async (event) => {
@@ -4561,7 +4580,7 @@ const CreateGroupForm = ({ friends, group, onSubmit, onCancel }: { friends: Frie
       if (!name.trim() || submitting) return;
       setSubmitting(true);
       try {
-        await onSubmit({ groupId: group?.id, name: name.trim(), emoji, description: description.trim(), memberIds });
+        await onSubmit({ groupId: group?.id, name: name.trim(), emoji, description: description.trim(), simplifyDebts, memberIds });
       } finally {
         setSubmitting(false);
       }
@@ -4576,6 +4595,23 @@ const CreateGroupForm = ({ friends, group, onSubmit, onCancel }: { friends: Frie
       </div>
       <Field label="Group name" placeholder="Flat 4B" value={name} onChange={setName} />
       <Textarea label="Description" placeholder="What's this group about?" value={description} onChange={setDescription} />
+
+      <div className="flex items-center justify-between gap-3 rounded-2xl bg-elevated p-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <Split className="size-4 text-primary shrink-0" />
+            <span className="text-xs font-bold text-foreground">Simplify debts</span>
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Automatically optimize payments into the fewest transactions.
+          </p>
+        </div>
+        <Switch
+          checked={simplifyDebts}
+          onCheckedChange={setSimplifyDebts}
+          aria-label="Simplify group debts"
+        />
+      </div>
       {!group && (
         <div>
           <div className="mb-2 flex items-center justify-between">
@@ -4990,20 +5026,36 @@ const ActionModal = ({
   }, [type, modal.item]);
   const friend = data.friends.find((item) => item.user_id === (initialFriendIds[0] || modal.item)) || data.friends.find((item) => item.user_id === settlementFriendId);
   const groupExpenses = group ? data.expenses.filter((item) => item.group_id === group.id) : [];
-  const balances = group ? computeGroupBalances(data.expenses, data.settlements, group, currentUserId) : [];
+  const balances = group
+    ? (type === "settle-up"
+        ? buildDebtBalances(data.expenses, data.settlements, {
+            currentUserId,
+            groupId: group.id,
+            simplifyDebts: isGroupSimplifyEnabled(group.id, group.simplify_debts),
+          })
+        : computeGroupBalances(data.expenses, data.settlements, group, currentUserId))
+    : [];
   const friendBalances = useMemo(() => {
     const targetId = friend?.user_id || (type === "settle-up" && !group ? modal.item : undefined);
     if (!targetId) return [];
 
-    // 1. Fetch personal balances
-    const personalBalances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: targetId, groupId: null })
-      .map(b => ({ ...b, groupId: null, contextName: "Personal split" }));
+    // 1. Fetch personal balances (pairwise netting, personal splits are never group-simplified)
+    const personalBalances = buildDebtBalances(data.expenses, data.settlements, {
+      currentUserId,
+      friendId: targetId,
+      groupId: null,
+      simplifyDebts: false,
+    }).map(b => ({ ...b, groupId: null, contextName: "Personal split" }));
 
-    // 2. Fetch group balances for all shared groups
+    // 2. Fetch group balances for all shared groups (respecting each group's simplify setting)
     const sharedGroups = data.groups.filter(g => g.group_members.some(m => m.user_id === targetId));
     const groupBalances = sharedGroups.flatMap(g =>
-      buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: targetId, groupId: g.id })
-        .map(b => ({ ...b, groupId: g.id, contextName: `${g.name} split` }))
+      buildDebtBalances(data.expenses, data.settlements, {
+        currentUserId,
+        friendId: targetId,
+        groupId: g.id,
+        simplifyDebts: isGroupSimplifyEnabled(g.id, g.simplify_debts),
+      }).map(b => ({ ...b, groupId: g.id, contextName: `${g.name} split` }))
     );
 
     return [...personalBalances, ...groupBalances].filter(b => b.amount > 0.009);
@@ -5278,6 +5330,101 @@ const ActionModal = ({
           firstSettlementId = settlementId;
         }
 
+        // If this was a simplified group settlement where the payer's amount covers other splits in the group:
+        if (payload.group_id && payload.from_user_id === currentUserId) {
+          const groupObj = data.groups.find((g) => g.id === payload.group_id);
+          const isSimplified = isGroupSimplifyEnabled(payload.group_id, groupObj?.simplify_debts);
+          if (isSimplified) {
+            const groupExp = data.expenses.filter((e) => e.group_id === payload.group_id);
+            // 1. Clear any remaining unpaid splits for this payer in this group up to the settled amount
+            const payerUnpaidSplits = groupExp.flatMap((e) =>
+              (e.expense_splits || [])
+                .filter((s) => s.user_id === currentUserId && !s.has_paid && Number(s.amount_paid || 0) < Number(s.amount_owed || 0))
+                .map((s) => ({ ...s, expensePaidBy: e.paid_by }))
+            );
+            const directSplits = payerUnpaidSplits.filter((s) => s.expensePaidBy === payload.to_user_id);
+            const directOwed = directSplits.reduce((sum, s) => sum + (Number(s.amount_owed || 0) - Number(s.amount_paid || 0)), 0);
+            let excess = Math.max(0, payload.amount - directOwed);
+
+            const otherPayerSplits = payerUnpaidSplits.filter((s) => s.expensePaidBy !== payload.to_user_id);
+            for (const split of otherPayerSplits) {
+              if (excess <= 0.009) break;
+              const unpaid = Number(split.amount_owed || 0) - Number(split.amount_paid || 0);
+              const apply = Math.min(excess, unpaid);
+              const newAmountPaid = Number(split.amount_paid || 0) + apply;
+              const hasPaid = newAmountPaid >= Number(split.amount_owed || 0) - 0.009;
+
+              await supabase.from("expense_splits").update({
+                amount_paid: newAmountPaid,
+                has_paid: hasPaid,
+              } as never).eq("id", split.id);
+
+              if (settlementId) {
+                await supabase.from("split_settlement_applications").insert({
+                  settlement_id: settlementId,
+                  split_id: split.id,
+                  amount: apply,
+                } as never);
+              }
+
+              excess -= apply;
+            }
+
+            // 2. Also clear intermediary splits in this group where intermediary owed payload.to_user_id
+            let receiverCredit = payload.amount - directOwed;
+            if (receiverCredit > 0.009) {
+              const intermediarySplits = groupExp.flatMap((e) =>
+                (e.expense_splits || [])
+                  .filter((s) => e.paid_by === payload.to_user_id && s.user_id !== currentUserId && !s.has_paid && Number(s.amount_paid || 0) < Number(s.amount_owed || 0))
+              );
+              for (const split of intermediarySplits) {
+                if (receiverCredit <= 0.009) break;
+                const unpaid = Number(split.amount_owed || 0) - Number(split.amount_paid || 0);
+                const apply = Math.min(receiverCredit, unpaid);
+                const newAmountPaid = Number(split.amount_paid || 0) + apply;
+                const hasPaid = newAmountPaid >= Number(split.amount_owed || 0) - 0.009;
+
+                await supabase.from("expense_splits").update({
+                  amount_paid: newAmountPaid,
+                  has_paid: hasPaid,
+                } as never).eq("id", split.id);
+
+                if (settlementId) {
+                  await supabase.from("split_settlement_applications").insert({
+                    settlement_id: settlementId,
+                    split_id: split.id,
+                    amount: apply,
+                  } as never);
+                }
+
+                receiverCredit -= apply;
+              }
+            }
+
+            // 3. Offset opposite splits where others owed currentUserId in this group that were factored into this net settlement
+            const oppositeSplits = groupExp.flatMap((e) =>
+              e.paid_by === currentUserId
+                ? (e.expense_splits || []).filter((s) => s.user_id !== currentUserId && !s.has_paid && Number(s.amount_paid || 0) < Number(s.amount_owed || 0))
+                : []
+            );
+            for (const split of oppositeSplits) {
+              const unpaid = Number(split.amount_owed || 0) - Number(split.amount_paid || 0);
+              await supabase.from("expense_splits").update({
+                amount_paid: split.amount_owed,
+                has_paid: true,
+              } as never).eq("id", split.id);
+
+              if (settlementId && unpaid > 0.009) {
+                await supabase.from("split_settlement_applications").insert({
+                  settlement_id: settlementId,
+                  split_id: split.id,
+                  amount: unpaid,
+                } as never);
+              }
+            }
+          }
+        }
+
         notifySharedAction({
           type: payload.group_id ? "group_settled" : "split_settled",
           recipients: [payload.from_user_id, payload.to_user_id],
@@ -5326,7 +5473,7 @@ const ActionModal = ({
     }
   };
 
-  const saveGroup = async (payload: { name: string; emoji: string; description: string; memberIds: string[]; groupId?: string }) => {
+  const saveGroup = async (payload: { name: string; emoji: string; description: string; simplifyDebts?: boolean; memberIds: string[]; groupId?: string }) => {
     if (payload.groupId) {
       const existingGroup = data.groups.find((item) => item.id === payload.groupId);
       if (existingGroup && existingGroup.created_by !== currentUserId) {
@@ -5335,10 +5482,12 @@ const ActionModal = ({
       }
       const { error } = await supabase.from("groups").update({ name: payload.name, emoji: payload.emoji, description: payload.description || null } as never).eq("id", payload.groupId);
       if (error) throw error;
+      setGroupSimplifyEnabled(payload.groupId, payload.simplifyDebts ?? true);
       toast({ title: "Group updated" });
     } else {
       const { data: inserted, error } = await supabase.from("groups").insert({ name: payload.name, emoji: payload.emoji, description: payload.description || null, created_by: currentUserId } as never).select("id").single();
       if (error || !inserted) throw error;
+      setGroupSimplifyEnabled(inserted.id, payload.simplifyDebts ?? true);
       const members = [{ group_id: inserted.id, user_id: currentUserId }, ...payload.memberIds.map((user_id) => ({ group_id: inserted.id, user_id }))];
       const { error: memberError } = await supabase.from("group_members").insert(members);
       if (memberError) throw memberError;
@@ -6079,7 +6228,7 @@ const Index = () => {
         {expenseDetail && <ExpenseDetailView expense={expenseDetail} settlements={data.settlements} categories={data.categories} currentUserId={user.id} openModal={openModal} onBack={() => navigate(getExpenseParentPath(expenseDetail))} refresh={refresh} />}
         {settlementDetail && <SettlementDetailView settlement={settlementDetail} currentUserId={user.id} onBack={() => navigate(getSettlementParentPath(settlementDetail))} onDelete={deleteSettlement} />}
         {groupDetail && <GroupDetailView group={groupDetail} data={data} currentUserId={user.id} openModal={openModal} onBack={backToSplit} refresh={refresh} />}
-        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} categories={data.categories} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
+        {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "home" && <HomeView expenses={data.expenses} settlements={data.settlements} categories={data.categories} groups={data.groups} userId={user.id} setTab={setActiveTab} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "personal" && <PersonalView expenses={data.expenses} settlements={data.settlements} summary={summary} categories={data.categories} currentUserId={user.id} groups={data.groups} friends={data.friends} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "split" && <SplitView data={data} currentUserId={user.id} openModal={openModal} />}
         {!friendDetailId && !groupDetailId && !expenseDetailId && !settlementDetailId && activeContentTab === "ledger" && <BudgetLedgerView ledgers={data.ledgers} currentUserId={user.id} profile={profile} refresh={refresh} initialLedgerId={ledgerDetailId} />}
