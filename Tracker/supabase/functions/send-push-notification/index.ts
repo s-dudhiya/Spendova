@@ -48,7 +48,10 @@ serve(async (req) => {
     let targetUserId: string | null = null;
     let targetUserInfo: any = null;
 
-    if (body.type === 'INSERT' && body.record) {
+    const isWebhook = Boolean(body.type === 'INSERT' && body.record);
+    const isBroadcast = Boolean(body.broadcast || body.sendToAll);
+
+    if (isWebhook) {
       // Webhook payload from Supabase notifications table
       const notificationRow = body.record;
       if (!notificationRow || !notificationRow.title) {
@@ -86,7 +89,7 @@ serve(async (req) => {
         targetUserInfo = profile;
       } else if (body.userId) {
         targetUserId = body.userId;
-      } else if (body.broadcast) {
+      } else if (isBroadcast) {
         // Broadcast to all users
         targetUserId = null;
       } else {
@@ -98,21 +101,78 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+    }
 
-      // Also persist to in-app notifications table so the user sees it in their notification inbox
-      if (targetUserId) {
-        try {
-          await supabaseAdmin.from('notifications').insert({
+    // Also persist to in-app notifications table so the user sees it in their notification inbox modal
+    try {
+      const oneMinuteAgo = new Date(Date.now() - 60000).toISOString();
+
+      if (isBroadcast) {
+        const { data: allProfiles, error: profsErr } = await supabaseAdmin
+          .from('profiles')
+          .select('user_id');
+
+        if (!profsErr && allProfiles && allProfiles.length > 0) {
+          // Check if duplicate broadcast was already inserted in the last 60 seconds
+          const { data: existingNotifs } = await supabaseAdmin
+            .from('notifications')
+            .select('id')
+            .eq('title', title)
+            .eq('message', messageBody)
+            .gte('created_at', oneMinuteAgo)
+            .limit(1);
+
+          if (!existingNotifs || existingNotifs.length === 0) {
+            const notifRows = allProfiles.map((p: any) => ({
+              user_id: p.user_id,
+              type: 'admin_broadcast',
+              title: title,
+              message: messageBody,
+              entity_type: 'admin_alert',
+              is_read: false,
+            }));
+
+            for (let i = 0; i < notifRows.length; i += 200) {
+              const chunk = notifRows.slice(i, i + 200);
+              const { error: insErr } = await supabaseAdmin.from('notifications').insert(chunk);
+              if (insErr) console.warn("Failed inserting broadcast notifications chunk to DB:", insErr);
+            }
+            console.log(`Persisted in-app broadcast notifications to DB for ${allProfiles.length} users.`);
+          } else {
+            console.log("Broadcast notification already persisted in DB (deduplicated).");
+          }
+        }
+      } else if (targetUserId) {
+        // Check if duplicate targeted notification was already inserted in the last 60 seconds
+        const { data: existingNotif } = await supabaseAdmin
+          .from('notifications')
+          .select('id')
+          .eq('user_id', targetUserId)
+          .eq('title', title)
+          .eq('message', messageBody)
+          .gte('created_at', oneMinuteAgo)
+          .limit(1);
+
+        if (!existingNotif || existingNotif.length === 0) {
+          const { error: insErr } = await supabaseAdmin.from('notifications').insert({
             user_id: targetUserId,
-            type: 'admin_broadcast',
+            type: 'admin_alert',
             title: title,
             message: messageBody,
             entity_type: 'admin_alert',
+            is_read: false,
           });
-        } catch (dbErr) {
-          console.warn("Could not insert notification into DB:", dbErr);
+          if (insErr) {
+            console.warn("Could not insert targeted notification to DB:", insErr);
+          } else {
+            console.log(`Persisted in-app targeted notification for user: ${targetUserId}`);
+          }
+        } else {
+          console.log(`Targeted notification already persisted for user: ${targetUserId} (deduplicated).`);
         }
       }
+    } catch (dbErr) {
+      console.warn("Could not insert notification into DB:", dbErr);
     }
 
     // Fetch device tokens for the recipient(s)
