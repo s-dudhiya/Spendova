@@ -948,7 +948,7 @@ function useSpendovaData(userId?: string) {
           .eq("receiver_id", userId), 15000, "received connections fetch"),
         withTimeout(supabase
           .from("groups")
-          .select("id, name, emoji, description, created_by, created_at, group_members(user_id, joined_at, profiles!group_members_user_id_fkey(user_id, full_name, username))")
+          .select("id, name, emoji, description, simplify_debts, created_by, created_at, group_members(user_id, joined_at, profiles!group_members_user_id_fkey(user_id, full_name, username))")
           .order("created_at", { ascending: false }), 15000, "groups fetch"),
         withTimeout(supabase
           .from("split_settlements" as never)
@@ -2873,7 +2873,9 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const isSimplified = simplifiedState;
 
   useEffect(() => {
-    setSimplifiedState(isGroupSimplifyEnabled(group.id, group.simplify_debts));
+    const isEn = isGroupSimplifyEnabled(group.id, group.simplify_debts);
+    setSimplifiedState(isEn);
+    setGroupSimplifyEnabled(group.id, isEn);
   }, [group.id, group.simplify_debts]);
 
   const handleToggleSimplifyDebts = async (enabled: boolean) => {
