@@ -60,6 +60,16 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
+      // If this notification is an admin broadcast or admin alert, the admin flow dispatches FCM push directly.
+      // Skip webhook execution to avoid duplicate push notifications on user devices!
+      if (notificationRow.type === 'admin_broadcast' || notificationRow.type === 'admin_alert') {
+        return new Response(JSON.stringify({ message: "Admin push already dispatched directly; skipping webhook duplicate" }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       targetUserId = notificationRow.user_id;
       title = notificationRow.title;
       messageBody = notificationRow.message || "";
@@ -103,7 +113,7 @@ serve(async (req) => {
       }
     }
 
-    // Also persist to in-app notifications table so the user sees it in their notification inbox modal
+    // Persist in-app notifications to DB so users see them in their notification inbox modal
     try {
       const oneMinuteAgo = new Date(Date.now() - 60000).toISOString();
 
@@ -113,6 +123,8 @@ serve(async (req) => {
           .select('user_id');
 
         if (!profsErr && allProfiles && allProfiles.length > 0) {
+          const uniqueUserIds = Array.from(new Set(allProfiles.map((p: any) => p.user_id).filter(Boolean)));
+
           // Check if duplicate broadcast was already inserted in the last 60 seconds
           const { data: existingNotifs } = await supabaseAdmin
             .from('notifications')
@@ -123,12 +135,12 @@ serve(async (req) => {
             .limit(1);
 
           if (!existingNotifs || existingNotifs.length === 0) {
-            const notifRows = allProfiles.map((p: any) => ({
-              user_id: p.user_id,
+            const notifRows = uniqueUserIds.map((userId: string) => ({
+              user_id: userId,
               type: 'admin_broadcast',
               title: title,
               message: messageBody,
-              entity_type: 'admin_alert',
+              entity_type: 'system_announcement',
               is_read: false,
             }));
 
@@ -137,7 +149,7 @@ serve(async (req) => {
               const { error: insErr } = await supabaseAdmin.from('notifications').insert(chunk);
               if (insErr) console.warn("Failed inserting broadcast notifications chunk to DB:", insErr);
             }
-            console.log(`Persisted in-app broadcast notifications to DB for ${allProfiles.length} users.`);
+            console.log(`Persisted in-app broadcast notifications to DB for ${uniqueUserIds.length} users.`);
           } else {
             console.log("Broadcast notification already persisted in DB (deduplicated).");
           }
