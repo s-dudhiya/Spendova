@@ -1414,9 +1414,16 @@ const HomeView = ({ expenses, settlements, categories, groups = [], userId, setT
   const allTimeSummary = getSummary(expenses, userId, settlements);
   const { toast } = useToast();
   const [balanceDetail, setBalanceDetail] = useState<"owe" | "get" | null>(null);
+  const groupSimplifyMap = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    groups.forEach((g) => {
+      map[g.id] = isGroupSimplifyEnabled(g.id, g.simplify_debts);
+    });
+    return map;
+  }, [groups]);
   const allTimeBalances = useMemo(
-    () => buildDebtBalances(expenses, settlements, { currentUserId: userId }),
-    [expenses, settlements, userId]
+    () => buildDebtBalances(expenses, settlements, { currentUserId: userId, groupSimplifyMap }),
+    [expenses, settlements, userId, groupSimplifyMap]
   );
   const groupNames = useMemo(() => {
     const map: Record<string, string> = {};
@@ -1692,9 +1699,16 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
     });
     return map;
   }, [groups]);
+  const groupSimplifyMap = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    groups.forEach((g) => {
+      map[g.id] = isGroupSimplifyEnabled(g.id, g.simplify_debts);
+    });
+    return map;
+  }, [groups]);
   const allTimePersonalBalances = useMemo(
-    () => buildDebtBalances(personalExpenses, settlements, { currentUserId }),
-    [personalExpenses, settlements, currentUserId]
+    () => buildDebtBalances(personalExpenses, settlements, { currentUserId, groupSimplifyMap }),
+    [personalExpenses, settlements, currentUserId, groupSimplifyMap]
   );
   const aggregatedDebts = useMemo(
     () => aggregateDebtsByUser(allTimePersonalBalances, currentUserId, groupNames),
@@ -2858,15 +2872,39 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const [simplifiedState, setSimplifiedState] = useState<boolean>(() => isGroupSimplifyEnabled(group.id, group.simplify_debts));
   const isSimplified = simplifiedState;
 
-  const handleToggleSimplifyDebts = (enabled: boolean) => {
-    setGroupSimplifyEnabled(group.id, enabled);
+  useEffect(() => {
+    setSimplifiedState(isGroupSimplifyEnabled(group.id, group.simplify_debts));
+  }, [group.id, group.simplify_debts]);
+
+  const handleToggleSimplifyDebts = async (enabled: boolean) => {
     setSimplifiedState(enabled);
-    toast({
-      title: enabled ? "Simplify Debts Enabled" : "Simplify Debts Disabled",
-      description: enabled
-        ? "Group debts are now optimized into the fewest possible payments."
-        : "Showing direct, pairwise debts between group members.",
-    });
+    setGroupSimplifyEnabled(group.id, enabled);
+    try {
+      const { error } = await supabase
+        .from("groups")
+        .update({ simplify_debts: enabled } as never)
+        .eq("id", group.id);
+      if (error) {
+        console.error("Failed to sync simplify_debts to group:", error);
+        setSimplifiedState(isGroupSimplifyEnabled(group.id, group.simplify_debts));
+        setGroupSimplifyEnabled(group.id, isGroupSimplifyEnabled(group.id, group.simplify_debts));
+        toast({
+          title: "Update failed",
+          description: "Could not save setting to group: " + error.message,
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: enabled ? "Simplify Debts Enabled" : "Simplify Debts Disabled",
+        description: enabled
+          ? "Group debts are now optimized into the fewest possible payments for all members."
+          : "Showing direct, pairwise debts between group members for all members.",
+      });
+      await refresh();
+    } catch (err: any) {
+      console.error("Error in handleToggleSimplifyDebts:", err);
+    }
   };
   const allGroupExpenses = sortTimelineByCreatedAt(data.expenses.filter((expense) => expense.group_id === group.id), getExpenseTimelineCreatedAt);
   const groupExpenses = allGroupExpenses.filter((expense) => isUserInExpenseSplit(expense, currentUserId));
@@ -5480,12 +5518,23 @@ const ActionModal = ({
         toast({ title: "Update failed", description: "Only the group owner can edit this group.", variant: "destructive" });
         return;
       }
-      const { error } = await supabase.from("groups").update({ name: payload.name, emoji: payload.emoji, description: payload.description || null } as never).eq("id", payload.groupId);
+      const { error } = await supabase.from("groups").update({
+        name: payload.name,
+        emoji: payload.emoji,
+        description: payload.description || null,
+        simplify_debts: payload.simplifyDebts ?? true,
+      } as never).eq("id", payload.groupId);
       if (error) throw error;
       setGroupSimplifyEnabled(payload.groupId, payload.simplifyDebts ?? true);
       toast({ title: "Group updated" });
     } else {
-      const { data: inserted, error } = await supabase.from("groups").insert({ name: payload.name, emoji: payload.emoji, description: payload.description || null, created_by: currentUserId } as never).select("id").single();
+      const { data: inserted, error } = await supabase.from("groups").insert({
+        name: payload.name,
+        emoji: payload.emoji,
+        description: payload.description || null,
+        created_by: currentUserId,
+        simplify_debts: payload.simplifyDebts ?? true,
+      } as never).select("id").single();
       if (error || !inserted) throw error;
       setGroupSimplifyEnabled(inserted.id, payload.simplifyDebts ?? true);
       const members = [{ group_id: inserted.id, user_id: currentUserId }, ...payload.memberIds.map((user_id) => ({ group_id: inserted.id, user_id }))];

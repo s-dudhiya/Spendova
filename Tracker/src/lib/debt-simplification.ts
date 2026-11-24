@@ -56,6 +56,7 @@ export type DebtCalculationOptions = {
 };
 
 export function isGroupSimplifyEnabled(groupId: string, serverValue?: boolean | null): boolean {
+  if (serverValue !== undefined && serverValue !== null) return Boolean(serverValue);
   if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
     try {
       const val = localStorage.getItem(`spendova_group_simplify_${groupId}`);
@@ -63,7 +64,6 @@ export function isGroupSimplifyEnabled(groupId: string, serverValue?: boolean | 
       if (val === "true") return true;
     } catch {}
   }
-  if (serverValue !== undefined && serverValue !== null) return Boolean(serverValue);
   return true;
 }
 
