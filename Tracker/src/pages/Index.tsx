@@ -85,6 +85,7 @@ import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-e
 import { getSpendingChartAverageLabel, getSpendingChartAxisLabels, getSpendingChartSummary, type SpendingChartBucketUnit } from "@/lib/spending-chart";
 import { simplifyGroupDebts, isGroupSimplifyEnabled, setGroupSimplifyEnabled, buildDebtBalances, aggregateDebtsByUser, type DebtBalance, type AggregatedDebtRow } from "@/lib/debt-simplification";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
+import { registerBackHandler } from "@/lib/back-handler";
 import { BudgetLedgerView } from "./Ledger";
 import { triggerHaptic } from "@/utils/haptics";
 import { UniversalAddDrawer } from "@/components/drawers/UniversalAddDrawer";
@@ -1421,6 +1422,25 @@ const HomeView = ({ expenses, settlements, categories, groups = [], userId, setT
   const allTimeSummary = getSummary(expenses, userId, settlements, groupSimplifyMap);
   const { toast } = useToast();
   const [balanceDetail, setBalanceDetail] = useState<"owe" | "get" | null>(null);
+
+  useEffect(() => {
+    if (!balanceDetail && !filtersOpen && !chartFiltersOpen) return;
+    return registerBackHandler(() => {
+      if (balanceDetail) {
+        setBalanceDetail(null);
+        return true;
+      }
+      if (filtersOpen) {
+        setFiltersOpen(false);
+        return true;
+      }
+      if (chartFiltersOpen) {
+        setChartFiltersOpen(false);
+        return true;
+      }
+      return false;
+    });
+  }, [balanceDetail, filtersOpen, chartFiltersOpen]);
   const allTimeBalances = useMemo(
     () => buildDebtBalances(expenses, settlements, { currentUserId: userId, groupSimplifyMap }),
     [expenses, settlements, userId, groupSimplifyMap]
@@ -1677,6 +1697,21 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [balanceDetail, setBalanceDetail] = useState<"owe" | "get" | null>(null);
   const [filters, setFilters] = useState(defaultFilters);
+
+  useEffect(() => {
+    if (!balanceDetail && !filtersOpen) return;
+    return registerBackHandler(() => {
+      if (balanceDetail) {
+        setBalanceDetail(null);
+        return true;
+      }
+      if (filtersOpen) {
+        setFiltersOpen(false);
+        return true;
+      }
+      return false;
+    });
+  }, [balanceDetail, filtersOpen]);
   const personalExpenses = expenses.filter((expense) => expense.paid_by === currentUserId || expense.expense_splits?.some((split) => split.user_id === currentUserId));
   const personalCategories = scopedCategories(categories, "personal", currentUserId);
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
@@ -1861,6 +1896,21 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
   const defaultFilters = { balance: "all", sort: "highest" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
+
+  useEffect(() => {
+    if (subTab === "all" && !filtersOpen) return;
+    return registerBackHandler(() => {
+      if (filtersOpen) {
+        setFiltersOpen(false);
+        return true;
+      }
+      if (subTab !== "all") {
+        setSubTab("all");
+        return true;
+      }
+      return false;
+    });
+  }, [subTab, filtersOpen]);
   const pendingRequestIds = [...data.incomingRequests, ...data.outgoingRequests].map((request) => request.id);
   const requestCount = pendingRequestIds.filter((id) => !seenRequestIds.includes(id)).length;
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => value !== defaultFilters[key as keyof typeof defaultFilters]).length;
@@ -2160,6 +2210,17 @@ const FriendDetailView = ({ friend, data, currentUserId, theme, unreadCount, onT
   const defaultFilters = { type: "all", status: "all", date: "month", dateStart: "", dateEnd: "", sort: "newest", paidBy: "anyone" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    return registerBackHandler(() => {
+      if (filtersOpen) {
+        setFiltersOpen(false);
+        return true;
+      }
+      return false;
+    });
+  }, [filtersOpen]);
   const balances = buildDebtBalances(data.expenses, data.settlements, { currentUserId, friendId: friend.user_id, groupId: null });
   const owedToMe = balances.filter((balance) => balance.toUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
   const iOwe = balances.filter((balance) => balance.fromUserId === currentUserId).reduce((sum, balance) => sum + balance.amount, 0);
@@ -2905,6 +2966,17 @@ const GroupDetailView = ({ group, data, currentUserId, openModal, onBack, refres
   const defaultFilters = { status: "all", paidBy: "anyone", date: "month", dateStart: "", dateEnd: "", sort: "newest", splitType: "all", category: "all" };
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState(defaultFilters);
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    return registerBackHandler(() => {
+      if (filtersOpen) {
+        setFiltersOpen(false);
+        return true;
+      }
+      return false;
+    });
+  }, [filtersOpen]);
   const [simplifiedState, setSimplifiedState] = useState<boolean>(() => isGroupSimplifyEnabled(group.id, group.simplify_debts));
   const isSimplified = simplifiedState;
 
@@ -6298,6 +6370,80 @@ const Index = () => {
     const friendId = settlement.from_user_id === user.id ? settlement.to_user_id : settlement.from_user_id;
     return friendId ? `/split/friend/${friendId}` : "/split";
   };
+
+  useEffect(() => {
+    return registerBackHandler(() => {
+      // 1. If feedback modal is open, close it
+      if (feedbackModalOpen) {
+        setFeedbackModalOpen(false);
+        return true;
+      }
+
+      // 2. If Spendova ActionModal / UniversalAddDrawer is open, close it
+      if (modal.type !== null) {
+        setModal({ type: null });
+        return true;
+      }
+
+      // 3. Sub-views / Detail pages
+      if (expenseDetailId) {
+        if (expenseDetail) {
+          navigate(getExpenseParentPath(expenseDetail));
+        } else {
+          navigate("/split");
+        }
+        return true;
+      }
+
+      if (settlementDetailId) {
+        if (settlementDetail) {
+          navigate(getSettlementParentPath(settlementDetail));
+        } else {
+          navigate("/split");
+        }
+        return true;
+      }
+
+      if (friendDetailId || groupDetailId) {
+        navigate("/split");
+        return true;
+      }
+
+      if (ledgerDetailId) {
+        navigate("/dashboard");
+        setActiveTabState("ledger");
+        return true;
+      }
+
+      if (isProfileRoute) {
+        navigate("/dashboard");
+        setActiveTabState("home");
+        return true;
+      }
+
+      // 4. Secondary tabs at root level -> Navigate back to Home tab
+      if (activeContentTab !== "home") {
+        setActiveTab("home");
+        return true;
+      }
+
+      // 5. Already at Home tab root with nothing open -> return false (allows Android exit)
+      return false;
+    });
+  }, [
+    feedbackModalOpen,
+    modal.type,
+    expenseDetailId,
+    expenseDetail,
+    settlementDetailId,
+    settlementDetail,
+    friendDetailId,
+    groupDetailId,
+    ledgerDetailId,
+    isProfileRoute,
+    activeContentTab,
+    navigate,
+  ]);
   const deleteSettlement = async (settlementId: string) => {
     const settlementToDelete = data.settlements.find((settlement) => settlement.id === settlementId);
     const redirectPath = settlementToDelete ? getSettlementParentPath(settlementToDelete) : "/split";

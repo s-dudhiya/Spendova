@@ -28,6 +28,7 @@ import {
   FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { registerBackHandler } from "@/lib/back-handler";
 import {
   Drawer,
   DrawerContent,
@@ -939,6 +940,45 @@ export const LedgerDetail = ({
   const [dateEnd, setDateEnd] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"expenses" | "activity">("expenses");
+
+  const hasOpenSubDrawer = Boolean(
+    addExpenseOpen ||
+    editExpense ||
+    reviewExpense ||
+    addBudgetOpen ||
+    settleBalancesOpen ||
+    inviteOpen ||
+    historyOpen ||
+    settingsOpen ||
+    filtersOpen
+  );
+
+  useEffect(() => {
+    if (!hasOpenSubDrawer) return;
+    return registerBackHandler(() => {
+      if (addExpenseOpen) { setAddExpenseOpen(false); return true; }
+      if (editExpense) { setEditExpense(null); return true; }
+      if (reviewExpense) { setReviewExpense(null); return true; }
+      if (addBudgetOpen) { setAddBudgetOpen(false); return true; }
+      if (settleBalancesOpen) { setSettleBalancesOpen(false); return true; }
+      if (inviteOpen) { setInviteOpen(false); return true; }
+      if (historyOpen) { setHistoryOpen(false); return true; }
+      if (settingsOpen) { setSettingsOpen(false); return true; }
+      if (filtersOpen) { setFiltersOpen(false); return true; }
+      return false;
+    });
+  }, [
+    hasOpenSubDrawer,
+    addExpenseOpen,
+    editExpense,
+    reviewExpense,
+    addBudgetOpen,
+    settleBalancesOpen,
+    inviteOpen,
+    historyOpen,
+    settingsOpen,
+    filtersOpen,
+  ]);
 
   const dedupedActivities = useMemo(() => {
     if (!activities) return [];

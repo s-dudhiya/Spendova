@@ -28,6 +28,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 
 import type { LedgerRow, LedgerActivityRow } from "./types";
+import { registerBackHandler } from "@/lib/back-handler";
 import { LedgerDetail } from "./LedgerDetail";
 import { CreateLedgerDrawer } from "./drawers/CreateLedgerDrawer";
 import { FilterSheet, FilterField, FilterTrigger } from "./components/Filters";
@@ -149,6 +150,27 @@ export const BudgetLedgerView = ({
   };
 
   const activeFilterCount = (filterType !== "all" ? 1 : 0) + (filterBudget !== "all" ? 1 : 0);
+
+  useEffect(() => {
+    if (!selectedLedgerId && !createOpen && !filtersOpen) return;
+    return registerBackHandler(() => {
+      if (createOpen) {
+        setCreateOpen(false);
+        return true;
+      }
+      if (filtersOpen) {
+        setFiltersOpen(false);
+        return true;
+      }
+      if (selectedLedgerId) {
+        setSelectedLedgerId(null);
+        navigate("/dashboard");
+        refreshDashboard();
+        return true;
+      }
+      return false;
+    });
+  }, [selectedLedgerId, createOpen, filtersOpen, navigate, refreshDashboard]);
 
   useEffect(() => {
     if (initialLedgerId !== undefined) {

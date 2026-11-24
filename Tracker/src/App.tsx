@@ -15,6 +15,7 @@ import { consumeFreshLoginUnlocked, isBiometricLockEnabled, unlockWithBiometric 
 import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 import { initializeNotifications } from "@/lib/notifications";
+import { registerBackHandler } from "@/lib/back-handler";
 import { ForceUpdateModal } from "@/components/ForceUpdateModal";
 import Auth from "./pages/Auth";
 
@@ -154,8 +155,25 @@ const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {
 
 const AppRoutes = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [maintenance, setMaintenance] = useState(false);
   const isAdminRoute = location.pathname.startsWith("/admin");
+
+  useEffect(() => {
+    return registerBackHandler(() => {
+      const path = location.pathname;
+      if (
+        path === "/register" ||
+        path === "/forgot-password" ||
+        path === "/reset-password" ||
+        path === "/verify-otp"
+      ) {
+        navigate("/login");
+        return true;
+      }
+      return false;
+    });
+  }, [location.pathname, navigate]);
 
   useEffect(() => {
     let active = true;
