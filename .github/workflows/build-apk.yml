@@ -48,24 +48,26 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
+      - name: Extract App Version
+        id: get_version
+        run: |
+          VERSION=$(node -p "const fs=require('fs'); const m=fs.readFileSync('Tracker/src/lib/version.ts','utf8').match(/APP_VERSION\s*=\s*['\"]([^'\"]+)['\"]/); m ? m[1] : '2.4.6'")
+          echo "APP_VERSION=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Prepare APK for Release
         run: |
           mkdir -p release-apk
-          find Tracker/android -name "*.apk" -exec cp {} release-apk/Spendova-debug.apk \;
+          VERSION="${{ steps.get_version.outputs.APP_VERSION }}"
+          find Tracker/android -name "*.apk" -exec cp {} release-apk/Spendova_v${VERSION}.apk \;
+          cp release-apk/Spendova_v${VERSION}.apk release-apk/Spendova-debug.apk
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
           name: Spendova-Android-APK
-          path: release-apk/Spendova-debug.apk
+          path: release-apk/Spendova_v${{ steps.get_version.outputs.APP_VERSION }}.apk
           retention-days: 1
-
-      - name: Extract App Version
-        id: get_version
-        run: |
-          VERSION=$(node -p "const fs=require('fs'); const m=fs.readFileSync('Tracker/src/lib/version.ts','utf8').match(/APP_VERSION\s*=\s*['\"]([^'\"]+)['\"]/); m ? m[1] : '2.1.0'")
-          echo "APP_VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Publish APK to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -77,7 +79,9 @@ jobs:
             RELEASE_VERSION=${{ steps.get_version.outputs.APP_VERSION }}
             Automated Android release for Spendova v${{ steps.get_version.outputs.APP_VERSION }}.
             Commit: ${{ github.sha }}
-          files: release-apk/Spendova-debug.apk
+          files: |
+            release-apk/Spendova_v${{ steps.get_version.outputs.APP_VERSION }}.apk
+            release-apk/Spendova-debug.apk
           prerelease: false
           make_latest: true
         env:

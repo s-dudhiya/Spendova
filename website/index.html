@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spendova — Smart Expense Tracking & Bill Splitting</title>
+  <meta name="description" content="Download Spendova for Android. Effortlessly track personal expenses, split group bills with friends, eliminate circular debt with automated simplification, and get instant push updates.">
+  <meta name="keywords" content="Spendova, expense tracker, split bills, debt simplification, group expenses, android apk download, personal finance app">
+  <meta name="author" content="Spendova">
+
+  <!-- Open Graph / Social Meta -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Spendova — Smarter Spending. Seamless Splitting.">
+  <meta property="og:description" content="Download the latest Spendova Android APK. Manage personal budgets, split shared expenses with friends, and settle debts with fewer transactions.">
+  <meta property="og:image" content="assets/brand/spendova-icon-512.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/brand/spendova-icon-180.png">
+
+  <!-- Inter Font matching Spendova App -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              DEFAULT: '#7c3aed',
+              50: '#f5f3ff',
+              100: '#ede9fe',
+              200: '#ddd6fe',
+              300: '#c4b5fd',
+              400: '#a78bfa',
+              500: '#8b5cf6',
+              600: '#7c3aed',
+              700: '#6d28d9',
+              800: '#5b21b6',
+              900: '#4c1d95',
+            },
+          },
+        },
+      },
+    }
+  </script>
+
+  <style>
+    /* Exact Spendova App HSL Theme Variables */
+    :root {
+      --bg: #c5bedb;
+      --card-bg: #d7d1e8;
+      --surface-bg: #cec7e2;
+      --elevated-bg: #ded9ee;
+      --text-main: #252238;
+      --text-muted: #5e5775;
+      --border-color: #b5a9cc;
+      --primary: #7c3aed;
+      --primary-hover: #6d28d9;
+      --header-bg: rgba(197, 190, 219, 0.88);
+      --card-border: rgba(124, 58, 237, 0.16);
+      --glow-opacity: 0.12;
+    }
+
+    html.dark {
+      --bg: #0b0914;
+      --card-bg: #141124;
+      --surface-bg: #100d1e;
+      --elevated-bg: #1a172e;
+      --text-main: #dedaf0;
+      --text-muted: #9690a6;
+      --border-color: #2e2945;
+      --primary: #8b5cf6;
+      --primary-hover: #7c3aed;
+      --header-bg: rgba(11, 9, 20, 0.88);
+      --card-border: rgba(139, 92, 246, 0.18);
+      --glow-opacity: 0.22;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    .spendova-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      transition: all 0.25s ease;
+    }
+    .spendova-card:hover {
+      border-color: rgba(124, 58, 237, 0.38);
+    }
+
+    .spendova-btn-primary {
+      background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+      box-shadow: 0 10px 24px -2px rgba(124, 58, 237, 0.38);
+    }
+    .spendova-btn-primary:hover {
+      filter: brightness(1.08);
+      box-shadow: 0 14px 30px -2px rgba(124, 58, 237, 0.52);
+    }
+
+    .ambient-glow {
+      position: absolute;
+      width: 580px;
+      height: 580px;
+      background: radial-gradient(circle, rgba(124, 58, 237, var(--glow-opacity)) 0%, rgba(139, 92, 246, 0.04) 50%, transparent 70%);
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+    }
+  </style>
+</head>
+<body class="min-h-screen overflow-x-hidden selection:bg-brand-600 selection:text-white">
+
+  <!-- Ambient Glow Effects -->
+  <div class="ambient-glow top-0 left-1/2 -translate-x-1/2"></div>
+  <div class="ambient-glow top-[900px] left-[-200px] opacity-40"></div>
+  <div class="ambient-glow top-[1700px] right-[-200px] opacity-40"></div>
+
+  <!-- Header / Navigation Bar -->
+  <header class="sticky top-0 z-50 w-full border-b backdrop-blur-xl" style="border-color: var(--border-color); background-color: var(--header-bg);">
+    <div class="mx-auto flex max-w-7xl items-center justify-between px-5 py-3.5 sm:px-8">
+      
+      <!-- Brand Logo (Exact Spendova Login Branding) -->
+      <a href="#" class="flex items-center transition hover:opacity-90" aria-label="Spendova home">
+        <!-- Light Mode Logo (Exact Auth.tsx branding) -->
+        <picture class="block dark:hidden">
+          <source media="(max-width: 640px)" srcSet="assets/brand/login-branding-image-mobile.webp" type="image/webp" />
+          <source media="(max-width: 1024px)" srcSet="assets/brand/login-branding-image-tablet.webp" type="image/webp" />
+          <source srcSet="assets/brand/login-branding-image-desktop.webp" type="image/webp" />
+          <img
+            src="assets/brand/login-branding-image.png"
+            alt="Spendova — Split. Track. Grow."
+            width="400"
+            height="145"
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
+            class="h-9 sm:h-10 md:h-11 w-auto object-contain select-none"
+          />
+        </picture>
+
+        <!-- Dark Mode Logo (High-contrast for dark background) -->
+        <picture class="hidden dark:block">
+          <source media="(max-width: 640px)" srcSet="assets/brand/login-branding-image-dark-mobile.webp" type="image/webp" />
+          <source media="(max-width: 1024px)" srcSet="assets/brand/login-branding-image-dark-tablet.webp" type="image/webp" />
+          <source srcSet="assets/brand/login-branding-image-dark-desktop.webp" type="image/webp" />
+          <img
+            src="assets/brand/login-branding-image-dark.png"
+            alt="Spendova — Split. Track. Grow."
+            width="400"
+            height="145"
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
+            class="h-9 sm:h-10 md:h-11 w-auto object-contain select-none"
+          />
+        </picture>
+      </a>
+
+      <!-- Navigation Links (Desktop) -->
+      <nav class="hidden md:flex items-center gap-7 text-sm font-semibold" style="color: var(--text-muted);">
+        <a href="#features" class="transition hover:text-brand-500">Features</a>
+        <a href="#how-it-works" class="transition hover:text-brand-500">Debt Engine</a>
+        <a href="#install-guide" class="transition hover:text-brand-500">Install App</a>
+        <a href="#faq" class="transition hover:text-brand-500">FAQ</a>
+      </nav>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-2.5 sm:gap-3">
+        
+        <!-- Dark / Light Theme Toggle -->
+        <button id="theme-toggle" class="grid size-9 place-items-center rounded-xl border transition" style="border-color: var(--border-color); background-color: var(--surface-bg); color: var(--text-main);" aria-label="Toggle theme">
+          <!-- Sun Icon (shown in dark mode) -->
+          <svg id="sun-icon" class="size-4 hidden dark:block text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          <!-- Moon Icon (shown in light mode) -->
+          <svg id="moon-icon" class="size-4 block dark:hidden text-brand-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+        </button>
+
+        <!-- Open Web App -->
+        <a href="/login" class="hidden sm:inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold transition" style="border-color: var(--border-color); background-color: var(--surface-bg); color: var(--text-main);">
+          <span>Web App</span>
+          <svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+        </a>
+
+        <!-- Download App Button (Nav) -->
+        <a href="https://github.com/s-dudhiya/Spendova/releases/download/v-latest/Spendova-debug.apk" download="Spendova_v2.4.6.apk" class="apk-download-btn spendova-btn-primary inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-95">
+          <svg class="size-4 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-1.0002s.4482-1.0002.9993-1.0002c.5516 0 .9997.4486.9997 1.0002s-.4481 1.0002-.9997 1.0002m-11.046 0c-.5511 0-.9993-.4486-.9993-1.0002s.4482-1.0002.9993-1.0002c.5516 0 .9997.4486.9997 1.0002s-.4481 1.0002-.9997 1.0002m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.4116 13.8533 8.12 12 8.12s-3.5902.2916-5.1368.8306L4.8409 5.4475a.416.416 0 00-.5676-.1521.416.416 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3432-4.1021-2.6889-7.5743-6.1185-9.4396"/></svg>
+          <span>Download App</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="relative z-10 px-5 pt-12 pb-20 sm:px-8 sm:pt-20 sm:pb-28">
+    <div class="mx-auto max-w-5xl text-center">
+      
+      <!-- Live Version Badge -->
+      <div class="inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold backdrop-blur-md mb-6" style="border-color: var(--card-border); background-color: var(--surface-bg); color: var(--primary);">
+        <span class="relative flex size-2">
+          <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex size-2 rounded-full bg-emerald-500"></span>
+        </span>
+        <span id="hero-badge-version">Spendova v2.4.6 · Latest Android Release</span>
+      </div>
+
+      <!-- Main Headline -->
+      <h1 class="text-3xl font-extrabold tracking-tight sm:text-5xl md:text-6xl leading-tight sm:leading-tight" style="color: var(--text-main);">
+        Smarter Spending.<br>
+        <span class="bg-gradient-to-r from-brand-500 via-brand-400 to-indigo-400 bg-clip-text text-transparent">Seamless Bill Splitting.</span>
+      </h1>
+
+      <!-- Subtitle Description -->
+      <p class="mx-auto mt-6 max-w-2xl text-base sm:text-lg font-medium leading-relaxed" style="color: var(--text-muted);">
+        The complete finance companion. Track personal budgets, split shared expenses with friends, eliminate circular debt with automated math, and get instant push updates.
+      </p>
+
+      <!-- Primary Action Buttons -->
+      <div class="mt-9 flex flex-col sm:flex-row items-center justify-center gap-4">
+        
+        <!-- Primary Direct APK Download Button -->
+        <a href="https://github.com/s-dudhiya/Spendova/releases/download/v-latest/Spendova-debug.apk" download="Spendova_v2.4.6.apk" class="apk-download-btn spendova-btn-primary group flex w-full sm:w-auto items-center justify-center gap-3.5 rounded-2xl px-7 py-4 text-base font-bold text-white transition-all hover:scale-[1.02] active:scale-95">
+          <div class="grid size-9 place-items-center rounded-xl bg-white/20 text-white transition group-hover:scale-110">
+            <svg class="size-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-1.0002s.4482-1.0002.9993-1.0002c.5516 0 .9997.4486.9997 1.0002s-.4481 1.0002-.9997 1.0002m-11.046 0c-.5511 0-.9993-.4486-.9993-1.0002s.4482-1.0002.9993-1.0002c.5516 0 .9997.4486.9997 1.0002s-.4481 1.0002-.9997 1.0002m11.4045-6.02l1.9973-3.4592a.416.416 0 00-.1521-.5676.416.416 0 00-.5676.1521l-2.0223 3.503C15.5902 8.4116 13.8533 8.12 12 8.12s-3.5902.2916-5.1368.8306L4.8409 5.4475a.416.416 0 00-.5676-.1521.416.416 0 00-.1521.5676l1.9973 3.4592C2.6889 11.1867.3432 14.6589 0 18.761h24c-.3432-4.1021-2.6889-7.5743-6.1185-9.4396"/></svg>
+          </div>
+          <div class="text-left">
+            <span class="block text-[11px] font-semibold uppercase tracking-wider text-brand-200">Official Android APK</span>
+            <span class="block text-base font-extrabold text-white">Download Spendova App</span>
+          </div>
+          <svg class="ml-1 size-5 text-brand-200 transition group-hover:translate-y-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+        </a>
+
+        <!-- Launch Web App CTA -->
+        <a href="/login" class="flex w-full sm:w-auto items-center justify-center gap-2 rounded-2xl border px-6 py-4 text-sm font-bold transition hover:border-brand-500" style="border-color: var(--border-color); background-color: var(--surface-bg); color: var(--text-main);">
+          <svg class="size-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+          <span>Open in Browser (Web App)</span>
+        </a>
+
+      </div>
+
+      <!-- Release Meta Info -->
+      <div class="mt-4 flex flex-wrap items-center justify-center gap-y-2 gap-x-5 text-xs font-semibold" style="color: var(--text-muted);">
+        <span class="flex items-center gap-1.5">
+          <svg class="size-3.5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+          <span id="meta-version">Version 2.4.6</span>
+        </span>
+        <span class="opacity-40">•</span>
+        <span class="flex items-center gap-1.5">
+          <svg class="size-3.5 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+          <span id="meta-size">Size: ~12 MB</span>
+        </span>
+        <span class="opacity-40">•</span>
+        <span class="flex items-center gap-1.5">
+          <svg class="size-3.5 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span id="meta-date">Direct Download</span>
+        </span>
+      </div>
+
+      <!-- App Mockup Preview Card -->
+      <div class="mt-14 mx-auto max-w-3xl">
+        <div class="spendova-card rounded-[2rem] p-3 sm:p-5 shadow-2xl">
+          <div class="rounded-[1.4rem] border p-4 sm:p-6 text-left" style="border-color: var(--border-color); background-color: var(--surface-bg);">
+            
+            <!-- Mock Header -->
+            <div class="flex items-center justify-between pb-4 border-b" style="border-color: var(--border-color);">
+              <div class="flex items-center gap-3">
+                <div class="size-9 rounded-full bg-gradient-to-tr from-brand-600 to-indigo-500 grid place-items-center font-bold text-xs text-white">
+                  SD
+                </div>
+                <div>
+                  <p class="text-xs font-medium" style="color: var(--text-muted);">Welcome back,</p>
+                  <p class="text-sm font-bold" style="color: var(--text-main);">Shabbir Dudhiya</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="grid size-8 place-items-center rounded-xl border text-brand-500" style="border-color: var(--border-color); background-color: var(--card-bg);">
+                  <svg class="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                </span>
+              </div>
+            </div>
+
+            <!-- Balances Mock Widget -->
+            <div class="grid grid-cols-2 gap-3 mt-4">
+              <div class="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-3.5">
+                <p class="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">You are owed</p>
+                <p class="mt-1 text-xl sm:text-2xl font-extrabold text-emerald-700 dark:text-emerald-300">₹1,450.00</p>
+                <p class="text-[10px] mt-0.5" style="color: var(--text-muted);">from 3 friends</p>
+              </div>
+              <div class="rounded-2xl border border-rose-500/25 bg-rose-500/10 p-3.5">
+                <p class="text-[11px] font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-wider">You owe</p>
+                <p class="mt-1 text-xl sm:text-2xl font-extrabold text-rose-700 dark:text-rose-300">₹320.00</p>
+                <p class="text-[10px] mt-0.5" style="color: var(--text-muted);">in Goa Trip Group</p>
+              </div>
+            </div>
+
+            <!-- Quick Action Badges -->
+            <div class="flex items-center gap-2 overflow-x-auto py-3 mt-1 scrollbar-none">
+              <span class="shrink-0 rounded-xl bg-brand-600/20 border border-brand-500/30 px-3 py-1.5 text-xs font-bold text-brand-600 dark:text-brand-300">+ Add Expense</span>
+              <span class="shrink-0 rounded-xl border px-3 py-1.5 text-xs font-bold" style="border-color: var(--border-color); background-color: var(--card-bg); color: var(--text-muted);">Settle Balance</span>
+              <span class="shrink-0 rounded-xl border px-3 py-1.5 text-xs font-bold" style="border-color: var(--border-color); background-color: var(--card-bg); color: var(--text-muted);">Simplified Debts</span>
+              <span class="shrink-0 rounded-xl border px-3 py-1.5 text-xs font-bold" style="border-color: var(--border-color); background-color: var(--card-bg); color: var(--text-muted);">Export Report</span>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Core Features Grid -->
+  <section id="features" class="relative z-10 border-t px-5 py-20 sm:px-8 sm:py-28" style="border-color: var(--border-color); background-color: var(--surface-bg);">
+    <div class="mx-auto max-w-6xl">
+      
+      <div class="text-center max-w-3xl mx-auto">
+        <p class="text-xs font-bold uppercase tracking-widest text-brand-500">Why Spendova</p>
+        <h2 class="mt-2 text-2xl font-extrabold sm:text-4xl" style="color: var(--text-main);">Everything you need to master your money and share bills.</h2>
+        <p class="mt-3 text-sm sm:text-base" style="color: var(--text-muted);">Designed with mathematical accuracy, privacy, and everyday convenience.</p>
+      </div>
+
+      <div class="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        
+        <!-- Card 1 -->
+        <div class="spendova-card rounded-2xl p-6 transition-all hover:-translate-y-1">
+          <div class="grid size-11 place-items-center rounded-xl bg-brand-600/20 text-brand-500">
+            <svg class="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </div>
+          <h3 class="mt-4 text-lg font-bold" style="color: var(--text-main);">Smart Debt Simplification</h3>
+          <p class="mt-2 text-sm leading-relaxed" style="color: var(--text-muted);">
+            When 3 or more people owe each other in a group, Spendova automatically simplifies circular debts into the minimum number of direct transfers.
+          </p>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="spendova-card rounded-2xl p-6 transition-all hover:-translate-y-1">
+          <div class="grid size-11 place-items-center rounded-xl bg-brand-600/20 text-brand-500">
+            <svg class="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+          </div>
+          <h3 class="mt-4 text-lg font-bold" style="color: var(--text-main);">Group & 1-on-1 Splits</h3>
+          <p class="mt-2 text-sm leading-relaxed" style="color: var(--text-muted);">
+            Split trips, flat rent, groceries, or dinner outings. Support for equal, unequal, exact rupees, percentage splits, and multiple payers.
+          </p>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="spendova-card rounded-2xl p-6 transition-all hover:-translate-y-1">
+          <div class="grid size-11 place-items-center rounded-xl bg-brand-600/20 text-brand-500">
+            <svg class="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          </div>
+          <h3 class="mt-4 text-lg font-bold" style="color: var(--text-main);">Personal Budgets & Ledgers</h3>
+          <p class="mt-2 text-sm leading-relaxed" style="color: var(--text-muted);">
+            Beyond splitting, track your individual savings, category budgets, monthly spending trends, and highest spending categories.
+          </p>
+        </div>
+
+        <!-- Card 4 -->
+        <div class="spendova-card rounded-2xl p-6 transition-all hover:-translate-y-1">
+          <div class="grid size-11 place-items-center rounded-xl bg-brand-600/20 text-brand-500">
+            <svg class="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+          </div>
+          <h3 class="mt-4 text-lg font-bold" style="color: var(--text-main);">Instant Push Alerts</h3>
+          <p class="mt-2 text-sm leading-relaxed" style="color: var(--text-muted);">
+            Never miss a payment. Get native lockscreen push alerts immediately when a friend adds an expense or settles a balance.
+          </p>
+        </div>
+
+        <!-- Card 5 -->
+        <div class="spendova-card rounded-2xl p-6 transition-all hover:-translate-y-1">
+          <div class="grid size-11 place-items-center rounded-xl bg-brand-600/20 text-brand-500">
+            <svg class="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          </div>
+          <h3 class="mt-4 text-lg font-bold" style="color: var(--text-main);">Biometric Lock & Privacy</h3>
+          <p class="mt-2 text-sm leading-relaxed" style="color: var(--text-muted);">
+            Keep your finances confidential with optional Android fingerprint and biometric authentication on app launch.
+          </p>
+        </div>
+
+        <!-- Card 6 -->
+        <div class="spendova-card rounded-2xl p-6 transition-all hover:-translate-y-1">
+          <div class="grid size-11 place-items-center rounded-xl bg-brand-600/20 text-brand-500">
+            <svg class="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+          </div>
+          <h3 class="mt-4 text-lg font-bold" style="color: var(--text-main);">Native Android Feel</h3>
+          <p class="mt-2 text-sm leading-relaxed" style="color: var(--text-muted);">
+            Supports smooth Android system back-swipe gesture, 2-tap exit safeguard, edge-to-edge display, and offline data cache.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- How Debt Simplification Works Section -->
+  <section id="how-it-works" class="relative z-10 px-5 py-20 sm:px-8 sm:py-28">
+    <div class="mx-auto max-w-5xl">
+      <div class="grid gap-12 lg:grid-cols-2 items-center">
+        <div>
+          <p class="text-xs font-bold uppercase tracking-widest text-brand-500">Math Made Simple</p>
+          <h2 class="mt-2 text-2xl font-extrabold sm:text-4xl" style="color: var(--text-main);">Say goodbye to 10 confusing transfers.</h2>
+          <p class="mt-4 text-sm sm:text-base leading-relaxed" style="color: var(--text-muted);">
+            In typical group trips, everyone buys something: Alice buys dinner, Bob books cabs, and Charlie gets groceries. Traditional apps force 6 separate transfers between everyone.
+          </p>
+          <p class="mt-3 text-sm sm:text-base leading-relaxed" style="color: var(--text-muted);">
+            Spendova evaluates net positions and <strong style="color: var(--text-main);">cancels out circular debts</strong> automatically. You get the exact same net settlement in just 1 or 2 simple transfers.
+          </p>
+          <div class="mt-6 flex items-center gap-3">
+            <span class="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">✓ Invariance Guaranteed</span>
+            <span class="inline-flex items-center gap-1.5 rounded-xl border border-brand-500/30 bg-brand-500/10 px-3 py-1.5 text-xs font-bold text-brand-600 dark:text-brand-300">✓ One-Tap Toggle</span>
+          </div>
+        </div>
+
+        <div class="spendova-card rounded-2xl p-6">
+          <div class="text-xs font-bold uppercase tracking-wider mb-4" style="color: var(--text-muted);">Example Scenario: 3 Friends</div>
+          
+          <div class="space-y-3">
+            <div class="flex items-center justify-between p-3 rounded-xl border" style="border-color: var(--border-color); background-color: var(--surface-bg);">
+              <span class="text-sm font-semibold" style="color: var(--text-main);">Without Simplification:</span>
+              <span class="text-xs font-bold text-rose-500 bg-rose-500/10 px-2.5 py-1 rounded-lg">3 different transfers</span>
+            </div>
+            <div class="p-4 rounded-xl border border-brand-500/30 bg-brand-500/10">
+              <span class="text-xs font-bold uppercase tracking-wider text-brand-600 dark:text-brand-300">With Spendova Simplification:</span>
+              <p class="mt-1.5 text-sm font-bold" style="color: var(--text-main);">Charlie simply pays ₹300 directly to Bob.</p>
+              <p class="mt-1 text-xs" style="color: var(--text-muted);">Alice's net is 0. Everyone is 100% settled up in 1 payment!</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How to Install APK Section -->
+  <section id="install-guide" class="relative z-10 border-t px-5 py-20 sm:px-8 sm:py-28" style="border-color: var(--border-color); background-color: var(--surface-bg);">
+    <div class="mx-auto max-w-5xl">
+      <div class="text-center max-w-2xl mx-auto">
+        <p class="text-xs font-bold uppercase tracking-widest text-brand-500">Quick Setup</p>
+        <h2 class="mt-2 text-2xl font-extrabold sm:text-4xl" style="color: var(--text-main);">How to Install Spendova on Android</h2>
+        <p class="mt-3 text-sm sm:text-base" style="color: var(--text-muted);">Installing directly takes less than 60 seconds.</p>
+      </div>
+
+      <div class="mt-12 grid gap-6 sm:grid-cols-3">
+        
+        <!-- Step 1 -->
+        <div class="spendova-card rounded-2xl p-6 text-center">
+          <div class="mx-auto grid size-12 place-items-center rounded-2xl bg-brand-600 text-lg font-black text-white shadow-lg">1</div>
+          <h3 class="mt-4 text-base font-bold" style="color: var(--text-main);">Download the App</h3>
+          <p class="mt-2 text-xs sm:text-sm leading-relaxed" style="color: var(--text-muted);">
+            Tap the <strong class="text-brand-500">Download App</strong> button. Your phone will download the latest <code class="text-xs bg-brand-500/10 px-1 py-0.5 rounded text-brand-600 dark:text-brand-300">Spendova-debug.apk</code> file.
+          </p>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="spendova-card rounded-2xl p-6 text-center">
+          <div class="mx-auto grid size-12 place-items-center rounded-2xl bg-brand-600 text-lg font-black text-white shadow-lg">2</div>
+          <h3 class="mt-4 text-base font-bold" style="color: var(--text-main);">Tap to Open</h3>
+          <p class="mt-2 text-xs sm:text-sm leading-relaxed" style="color: var(--text-muted);">
+            Tap the completed download alert on your screen or open it from your phone's <em>Files &gt; Downloads</em> folder.
+          </p>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="spendova-card rounded-2xl p-6 text-center">
+          <div class="mx-auto grid size-12 place-items-center rounded-2xl bg-brand-600 text-lg font-black text-white shadow-lg">3</div>
+          <h3 class="mt-4 text-base font-bold" style="color: var(--text-main);">Allow &amp; Install</h3>
+          <p class="mt-2 text-xs sm:text-sm leading-relaxed" style="color: var(--text-muted);">
+            If Android prompts <em>"Install unknown apps"</em>, tap <strong>Settings</strong> &gt; toggle <strong>Allow</strong>, then tap <strong>Install</strong>.
+          </p>
+        </div>
+
+      </div>
+
+      <!-- Action Button in Guide -->
+      <div class="mt-10 text-center">
+        <a href="https://github.com/s-dudhiya/Spendova/releases/download/v-latest/Spendova-debug.apk" download="Spendova_v2.4.6.apk" class="apk-download-btn spendova-btn-primary inline-flex items-center gap-2.5 rounded-2xl px-8 py-3.5 text-sm font-bold text-white transition hover:scale-[1.02]">
+          <svg class="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+          <span>Download Spendova App Now</span>
+        </a>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Latest Release Notes Box -->
+  <section class="relative z-10 px-5 py-16 sm:px-8">
+    <div class="mx-auto max-w-4xl spendova-card rounded-2xl p-6 sm:p-8">
+      <div class="flex flex-wrap items-center justify-between gap-4 border-b pb-5" style="border-color: var(--border-color);">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-brand-500">Release Changelog</span>
+          <h3 class="mt-1 text-xl font-bold flex items-center gap-2.5" style="color: var(--text-main);">
+            <span id="changelog-version">Spendova v2.4.6</span>
+            <span class="rounded-full bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-300">Stable</span>
+          </h3>
+        </div>
+        <span class="text-xs font-semibold text-brand-600 dark:text-brand-300">Latest Version</span>
+      </div>
+
+      <div class="mt-5 text-sm space-y-2.5 leading-relaxed" style="color: var(--text-muted);" id="changelog-body">
+        <p class="flex items-start gap-2">
+          <span class="text-brand-500 font-bold">✓</span>
+          <span><strong style="color: var(--text-main);">Native Android Back Navigation</strong>: System edge back-swipe support with 2-tap exit safeguard.</span>
+        </p>
+        <p class="flex items-start gap-2">
+          <span class="text-brand-500 font-bold">✓</span>
+          <span><strong style="color: var(--text-main);">In-App Notification Inbox</strong>: Real-time synchronization of system updates, friend requests, and settlements.</span>
+        </p>
+        <p class="flex items-start gap-2">
+          <span class="text-brand-500 font-bold">✓</span>
+          <span><strong style="color: var(--text-main);">Debt Simplification Engine</strong>: 100% verified invariance with partial settle-up protection.</span>
+        </p>
+        <p class="flex items-start gap-2">
+          <span class="text-brand-500 font-bold">✓</span>
+          <span><strong style="color: var(--text-main);">Performance &amp; Battery</strong>: Optimized FCM background tokens and startup asset bundle.</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ Section -->
+  <section id="faq" class="relative z-10 border-t px-5 py-20 sm:px-8" style="border-color: var(--border-color); background-color: var(--surface-bg);">
+    <div class="mx-auto max-w-3xl">
+      <div class="text-center">
+        <p class="text-xs font-bold uppercase tracking-widest text-brand-500">FAQ</p>
+        <h2 class="mt-2 text-2xl font-extrabold sm:text-3xl" style="color: var(--text-main);">Frequently Asked Questions</h2>
+      </div>
+
+      <div class="mt-10 space-y-4">
+        
+        <details class="spendova-card group rounded-2xl p-5 cursor-pointer">
+          <summary class="flex items-center justify-between font-bold text-sm sm:text-base select-none list-none" style="color: var(--text-main);">
+            <span>Is Spendova free to use?</span>
+            <span class="text-brand-500 transition group-open:rotate-180">▼</span>
+          </summary>
+          <p class="mt-3 text-xs sm:text-sm leading-relaxed" style="color: var(--text-muted);">
+            Yes! Spendova is completely free with no hidden paywalls, ad clutter, or subscription fees for creating groups, splitting expenses, and downloading updates.
+          </p>
+        </details>
+
+        <details class="spendova-card group rounded-2xl p-5 cursor-pointer">
+          <summary class="flex items-center justify-between font-bold text-sm sm:text-base select-none list-none" style="color: var(--text-main);">
+            <span>Can I use Spendova on iPhone or PC?</span>
+            <span class="text-brand-500 transition group-open:rotate-180">▼</span>
+          </summary>
+          <p class="mt-3 text-xs sm:text-sm leading-relaxed" style="color: var(--text-muted);">
+            Yes! While the direct app download is for Android devices, Spendova has a fully responsive Progressive Web App that works seamlessly in Safari, Chrome, Edge, and Firefox on any phone, tablet, or desktop.
+          </p>
+        </details>
+
+        <details class="spendova-card group rounded-2xl p-5 cursor-pointer">
+          <summary class="flex items-center justify-between font-bold text-sm sm:text-base select-none list-none" style="color: var(--text-main);">
+            <span>How will I get future app updates?</span>
+            <span class="text-brand-500 transition group-open:rotate-180">▼</span>
+          </summary>
+          <p class="mt-3 text-xs sm:text-sm leading-relaxed" style="color: var(--text-muted);">
+            Spendova has a built-in auto-update checker. Whenever a new version is published, your installed app will detect it and provide a 1-tap in-app update. You can also re-download the latest version from this website anytime.
+          </p>
+        </details>
+
+        <details class="spendova-card group rounded-2xl p-5 cursor-pointer">
+          <summary class="flex items-center justify-between font-bold text-sm sm:text-base select-none list-none" style="color: var(--text-main);">
+            <span>Is my financial data secure?</span>
+            <span class="text-brand-500 transition group-open:rotate-180">▼</span>
+          </summary>
+          <p class="mt-3 text-xs sm:text-sm leading-relaxed" style="color: var(--text-muted);">
+            All data is encrypted in transit and at rest using enterprise-grade cloud security, strict access controls, and optional on-device biometric fingerprint locking.
+          </p>
+        </details>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Sticky Mobile Bottom Download Bar -->
+  <div id="sticky-mobile-bar" class="fixed bottom-0 inset-x-0 z-50 p-3 sm:hidden border-t backdrop-blur-xl" style="border-color: var(--border-color); background-color: var(--header-bg);">
+    <div class="flex items-center gap-2.5">
+      <a href="https://github.com/s-dudhiya/Spendova/releases/download/v-latest/Spendova-debug.apk" download="Spendova_v2.4.6.apk" class="apk-download-btn spendova-btn-primary flex-1 inline-flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold text-white">
+        <svg class="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+        <span>Download Spendova App</span>
+      </a>
+      <a href="/login" class="inline-flex items-center justify-center rounded-xl border px-3.5 py-3 text-xs font-bold" style="border-color: var(--border-color); background-color: var(--surface-bg); color: var(--text-main);">
+        <span>Web App</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="relative z-10 border-t px-5 py-12 pb-24 sm:pb-12 text-center text-xs" style="border-color: var(--border-color); background-color: var(--surface-bg); color: var(--text-muted);">
+    <div class="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-6 px-4">
+      <div class="flex items-center gap-2">
+        <img src="assets/brand/spendova-symbol.png" alt="Spendova" class="size-6 object-contain">
+        <span class="text-sm font-bold" style="color: var(--text-main);">Spendova</span>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-center gap-6 font-medium">
+        <a href="#features" class="hover:text-brand-500 transition">Features</a>
+        <a href="#how-it-works" class="hover:text-brand-500 transition">Debt Engine</a>
+        <a href="#install-guide" class="hover:text-brand-500 transition">Installation</a>
+        <a href="/login" class="hover:text-brand-500 transition">Web App</a>
+      </div>
+
+      <p>© 2026 Spendova. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <!-- Theme Toggle & Release Script -->
+  <script>
+    // Theme Switcher matching Spendova App (persisted in localStorage)
+    (function initTheme() {
+      const savedTheme = localStorage.getItem('spendova_theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (savedTheme === 'light' || (!savedTheme && !prefersDark)) {
+        document.documentElement.classList.remove('dark');
+      } else {
+        document.documentElement.classList.add('dark');
+      }
+
+      const toggleBtn = document.getElementById('theme-toggle');
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+          const isDark = document.documentElement.classList.toggle('dark');
+          localStorage.setItem('spendova_theme', isDark ? 'dark' : 'light');
+        });
+      }
+    })();
+
+    // Background Release Metadata Fetcher
+    (function fetchRelease() {
+      const REPO = "s-dudhiya/Spendova";
+      const API_URL = `https://api.github.com/repos/${REPO}/releases/tags/v-latest`;
+      const DIRECT_APK = `https://github.com/${REPO}/releases/download/v-latest/Spendova-debug.apk`;
+
+      fetch(API_URL, { headers: { Accept: "application/vnd.github.v3+json" } })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (!data) return;
+
+          let version = "";
+          const body = data.body || "";
+          const name = data.name || "";
+          const vMatch = body.match(/RELEASE_VERSION=([0-9]+\.[0-9]+(\.[0-9]+)?)/i);
+          if (vMatch && vMatch[1]) {
+            version = vMatch[1];
+          } else {
+            const nMatch = name.match(/v?([0-9]+\.[0-9]+(\.[0-9]+)?)/i);
+            if (nMatch && nMatch[1]) version = nMatch[1];
+          }
+
+          // Prioritize non-debug versioned APK (e.g. Spendova_v2.4.6.apk), otherwise fall back to any APK
+          const apkAssets = (data.assets || []).filter(a => a.name && a.name.toLowerCase().endsWith(".apk"));
+          const professionalAsset = apkAssets.find(a => !a.name.toLowerCase().includes("debug")) || apkAssets[0];
+          const apkUrl = professionalAsset?.browser_download_url || DIRECT_APK;
+          const apkSizeMB = professionalAsset ? (professionalAsset.size / (1024 * 1024)).toFixed(1) + " MB" : "~12 MB";
+
+          const professionalName = `Spendova_v${version}.apk`;
+
+          if (version) {
+            const badge = document.getElementById("hero-badge-version");
+            if (badge) badge.textContent = `Spendova v${version} · Latest Android Release`;
+            const metaVer = document.getElementById("meta-version");
+            if (metaVer) metaVer.textContent = `Version ${version}`;
+            const changelogVer = document.getElementById("changelog-version");
+            if (changelogVer) changelogVer.textContent = `Spendova v${version}`;
+          }
+
+          const metaSize = document.getElementById("meta-size");
+          if (metaSize) metaSize.textContent = `Size: ${apkSizeMB}`;
+
+          document.querySelectorAll(".apk-download-btn").forEach(btn => {
+            btn.setAttribute("href", apkUrl);
+            btn.setAttribute("download", professionalName);
+          });
+        })
+        .catch(() => {});
+    })();
+  </script>
+
+</body>
+</html>
