@@ -1846,7 +1846,8 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
 
 const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentUserId: string; openModal: (type: ModalType, item?: string) => void }) => {
   const navigate = useNavigate();
-  const [subTab, setSubTabState] = useState<"friends" | "groups">(() => (safeStorage.getItem("spendova-split-tab") === "groups" ? "groups" : "friends"));
+  type SplitSubTab = "all" | "groups" | "friends";
+  const [subTab, setSubTab] = useState<SplitSubTab>("all");
   const seenRequestIdsStorageKey = `spendova-seen-friend-requests-${currentUserId}`;
   const [seenRequestIds, setSeenRequestIds] = useState<string[]>(() => {
     try {
@@ -1898,18 +1899,8 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
     groupItems.filter(({ group, net }) => group.name.toLowerCase().includes(query.toLowerCase()) && matchesBalanceFilter(net)),
     ({ group }) => group.name,
   );
-  const activeSplitItems = subTab === "friends" ? filteredFriends : filteredGroups;
-  const filteredSplitSummary = activeSplitItems.reduce((totals, item) => {
-    if (item.net > 0) totals.owed += item.net;
-    if (item.net < 0) totals.owe += Math.abs(item.net);
-    return totals;
-  }, { owed: 0, owe: 0 });
-  const setSubTab = (value: "friends" | "groups") => {
-    safeStorage.setItem("spendova-split-tab", value);
-    setSubTabState(value);
-  };
+  const activeSplitItems = subTab === "friends" ? filteredFriends : subTab === "groups" ? filteredGroups : [...filteredGroups, ...filteredFriends];
   const openDetail = (kind: "friend" | "group", id: string) => {
-    safeStorage.setItem("spendova-split-tab", kind === "friend" ? "friends" : "groups");
     safeStorage.setItem("spendova-split-scroll", String(window.scrollY));
     navigate(`/split/${kind}/${id}`);
   };
@@ -1938,90 +1929,75 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
     <main className="space-y-6">
       <section className="rounded-[1.25rem] bg-card p-4 shadow-panel">
         <div className="flex rounded-full bg-elevated p-1">
-          {(["friends", "groups"] as const).map((key) => (
-            <button key={key} onClick={() => setSubTab(key)} className={`flex-1 rounded-full px-4 py-2.5 text-sm font-bold capitalize transition-colors ${subTab === key ? "bg-primary text-primary-foreground shadow-primary-action" : "text-muted-foreground"}`}>{key}</button>
+          {(["all", "groups", "friends"] as const).map((key) => (
+            <button
+              key={key}
+              onClick={() => setSubTab(key)}
+              className={`flex-1 rounded-full px-3 py-2 text-xs sm:text-sm font-bold capitalize transition-colors ${subTab === key ? "bg-primary text-primary-foreground shadow-primary-action" : "text-muted-foreground"}`}
+            >
+              {key === "all" ? "All" : key === "groups" ? `Groups (${filteredGroups.length})` : `Friends (${filteredFriends.length})`}
+            </button>
           ))}
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-3">
-        <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You are owed</p><p className="spendova-money-value mt-1 text-lg font-bold text-success sm:text-xl">{money(filteredSplitSummary.owed)}</p></div>
-        <div className="min-w-0 rounded-2xl bg-card p-4 shadow-soft"><p className="text-xs font-semibold text-muted-foreground">You owe</p><p className="spendova-money-value mt-1 text-lg font-bold text-warning sm:text-xl">{money(filteredSplitSummary.owe)}</p></div>
-      </section>
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="flex flex-1 items-center gap-2 rounded-full border border-input bg-background px-4 py-3 shadow-soft">
+            <Search className="size-4 shrink-0 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+              placeholder="Search groups or friends"
+            />
+            {query ? (
+              <button type="button" onClick={() => setQuery("")} className="shrink-0 text-muted-foreground hover:text-foreground">
+                <X className="size-4" />
+              </button>
+            ) : null}
+          </div>
+          <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
+        </div>
 
-      {subTab === "friends" ? (
-        <section className="flex gap-2">
-          <Button onClick={() => openModal(data.friends.length === 0 ? "add-friend" : data.friends.length === 1 ? "add-expense" : "choose-friend-expense", data.friends[0]?.user_id)} className="h-12 flex-1 min-w-0 rounded-full px-2 text-xs font-bold shadow-primary-action sm:px-4 sm:text-sm">
-            <Plus className="mr-1 size-4 shrink-0" />
-            <span className="truncate">Add Expense</span>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => openModal("create-group")}
+            variant="outline"
+            className="h-11 flex-1 min-w-0 rounded-full border-border/80 bg-card px-2 text-xs font-bold text-foreground shadow-soft hover:bg-elevated sm:px-4 sm:text-sm"
+          >
+            <Plus className="mr-1 size-4 shrink-0 text-primary" />
+            <span className="truncate">New Group</span>
           </Button>
-          <Button onClick={() => openModal("add-friend")} variant="quiet" className="h-12 shrink-0 rounded-full border border-border/60 px-3 text-[11px] font-bold sm:px-4 sm:text-xs">
-            <UserPlus className="mr-1 size-3.5 shrink-0" />
-            <span>Add Friend</span>
+          <Button
+            onClick={() => openModal("add-friend")}
+            variant="outline"
+            className="h-11 flex-1 min-w-0 rounded-full border-border/80 bg-card px-2 text-xs font-bold text-foreground shadow-soft hover:bg-elevated sm:px-4 sm:text-sm"
+          >
+            <UserPlus className="mr-1 size-4 shrink-0 text-primary" />
+            <span className="truncate">Add Friend</span>
           </Button>
-          <Button onClick={openFriendRequests} variant="quiet" className="relative h-12 shrink-0 rounded-full border border-border/60 px-3 text-[11px] font-bold sm:px-4 sm:text-xs">
-            <Inbox className="mr-1 size-3.5 shrink-0" />
+          <Button
+            onClick={openFriendRequests}
+            variant="quiet"
+            className="relative h-11 shrink-0 rounded-full border border-border/60 bg-card px-3 text-xs font-bold shadow-soft"
+          >
+            <Inbox className="mr-1 size-4 shrink-0" />
             <span>Requests</span>
             <CountBadge count={requestCount} className="ring-background" />
           </Button>
-        </section>
-      ) : (
-        <section className="grid grid-cols-2 gap-3">
-          <Button onClick={() => openModal("create-group")} variant="outline" className="h-12 border-primary bg-transparent text-primary hover:bg-primary/10 text-xs font-bold sm:text-sm">
-            <Plus className="mr-1 size-4 shrink-0" />
-            <span className="truncate">Create Group</span>
-          </Button>
-          <Button onClick={() => openModal(data.groups.length === 0 ? "create-group" : data.groups.length === 1 ? "group-expense" : "choose-group-expense", data.groups[0]?.id)} className="h-12 shadow-primary-action text-xs font-bold sm:text-sm">
-            <Plus className="mr-1 size-4 shrink-0" />
-            <span className="truncate">Add Group Expense</span>
-          </Button>
-        </section>
-      )}
+        </div>
+      </section>
 
-      {subTab === "friends" ? (
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-bold tracking-tight text-foreground">Friends</h2>
-            <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
-          </div>
-          <div className="mb-3 flex items-center gap-2 rounded-full border border-input bg-background px-4 py-3 shadow-soft">
-            <Search className="size-4 text-muted-foreground" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Search friends" />
+      {(subTab === "all" || subTab === "groups") && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold tracking-tight text-foreground">Groups</h2>
+            <span className="text-xs font-medium text-muted-foreground">{filteredGroups.length} {filteredGroups.length === 1 ? "group" : "groups"}</span>
           </div>
           <div className="space-y-3">
-            {filteredFriends.length === 0 ? (data.friends.length === 0 ? (
-              <BeautifulEmptyState
-                icon={Users}
-                title="No friends yet"
-                subtitle="Add friends to start splitting expenses easily."
-                actionLabel="Add Friend"
-                onAction={() => openModal("add-friend")}
-              />
-            ) : <FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} />) : filteredFriends.map(({ friend, net }) => {
-              return (
-                <button key={friend.user_id} onClick={() => openDetail("friend", friend.user_id)} className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="grid size-11 place-items-center rounded-full bg-elevated font-bold text-primary">{displayName(friend).charAt(0).toUpperCase()}</span>
-                    <div className="min-w-0"><h3 className="truncate font-bold text-foreground">{displayName(friend)}</h3><p className="truncate text-sm text-muted-foreground">@{friend.username || "user"}</p></div>
-                  </div>
-                  <div className="max-w-[48%] shrink-0 text-right">
-                    <p className={`text-sm font-bold ${net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground"}`}>{net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled"}</p>
-                    <ChevronRight className="ml-auto mt-1 size-4 text-muted-foreground" />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      ) : (
-        <>
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-base font-bold tracking-tight text-foreground">Groups</h2>
-              <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
-            </div>
-            <div className="space-y-3">
-              {data.groups.length === 0 ? (
+            {filteredGroups.length === 0 ? (
+              data.groups.length === 0 ? (
                 <BeautifulEmptyState
                   icon={Home}
                   title="No groups yet"
@@ -2029,24 +2005,84 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
                   actionLabel="Create Group"
                   onAction={() => openModal("create-group")}
                 />
-              ) : filteredGroups.length === 0 ? <FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} /> : filteredGroups.map(({ group, net }) => {
-                return (
-                  <button onClick={() => openDetail("group", group.id)} key={group.id} className="w-full rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="grid size-11 place-items-center rounded-full bg-elevated text-xl">{group.emoji || "🏠"}</span>
-                        <div className="min-w-0"><h3 className="truncate font-bold text-foreground">{group.name}</h3><p className="text-sm text-muted-foreground">{group.group_members.length} members</p></div>
-                      </div>
-                      <p className={`max-w-[48%] shrink-0 text-right text-sm font-bold ${net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground"}`}>{net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled"}</p>
+              ) : (
+                <FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} />
+              )
+            ) : (
+              filteredGroups.map(({ group, net }) => (
+                <button
+                  key={group.id}
+                  onClick={() => openDetail("group", group.id)}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="grid size-11 place-items-center rounded-full bg-elevated text-xl shrink-0">{group.emoji || "🏠"}</span>
+                    <div className="min-w-0">
+                      <h3 className="truncate font-bold text-foreground">{group.name}</h3>
+                      <p className="text-sm text-muted-foreground">{group.group_members.length} members</p>
                     </div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        </>
+                  </div>
+                  <div className="max-w-[48%] shrink-0 text-right">
+                    <p className={`text-sm font-bold ${net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground"}`}>
+                      {net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled"}
+                    </p>
+                    <ChevronRight className="ml-auto mt-1 size-4 text-muted-foreground" />
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
       )}
-      <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title={`${subTab === "friends" ? "Friend" : "Group"} filters`} onClear={clearFilters}>
+
+      {(subTab === "all" || subTab === "friends") && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold tracking-tight text-foreground">Friends</h2>
+            <span className="text-xs font-medium text-muted-foreground">{filteredFriends.length} {filteredFriends.length === 1 ? "friend" : "friends"}</span>
+          </div>
+          <div className="space-y-3">
+            {filteredFriends.length === 0 ? (
+              data.friends.length === 0 ? (
+                <BeautifulEmptyState
+                  icon={Users}
+                  title="No friends yet"
+                  subtitle="Add friends to start splitting expenses easily."
+                  actionLabel="Add Friend"
+                  onAction={() => openModal("add-friend")}
+                />
+              ) : (
+                <FilterEmptyState onClear={clearFilters} isDefault={activeFilterCount === 0} onViewAll={() => setFilters((current) => ({ ...current, date: "all" }))} />
+              )
+            ) : (
+              filteredFriends.map(({ friend, net }) => (
+                <button
+                  key={friend.user_id}
+                  onClick={() => openDetail("friend", friend.user_id)}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="grid size-11 place-items-center rounded-full bg-elevated font-bold text-primary shrink-0">
+                      {displayName(friend).charAt(0).toUpperCase()}
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="truncate font-bold text-foreground">{displayName(friend)}</h3>
+                      <p className="truncate text-sm text-muted-foreground">@{friend.username || "user"}</p>
+                    </div>
+                  </div>
+                  <div className="max-w-[48%] shrink-0 text-right">
+                    <p className={`text-sm font-bold ${net > 0 ? "text-success" : net < 0 ? "text-warning" : "text-muted-foreground"}`}>
+                      {net > 0 ? `You are owed ${money(net)}` : net < 0 ? `You owe ${money(Math.abs(net))}` : "Settled"}
+                    </p>
+                    <ChevronRight className="ml-auto mt-1 size-4 text-muted-foreground" />
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+      )}
+      <FilterSheet open={filtersOpen} onOpenChange={setFiltersOpen} title="Split filters" onClear={clearFilters}>
         <FilterField label="Balance" value={filters.balance} onChange={(balance) => setFilters((current) => ({ ...current, balance }))} options={[{ value: "all", label: "All" }, { value: "owe", label: "You owe" }, { value: "owed", label: "You are owed" }, { value: "settled", label: "Settled" }]} />
         <FilterField label="Sort" value={filters.sort} onChange={(sort) => setFilters((current) => ({ ...current, sort }))} options={[{ value: "highest", label: "Highest balance first" }, { value: "lowest", label: "Lowest balance first" }, { value: "az", label: "A to Z" }, { value: "recent", label: "Recently active" }]} />
       </FilterSheet>
@@ -3944,7 +3980,9 @@ const ExpenseForm = ({
   const initialSplitOn = Boolean(
     group || friend || (initialSelectedFriendIds && initialSelectedFriendIds.length > 0) || expense?.expense_splits?.length
   );
-  const [status, setStatus] = useState<"pending" | "cleared">(initialSplitOn ? "cleared" : expense?.status === "cleared" ? "cleared" : "pending");
+  const [status, setStatus] = useState<"pending" | "cleared">(
+    initialSplitOn ? "cleared" : expense ? (expense.status === "pending" ? "pending" : "cleared") : "cleared"
+  );
   const [splitOn, setSplitOn] = useState(initialSplitOn);
   const [strategy, setStrategy] = useState<SplitStrategy>(
     (expense?.split_type === "share" ? "shares" : (expense?.split_type as SplitStrategy)) || "equal"
@@ -4580,19 +4618,19 @@ const ExpenseForm = ({
         </div>
       )}
       {!splitOn && (
-        <label className="flex min-h-11 items-start justify-between gap-3 py-3 text-sm font-semibold text-foreground">
+        <label className="flex min-h-11 cursor-pointer items-start justify-between gap-3 py-3 text-sm font-semibold text-foreground">
           <span>
-            <span className="block">Mark as cleared</span>
+            <span className="block">Mark as pending</span>
             <span className="mt-1 block text-xs font-medium text-muted-foreground">
-              Unchecked expenses remain pending.
+              Leave unchecked if already paid.
             </span>
           </span>
 
           <input
             type="checkbox"
-            checked={status === "cleared"}
+            checked={status === "pending"}
             onChange={(event) =>
-              setStatus(event.target.checked ? "cleared" : "pending")
+              setStatus(event.target.checked ? "pending" : "cleared")
             }
             className="mt-1 size-4 shrink-0 accent-primary"
           />
