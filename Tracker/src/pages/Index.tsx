@@ -1707,8 +1707,8 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
     return map;
   }, [groups]);
   const allTimePersonalBalances = useMemo(
-    () => buildDebtBalances(personalExpenses, settlements, { currentUserId, groupSimplifyMap }),
-    [personalExpenses, settlements, currentUserId, groupSimplifyMap]
+    () => buildDebtBalances(expenses, settlements, { currentUserId, groupSimplifyMap }),
+    [expenses, settlements, currentUserId, groupSimplifyMap]
   );
   const aggregatedDebts = useMemo(
     () => aggregateDebtsByUser(allTimePersonalBalances, currentUserId, groupNames),
