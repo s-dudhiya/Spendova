@@ -30,7 +30,7 @@ const VerifyOtp = lazy(() => import("./pages/VerifyOtp"));
 const queryClient = new QueryClient();
 const STARTUP_FALLBACK_DELAY = 5000;
 const CACHE_VERSION_KEY = "spendova_cache_version";
-const CACHE_VERSION = "startup-resume-fix-20260526";
+const CACHE_VERSION = "v2.4.5-cache-bust-20261124";
 
 const clearSessionAndRestart = async () => {
   await supabase.auth.signOut().catch(() => undefined);
