@@ -151,6 +151,8 @@ export const BudgetLedgerView = ({
 
   const activeFilterCount = (filterType !== "all" ? 1 : 0) + (filterBudget !== "all" ? 1 : 0);
 
+  const { globalSummary, ledgerSummaries, recentActivity, refresh: refreshDashboard } = useLedgersDashboard(ledgers);
+
   useEffect(() => {
     if (!selectedLedgerId && !createOpen && !filtersOpen) return;
     return registerBackHandler(() => {
@@ -177,8 +179,6 @@ export const BudgetLedgerView = ({
       setSelectedLedgerId(initialLedgerId || null);
     }
   }, [initialLedgerId]);
-  
-  const { globalSummary, ledgerSummaries, recentActivity, refresh: refreshDashboard } = useLedgersDashboard(ledgers);
 
   // If a ledger is selected, show its detail view
   if (selectedLedgerId) {

@@ -5510,7 +5510,7 @@ const ActionModal = ({
               } as never).eq("id", split.id);
 
               if (settlementId) {
-                await supabase.from("split_settlement_applications").insert({
+                await (supabase.from as any)("split_settlement_applications").insert({
                   settlement_id: settlementId,
                   split_id: split.id,
                   amount: apply,
@@ -5540,7 +5540,7 @@ const ActionModal = ({
                 } as never).eq("id", split.id);
 
                 if (settlementId) {
-                  await supabase.from("split_settlement_applications").insert({
+                  await (supabase.from as any)("split_settlement_applications").insert({
                     settlement_id: settlementId,
                     split_id: split.id,
                     amount: apply,
@@ -5565,7 +5565,7 @@ const ActionModal = ({
               } as never).eq("id", split.id);
 
               if (settlementId && unpaid > 0.009) {
-                await supabase.from("split_settlement_applications").insert({
+                await (supabase.from as any)("split_settlement_applications").insert({
                   settlement_id: settlementId,
                   split_id: split.id,
                   amount: unpaid,
