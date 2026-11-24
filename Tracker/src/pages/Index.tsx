@@ -1202,7 +1202,7 @@ function getPersonalExpenseDisplay(expense: ExpenseRow, currentUserId: string, g
 }
 
 
-function getSummary(expenses: ExpenseRow[], userId: string, settlements: SplitSettlementRow[] = []) {
+function getSummary(expenses: ExpenseRow[], userId: string, settlements: SplitSettlementRow[] = [], groupSimplifyMap?: Record<string, boolean>) {
   let totalLent = 0;
   let totalOwed = 0;
   let personal = 0;
@@ -1221,7 +1221,7 @@ function getSummary(expenses: ExpenseRow[], userId: string, settlements: SplitSe
     else personalPending += share;
   });
 
-  buildDebtBalances(expenses, settlements, { currentUserId: userId }).forEach((balance) => {
+  buildDebtBalances(expenses, settlements, { currentUserId: userId, groupSimplifyMap }).forEach((balance) => {
     if (balance.toUserId === userId) totalLent += balance.amount;
     if (balance.fromUserId === userId) totalOwed += balance.amount;
   });
@@ -1410,10 +1410,6 @@ const HomeView = ({ expenses, settlements, categories, groups = [], userId, setT
   const activeFilterCount = (range !== "month" ? 1 : 0) + (rangeStart ? 1 : 0) + (rangeEnd ? 1 : 0) + (status !== "all" ? 1 : 0);
   const rangedExpenses = expenses.filter((expense) => filterByDate(expense.created_at, range, rangeStart, rangeEnd));
   const filteredExpenses = rangedExpenses.filter((expense) => status === "all" || expense.status === status);
-  const summary = getSummary(filteredExpenses, userId, settlements);
-  const allTimeSummary = getSummary(expenses, userId, settlements);
-  const { toast } = useToast();
-  const [balanceDetail, setBalanceDetail] = useState<"owe" | "get" | null>(null);
   const groupSimplifyMap = useMemo(() => {
     const map: Record<string, boolean> = {};
     groups.forEach((g) => {
@@ -1421,6 +1417,10 @@ const HomeView = ({ expenses, settlements, categories, groups = [], userId, setT
     });
     return map;
   }, [groups]);
+  const summary = getSummary(filteredExpenses, userId, settlements, groupSimplifyMap);
+  const allTimeSummary = getSummary(expenses, userId, settlements, groupSimplifyMap);
+  const { toast } = useToast();
+  const [balanceDetail, setBalanceDetail] = useState<"owe" | "get" | null>(null);
   const allTimeBalances = useMemo(
     () => buildDebtBalances(expenses, settlements, { currentUserId: userId, groupSimplifyMap }),
     [expenses, settlements, userId, groupSimplifyMap]
@@ -1440,6 +1440,8 @@ const HomeView = ({ expenses, settlements, categories, groups = [], userId, setT
   const youGetRows = aggregatedDebts.youGetRows;
   const youOweTotal = aggregatedDebts.totalOwed;
   const youGetTotal = aggregatedDebts.totalLent;
+  const youOweAmountClass = youOweTotal > 0.009 ? "text-warning" : "text-muted-foreground";
+  const youGetAmountClass = youGetTotal > 0.009 ? "text-success" : "text-muted-foreground";
   const openBalanceDetail = (type: "owe" | "get") => {
     const total = type === "owe" ? youOweTotal : youGetTotal;
     if (total <= 0.009) {
@@ -1514,17 +1516,21 @@ const HomeView = ({ expenses, settlements, categories, groups = [], userId, setT
             <p className="mt-2 text-4xl font-black leading-tight tracking-tight text-foreground sm:text-5xl">{money(Math.abs(allTimeSummary.net))}</p>
             <p className="mt-1 max-w-[18rem] text-sm font-medium leading-5 text-muted-foreground sm:max-w-none">Across personal expenses and shared balances</p>
           </div>
-          <div className="mt-7 flex w-full items-start justify-between gap-4">
-            <button type="button" onClick={() => openBalanceDetail("get")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-start justify-start p-0 text-left">
-              <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
-                <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">You Get</span>
-                <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-success sm:text-lg">{money(youGetTotal)}</span>
+          <div className="mt-5 grid grid-cols-2 items-start gap-4">
+            <button type="button" onClick={() => openBalanceDetail("get")} className="group flex min-h-[46px] min-w-0 cursor-pointer flex-col items-start justify-start gap-1 rounded-2xl px-2 py-1.5 text-left transition-colors hover:bg-elevated/60 active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <span className="flex max-w-full items-center gap-1 text-xs font-semibold leading-4 text-muted-foreground">
+                <span>You Get</span>
+                <ChevronRight className="size-3 opacity-60 transition-transform group-hover:translate-x-0.5" />
               </span>
+              <span className={`spendova-money-value block max-w-full text-sm font-bold leading-5 min-[380px]:text-[15px] ${youGetAmountClass}`}>{money(youGetTotal)}</span>
             </button>
-            <button type="button" onClick={() => openBalanceDetail("owe")} className="m-0 flex min-h-[50px] min-w-0 flex-1 flex-col items-end justify-start p-0 text-right">
-              <span className="m-0 inline-flex max-w-full flex-col items-center p-0 text-center">
-                <span className="m-0 block h-[18px] max-w-full p-0 text-sm font-bold uppercase leading-[18px] tracking-wide text-muted-foreground">You Owe</span>
-                <span className="spendova-money-value mt-2 block min-h-6 max-w-full p-0 text-base font-bold leading-6 text-warning sm:text-lg">{money(youOweTotal)}</span>
+            <button type="button" onClick={() => openBalanceDetail("owe")} className="group flex min-h-[46px] min-w-0 cursor-pointer flex-col items-end justify-start gap-1 rounded-2xl px-2 py-1.5 text-right transition-colors hover:bg-elevated/60 active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <span className="inline-flex max-w-full flex-col items-start gap-1 text-left">
+                <span className="flex max-w-full items-center gap-1 text-xs font-semibold leading-4 text-muted-foreground">
+                  <span>You Owe</span>
+                  <ChevronRight className="size-3 opacity-60 transition-transform group-hover:translate-x-0.5" />
+                </span>
+                <span className={`spendova-money-value block max-w-full text-sm font-bold leading-5 min-[380px]:text-[15px] ${youOweAmountClass}`}>{money(youOweTotal)}</span>
               </span>
             </button>
           </div>
@@ -1620,9 +1626,6 @@ const HomeView = ({ expenses, settlements, categories, groups = [], userId, setT
                     <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
                     <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
                   </div>
-                  {row.contextName ? (
-                    <p className="truncate text-xs font-medium text-muted-foreground mt-0.5">{row.contextName}</p>
-                  ) : null}
                 </div>
                 <Button
                   onClick={() => {
@@ -1737,20 +1740,20 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
           <p className="text-sm font-medium text-muted-foreground">Personal spend</p>
           <p className="mt-1 text-3xl font-bold tracking-tight text-foreground">{money(filteredPersonalSummary.personal)}</p>
           <div className="mt-5 grid grid-cols-2 items-start gap-4">
-            <button type="button" onClick={() => openBalanceDetail("owe")} className="group flex min-h-[46px] min-w-0 cursor-pointer flex-col items-start justify-start gap-1 rounded-2xl px-2 py-1.5 text-left transition-colors hover:bg-elevated/60 active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <button type="button" onClick={() => openBalanceDetail("get")} className="group flex min-h-[46px] min-w-0 cursor-pointer flex-col items-start justify-start gap-1 rounded-2xl px-2 py-1.5 text-left transition-colors hover:bg-elevated/60 active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <span className="flex max-w-full items-center gap-1 text-xs font-semibold leading-4 text-muted-foreground">
-                <span>You Owe</span>
+                <span>You Get</span>
                 <ChevronRight className="size-3 opacity-60 transition-transform group-hover:translate-x-0.5" />
               </span>
-              <span className={`spendova-money-value block max-w-full text-sm font-bold leading-5 min-[380px]:text-[15px] ${youOweAmountClass}`}>{money(youOweTotal)}</span>
+              <span className={`spendova-money-value block max-w-full text-sm font-bold leading-5 min-[380px]:text-[15px] ${youGetAmountClass}`}>{money(youGetTotal)}</span>
             </button>
-            <button type="button" onClick={() => openBalanceDetail("get")} className="group flex min-h-[46px] min-w-0 cursor-pointer flex-col items-end justify-start gap-1 rounded-2xl px-2 py-1.5 text-right transition-colors hover:bg-elevated/60 active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <button type="button" onClick={() => openBalanceDetail("owe")} className="group flex min-h-[46px] min-w-0 cursor-pointer flex-col items-end justify-start gap-1 rounded-2xl px-2 py-1.5 text-right transition-colors hover:bg-elevated/60 active:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <span className="inline-flex max-w-full flex-col items-start gap-1 text-left">
                 <span className="flex max-w-full items-center gap-1 text-xs font-semibold leading-4 text-muted-foreground">
-                  <span>You Get</span>
+                  <span>You Owe</span>
                   <ChevronRight className="size-3 opacity-60 transition-transform group-hover:translate-x-0.5" />
                 </span>
-                <span className={`spendova-money-value block max-w-full text-sm font-bold leading-5 min-[380px]:text-[15px] ${youGetAmountClass}`}>{money(youGetTotal)}</span>
+                <span className={`spendova-money-value block max-w-full text-sm font-bold leading-5 min-[380px]:text-[15px] ${youOweAmountClass}`}>{money(youOweTotal)}</span>
               </span>
             </button>
           </div>
@@ -1816,9 +1819,6 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
                     <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
                     <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
                   </div>
-                  {row.contextName ? (
-                    <p className="truncate text-xs font-medium text-muted-foreground mt-0.5">{row.contextName}</p>
-                  ) : null}
                 </div>
                 <Button
                   onClick={() => {
@@ -6219,7 +6219,14 @@ const Index = () => {
   const activeContentTab: ContentKey = isProfileRoute ? "profile" : isSplitRoute ? "split" : isLedgerRoute ? "ledger" : activeTab;
   const title = friendDetailId ? "Friend" : groupDetailId ? "Group" : expenseDetailId ? "Expense" : settlementDetailId ? "Settlement" : isProfileRoute ? "Profile" : tabs.find((tab) => tab.key === activeContentTab)?.label ?? "Home";
   const openModal = (type: ModalType, item?: string) => setModal({ type, item });
-  const summary = user ? getSummary(data.expenses, user.id, data.settlements) : getSummary([], "");
+  const rootGroupSimplifyMap = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    data.groups.forEach((g) => {
+      map[g.id] = isGroupSimplifyEnabled(g.id, g.simplify_debts);
+    });
+    return map;
+  }, [data.groups]);
+  const summary = user ? getSummary(data.expenses, user.id, data.settlements, rootGroupSimplifyMap) : getSummary([], "");
   const unreadNotifications = data.notifications.filter((item) => !item.is_read).length;
 
   const saveProfile = async (fullName: string, username: string) => {
