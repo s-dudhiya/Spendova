@@ -6311,8 +6311,6 @@ const Index = () => {
     };
   }, [user, profile]);
 
-  if (!authLoading && !user) return <Navigate to="/login" replace />;
-
   const setActiveTab = (tab: TabKey) => {
     setActiveTabState(tab);
     if (tab === "split") {
@@ -6336,6 +6334,63 @@ const Index = () => {
     });
     return map;
   }, [data.groups]);
+
+  useEffect(() => {
+    return registerBackHandler(() => {
+      // 1. If feedback modal is open, close it
+      if (feedbackModalOpen) {
+        setFeedbackModalOpen(false);
+        return true;
+      }
+
+      // 2. If Spendova ActionModal / UniversalAddDrawer is open, close it
+      if (modal.type !== null) {
+        setModal({ type: null });
+        return true;
+      }
+
+      // 3. Sub-views / Detail pages
+      if (expenseDetailId || settlementDetailId || friendDetailId || groupDetailId) {
+        navigate("/split");
+        return true;
+      }
+
+      if (ledgerDetailId) {
+        navigate("/dashboard");
+        setActiveTabState("ledger");
+        return true;
+      }
+
+      if (isProfileRoute) {
+        navigate("/dashboard");
+        setActiveTabState("home");
+        return true;
+      }
+
+      // 4. Secondary tabs at root level -> Navigate back to Home tab
+      if (activeContentTab !== "home") {
+        setActiveTab("home");
+        return true;
+      }
+
+      // 5. Already at Home tab root with nothing open -> return false (allows Android exit)
+      return false;
+    });
+  }, [
+    feedbackModalOpen,
+    modal.type,
+    expenseDetailId,
+    settlementDetailId,
+    friendDetailId,
+    groupDetailId,
+    ledgerDetailId,
+    isProfileRoute,
+    activeContentTab,
+    navigate,
+  ]);
+
+  if (!authLoading && !user) return <Navigate to="/login" replace />;
+
   const summary = user ? getSummary(data.expenses, user.id, data.settlements, rootGroupSimplifyMap) : getSummary([], "");
   const unreadNotifications = data.notifications.filter((item) => !item.is_read).length;
 
@@ -6370,80 +6425,6 @@ const Index = () => {
     const friendId = settlement.from_user_id === user.id ? settlement.to_user_id : settlement.from_user_id;
     return friendId ? `/split/friend/${friendId}` : "/split";
   };
-
-  useEffect(() => {
-    return registerBackHandler(() => {
-      // 1. If feedback modal is open, close it
-      if (feedbackModalOpen) {
-        setFeedbackModalOpen(false);
-        return true;
-      }
-
-      // 2. If Spendova ActionModal / UniversalAddDrawer is open, close it
-      if (modal.type !== null) {
-        setModal({ type: null });
-        return true;
-      }
-
-      // 3. Sub-views / Detail pages
-      if (expenseDetailId) {
-        if (expenseDetail) {
-          navigate(getExpenseParentPath(expenseDetail));
-        } else {
-          navigate("/split");
-        }
-        return true;
-      }
-
-      if (settlementDetailId) {
-        if (settlementDetail) {
-          navigate(getSettlementParentPath(settlementDetail));
-        } else {
-          navigate("/split");
-        }
-        return true;
-      }
-
-      if (friendDetailId || groupDetailId) {
-        navigate("/split");
-        return true;
-      }
-
-      if (ledgerDetailId) {
-        navigate("/dashboard");
-        setActiveTabState("ledger");
-        return true;
-      }
-
-      if (isProfileRoute) {
-        navigate("/dashboard");
-        setActiveTabState("home");
-        return true;
-      }
-
-      // 4. Secondary tabs at root level -> Navigate back to Home tab
-      if (activeContentTab !== "home") {
-        setActiveTab("home");
-        return true;
-      }
-
-      // 5. Already at Home tab root with nothing open -> return false (allows Android exit)
-      return false;
-    });
-  }, [
-    feedbackModalOpen,
-    modal.type,
-    expenseDetailId,
-    expenseDetail,
-    settlementDetailId,
-    settlementDetail,
-    friendDetailId,
-    groupDetailId,
-    ledgerDetailId,
-    isProfileRoute,
-    activeContentTab,
-    navigate,
-  ]);
   const deleteSettlement = async (settlementId: string) => {
     const settlementToDelete = data.settlements.find((settlement) => settlement.id === settlementId);
     const redirectPath = settlementToDelete ? getSettlementParentPath(settlementToDelete) : "/split";
