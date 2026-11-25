@@ -10,6 +10,7 @@ import {
   Lock,
   Monitor,
   Moon,
+  Plus,
   Smartphone,
   Sun,
   Upload,
@@ -159,9 +160,9 @@ export default function Landing() {
       />
 
       {/* Header / Navigation Bar */}
-      <header className="fixed top-0 inset-x-0 z-50 w-full border-b border-border/60 bg-background/90 backdrop-blur-xl transition-colors duration-200">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-8">
-          <a href="#" className="flex items-center transition hover:opacity-90" aria-label="Spendova home">
+      <header className="fixed top-0 inset-x-0 z-50 px-3 pt-2.5 sm:px-6 sm:pt-3.5 pointer-events-none">
+        <div className="pointer-events-auto mx-auto flex max-w-6xl items-center justify-between gap-3 rounded-full border border-border/70 bg-card/85 px-3.5 py-2 sm:px-5 sm:py-2.5 backdrop-blur-xl shadow-soft transition-colors duration-200">
+          <a href="#" className="flex items-center pl-1 shrink-0 transition hover:opacity-90" aria-label="Spendova home">
             <img
               src={theme === "dark" ? "/brand/navbar-logo-dark.png" : "/brand/navbar-logo.png"}
               alt="Spendova — Split. Track. Grow."
@@ -169,18 +170,18 @@ export default function Landing() {
             />
           </a>
 
-          <nav className="hidden md:flex items-center gap-7 text-sm font-semibold text-muted-foreground">
-            <a href="#features" className="transition hover:text-foreground">Features</a>
-            <a href="#how-it-works" className="transition hover:text-foreground">Debt Engine</a>
-            <a href="#install-guide" className="transition hover:text-foreground">Install App</a>
-            <a href="#faq" className="transition hover:text-foreground">FAQ</a>
+          <nav className="hidden md:flex items-center gap-1 rounded-full bg-background/60 border border-border/50 p-1.5 text-sm font-semibold text-muted-foreground">
+            <a href="#features" className="rounded-full px-4 py-1.5 transition-all hover:bg-card hover:text-foreground hover:shadow-soft whitespace-nowrap">Features</a>
+            <a href="#how-it-works" className="rounded-full px-4 py-1.5 transition-all hover:bg-card hover:text-foreground hover:shadow-soft whitespace-nowrap">Debt Engine</a>
+            <a href="#install-guide" className="rounded-full px-4 py-1.5 transition-all hover:bg-card hover:text-foreground hover:shadow-soft whitespace-nowrap">Install App</a>
+            <a href="#faq" className="rounded-full px-4 py-1.5 transition-all hover:bg-card hover:text-foreground hover:shadow-soft whitespace-nowrap">FAQ</a>
           </nav>
 
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             <button
               type="button"
               onClick={toggleTheme}
-              className="grid size-8 sm:size-9 place-items-center rounded-full bg-card border border-border/60 text-foreground shadow-soft transition hover:bg-elevated"
+              className="grid size-9 sm:size-10 place-items-center rounded-full bg-background/80 border border-border/60 text-foreground shadow-soft transition hover:bg-elevated active:scale-95"
               aria-label="Toggle theme"
             >
               {theme === "dark" ? (
@@ -192,19 +193,19 @@ export default function Landing() {
 
             <Link
               to="/login"
-              className="inline-flex items-center gap-1 sm:gap-1.5 rounded-full bg-card border border-border/60 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-bold text-foreground shadow-soft transition hover:bg-elevated"
+              className="inline-flex h-9 sm:h-10 items-center gap-1.5 rounded-full bg-background/80 border border-border/60 px-3 sm:px-4 text-xs sm:text-sm font-bold text-foreground shadow-soft transition hover:bg-elevated whitespace-nowrap"
             >
               <span className="sm:hidden">Web</span>
               <span className="hidden sm:inline">Web App</span>
-              <ExternalLink className="size-3 sm:size-3.5 text-muted-foreground" />
+              <ExternalLink className="size-3.5 text-muted-foreground" />
             </Link>
 
             <a
               href={apkUrl}
               download={apkFilename}
-              className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-primary px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-primary-foreground shadow-primary-action transition hover:brightness-105 active:scale-95"
+              className="inline-flex h-9 sm:h-10 items-center gap-1.5 sm:gap-2 rounded-full bg-primary px-3.5 sm:px-4 text-xs sm:text-sm font-bold text-primary-foreground shadow-primary-action transition hover:brightness-105 active:scale-95 whitespace-nowrap"
             >
-              <AndroidIcon className="size-3.5 sm:size-4 shrink-0" />
+              <AndroidIcon className="size-4 shrink-0" />
               <span className="sm:hidden">Get App</span>
               <span className="hidden sm:inline">Download App</span>
             </a>
@@ -484,7 +485,7 @@ export default function Landing() {
       </section>
 
       {/* How to Install APK Section */}
-      <section id="install-guide" className="border-t border-border/60 bg-surface px-5 py-16 sm:px-8 sm:py-24">
+      <section id="install-guide" className="border-t border-border/60 bg-surface px-4 pt-10 pb-8 sm:px-8 sm:pt-14 sm:pb-10">
         <div className="mx-auto max-w-5xl">
           <div className="text-center max-w-2xl mx-auto">
             <p className="text-xs font-bold uppercase tracking-widest text-primary">Quick Setup</p>
@@ -532,48 +533,82 @@ export default function Landing() {
       </section>
 
       {/* FAQ Section */}
-      <section id="faq" className="px-4 py-12 sm:px-8 sm:py-16">
-        <div className="mx-auto max-w-3xl">
-          <div className="text-center">
-            <p className="text-xs font-bold uppercase tracking-widest text-primary">FAQ</p>
-            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">Frequently Asked Questions</h2>
-          </div>
+      <section id="faq" className="px-4 pt-6 pb-8 sm:px-8 sm:pt-8 sm:pb-10">
+        <div className="mx-auto max-w-6xl">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-12 md:gap-10 items-start">
+            <div className="md:col-span-5 text-center md:text-left">
+              <p className="text-xs font-bold uppercase tracking-widest text-primary">FAQ</p>
+              <h2 className="mt-1.5 text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">Frequently Asked Questions</h2>
+              <p className="mt-2 text-xs sm:text-sm leading-relaxed text-muted-foreground max-w-md mx-auto md:mx-0">
+                Quick answers about pricing, cross-platform access, updates, and data security.
+              </p>
+            </div>
 
-          <div className="mt-10 space-y-3.5">
-            {[
-              { q: "Is Spendova free to use?", a: "Yes. Spendova is free with no ads or subscription fees for creating groups, splitting expenses, and downloading updates." },
-              { q: "Can I use Spendova on iPhone or PC?", a: "Yes. While the APK download is for Android devices, Spendova's responsive web app works in Safari, Chrome, Edge, and Firefox on any phone or desktop." },
-              { q: "How will I get future app updates?", a: "Spendova includes an in-app update checker that notifies you whenever a new version is released, or you can download the latest APK here anytime." },
-              { q: "Is my financial data secure?", a: "All data is encrypted in transit and at rest with strict row-level access controls and optional biometric lock on app launch." },
-            ].map((faq) => (
-              <details key={faq.q} className="group rounded-[1.25rem] bg-card border border-border/55 p-5 shadow-soft cursor-pointer">
-                <summary className="flex items-center justify-between font-bold text-sm sm:text-base text-foreground select-none list-none">
-                  <span>{faq.q}</span>
-                  <span className="text-primary transition group-open:rotate-180">▼</span>
-                </summary>
-                <p className="mt-3 text-xs sm:text-sm leading-relaxed text-muted-foreground">{faq.a}</p>
-              </details>
-            ))}
+            <div className="md:col-span-7 rounded-[1.25rem] bg-card border border-border/60 shadow-soft divide-y divide-border/50 overflow-hidden">
+              {[
+                { q: "Is Spendova free to use?", a: "Yes. Spendova is free with no ads or subscription fees for creating groups, splitting expenses, and downloading updates." },
+                { q: "Can I use Spendova on iPhone or PC?", a: "Yes. While the APK download is for Android devices, Spendova's responsive web app works in Safari, Chrome, Edge, and Firefox on any phone or desktop." },
+                { q: "How will I get future app updates?", a: "Spendova includes an in-app update checker that notifies you whenever a new version is released, or you can download the latest APK here anytime." },
+                { q: "Is my financial data secure?", a: "All data is encrypted in transit and at rest with strict row-level access controls and optional biometric lock on app launch." },
+              ].map((faq) => (
+                <details
+                  key={faq.q}
+                  className="group cursor-pointer transition-colors hover:bg-elevated/40 open:bg-elevated/25"
+                >
+                  <summary className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-5 sm:py-4 font-bold text-sm sm:text-[15px] text-foreground select-none list-none">
+                    <span>{faq.q}</span>
+                    <span className="grid size-7 shrink-0 place-items-center rounded-full bg-background/70 border border-border/50 text-muted-foreground transition-all duration-200 group-open:rotate-45 group-open:text-primary group-open:border-primary/30">
+                      <Plus className="size-3.5" />
+                    </span>
+                  </summary>
+                  <p className="px-4 pb-4 sm:px-5 sm:pb-4 text-xs sm:text-sm leading-relaxed text-muted-foreground">{faq.a}</p>
+                </details>
+              ))}
+            </div>
           </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-border/60 bg-surface px-4 py-8 text-center text-xs text-muted-foreground">
-        <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-6 px-4">
-          <div className="flex items-center gap-2">
-            <img src="/brand/spendova-symbol.png" alt="Spendova" className="size-6 object-contain" />
-            <span className="text-sm font-bold text-foreground">Spendova</span>
+      <footer className="border-t border-border/60 bg-card/50">
+        <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-9">
+          <div className="grid grid-cols-2 gap-6 md:grid-cols-12 md:gap-8">
+            {/* Brand Column */}
+            <div className="col-span-2 md:col-span-6 space-y-2">
+              <a href="#" className="inline-flex items-center gap-2 transition hover:opacity-90" aria-label="Spendova home">
+                <img src="/brand/spendova-symbol.png" alt="Spendova" className="size-7 object-contain" />
+                <span className="text-base font-extrabold tracking-tight text-foreground">Spendova</span>
+              </a>
+              <p className="max-w-sm text-xs sm:text-sm leading-relaxed text-muted-foreground">
+                Track personal budgets, split group bills fairly, and simplify shared debts automatically across Android and Web.
+              </p>
+            </div>
+
+            {/* Product Links */}
+            <div className="col-span-1 md:col-span-3 space-y-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">Product</h3>
+              <ul className="space-y-1.5 text-xs sm:text-sm text-muted-foreground">
+                <li><a href="#features" className="transition-colors hover:text-foreground">Features</a></li>
+                <li><a href="#how-it-works" className="transition-colors hover:text-foreground">Debt Engine</a></li>
+                <li><a href="#install-guide" className="transition-colors hover:text-foreground">Install Guide</a></li>
+                <li><a href="#faq" className="transition-colors hover:text-foreground">FAQ</a></li>
+              </ul>
+            </div>
+
+            {/* Platforms Links */}
+            <div className="col-span-1 md:col-span-3 space-y-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">Platforms</h3>
+              <ul className="space-y-1.5 text-xs sm:text-sm text-muted-foreground">
+                <li><Link to="/login" className="transition-colors hover:text-foreground">Web App</Link></li>
+                <li><a href={apkUrl} download={apkFilename} className="transition-colors hover:text-foreground">Android APK</a></li>
+              </ul>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-6 font-medium">
-            <a href="#features" className="hover:text-foreground transition">Features</a>
-            <a href="#how-it-works" className="hover:text-foreground transition">Debt Engine</a>
-            <a href="#install-guide" className="hover:text-foreground transition">Installation</a>
-            <Link to="/login" className="hover:text-foreground transition">Web App</Link>
+          <div className="mt-6 flex flex-col items-center justify-between gap-2 border-t border-border/60 pt-4 text-xs text-muted-foreground sm:flex-row">
+            <p>© 2026 Spendova. All rights reserved.</p>
+            <p>Split. Track. Grow.</p>
           </div>
-
-          <p>© 2026 Spendova. All rights reserved.</p>
         </div>
       </footer>
     </div>
