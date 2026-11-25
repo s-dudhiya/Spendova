@@ -5,6 +5,8 @@ import { CategoryPicker } from "@/components/CategoryPicker";
 import { RatingFeedbackModal } from "@/components/RatingFeedbackModal";
 import { useExpenseCategories } from "@/hooks/useExpenseCategories";
 import { APP_VERSION } from "@/lib/version";
+import { syncAndMatchContacts, type MatchedSpendovaContact, type UnmatchedPhoneContact } from "@/lib/contacts";
+import { buildWhatsAppUrl, formatPhoneDisplay, normalizePhone, SPENDOVA_DOWNLOAD_URL } from "@/lib/phone";
 import {
   ArrowLeft,
   ArrowRight,
@@ -30,8 +32,10 @@ import {
   MoreVertical,
   Moon,
   Pencil,
+  Phone,
   Plus,
   Search,
+  Share2,
   ShieldCheck,
   Split,
   Smartphone,
@@ -1632,42 +1636,153 @@ const HomeView = ({ expenses, settlements, categories, groups = [], userId, setT
           <div className="space-y-3">{[{ title: "Split", value: money(summary.totalLent + summary.totalOwed), icon: Split, tab: "split" as TabKey }, { title: "Personal", value: money(summary.personal), icon: WalletCards, tab: "personal" as TabKey }].map((item) => <button key={item.title} onClick={() => setTab(item.tab)} className="flex w-full items-center justify-between rounded-2xl bg-card p-4 text-left shadow-soft transition-shadow hover:shadow-panel"><span className="flex min-w-0 items-center gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-full bg-elevated text-primary"><item.icon className="size-4" /></span><span className="min-w-0"><span className="block font-bold text-foreground">{item.title}</span><span className="text-sm text-muted-foreground">Current data</span></span></span><span className="flex shrink-0 items-center gap-2 font-bold text-foreground">{item.value}<ChevronRight className="size-4 text-muted-foreground" /></span></button>)}</div>
         </section>
       </main>
-      <Drawer open={Boolean(balanceDetail)} onOpenChange={(open) => !open && setBalanceDetail(null)}>
-        <DrawerContent className="mx-auto max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] max-w-3xl overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-          <DrawerHeader className="px-0 pb-2 text-left">
-            <DrawerTitle>{balanceDetail === "owe" ? "You Owe" : "You Get"}</DrawerTitle>
-            <DrawerDescription>{balanceDetail === "owe" ? "People you need to pay." : "People who need to pay you."}</DrawerDescription>
-          </DrawerHeader>
-          <div className="max-h-[55dvh] overflow-y-auto overscroll-contain rounded-2xl bg-elevated/70">
-            {detailRows.map((row, index) => (
-              <div key={`${row.name}-${index}`} className={`flex items-center justify-between gap-3 px-4 py-3 text-sm ${index < detailRows.length - 1 ? "border-b border-border/60" : ""}`}>
-                <div className="flex-1 min-w-0 mr-2">
-                  <div className="flex items-center justify-between">
+      <BalanceDetailDrawer
+        balanceDetail={balanceDetail}
+        onClose={() => setBalanceDetail(null)}
+        detailRows={detailRows}
+        detailTotal={detailTotal}
+        onSettle={(settleId) => {
+          setBalanceDetail(null);
+          setTimeout(() => openModal("settle-up", settleId), 150);
+        }}
+      />
+    </>
+  );
+};
+
+const BalanceDetailDrawer = ({
+  balanceDetail,
+  onClose,
+  detailRows,
+  detailTotal,
+  onSettle,
+}: {
+  balanceDetail: "owe" | "get" | null;
+  onClose: () => void;
+  detailRows: ReturnType<typeof aggregateDebtsByUser>["youOweRows"];
+  detailTotal: number;
+  onSettle: (settleId: string) => void;
+}) => {
+  const { toast } = useToast();
+  const [remindingId, setRemindingId] = useState<string | null>(null);
+  const [remindedIds, setRemindedIds] = useState<Record<string, boolean>>({});
+
+  const sendPaymentReminder = async (row: ReturnType<typeof aggregateDebtsByUser>["youOweRows"][number]) => {
+    if (remindingId === row.settleId || remindedIds[row.settleId]) return;
+    setRemindingId(row.settleId);
+    try {
+      const { error } = await supabase.functions.invoke("send-shared-notification", {
+        body: {
+          type: "payment_reminder",
+          recipients: [row.settleId],
+          title: "Payment Reminder",
+          message: `{actor} reminded you to settle ${money(row.amount)}.`,
+          entity_type: "payment_reminder",
+          entity_id: null,
+          amount: row.amount,
+        },
+      });
+      if (error) throw error;
+      setRemindedIds((prev) => ({ ...prev, [row.settleId]: true }));
+      toast({
+        title: "Reminder sent",
+        description: `${row.name} was notified about ${money(row.amount)}.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Could not send reminder",
+        description: err?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setRemindingId(null);
+    }
+  };
+
+  const sendWhatsAppReminder = async (row: ReturnType<typeof aggregateDebtsByUser>["youOweRows"][number]) => {
+    const message = `Hi ${row.name}, gentle reminder to settle ${money(row.amount)} on Spendova.`;
+    try {
+      const { data } = await supabase
+        .from("profiles")
+        .select("phone")
+        .eq("user_id", row.settleId)
+        .maybeSingle();
+      if (data?.phone) {
+        window.open(buildWhatsAppUrl(data.phone, message), "_blank", "noopener,noreferrer");
+        return;
+      }
+    } catch {
+      // Fallback to generic WhatsApp share if phone lookup fails
+    }
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+  };
+
+  return (
+    <Drawer open={Boolean(balanceDetail)} onOpenChange={(open) => !open && onClose()}>
+      <DrawerContent className="mx-auto max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] max-w-3xl overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        <DrawerHeader className="px-0 pb-2 text-left">
+          <DrawerTitle>{balanceDetail === "owe" ? "You Owe" : "You Get"}</DrawerTitle>
+          <DrawerDescription>{balanceDetail === "owe" ? "People you need to pay." : "People who need to pay you."}</DrawerDescription>
+        </DrawerHeader>
+        <div className="max-h-[55dvh] overflow-y-auto overscroll-contain rounded-2xl bg-elevated/70">
+          {detailRows.map((row, index) => {
+            const isReminded = Boolean(remindedIds[row.settleId]);
+            const isReminding = remindingId === row.settleId;
+            return (
+              <div key={`${row.name}-${index}`} className={`flex items-center justify-between gap-2.5 px-4 py-3 text-sm ${index < detailRows.length - 1 ? "border-b border-border/60" : ""}`}>
+                <div className="flex-1 min-w-0 mr-1">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
                     <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
                   </div>
                 </div>
-                <Button
-                  onClick={() => {
-                    setBalanceDetail(null);
-                    setTimeout(() => openModal("settle-up", row.settleId), 150);
-                  }}
-                  size="sm"
-                  variant="outline"
-                  className="h-7 px-3 text-xs font-bold shrink-0 rounded-lg bg-background"
-                >
-                  Settle
-                </Button>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {balanceDetail === "get" && (
+                    <>
+                      <Button
+                        type="button"
+                        onClick={() => sendPaymentReminder(row)}
+                        disabled={isReminding || isReminded}
+                        size="sm"
+                        variant="outline"
+                        aria-label={`Send payment reminder to ${row.name}`}
+                        title={isReminded ? "Reminder sent" : "Send payment reminder"}
+                        className="h-7 w-7 p-0 shrink-0 rounded-lg bg-background"
+                      >
+                        {isReminded ? <Check className="size-3.5 text-success" /> : <Bell className="size-3.5 text-primary" />}
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => sendWhatsAppReminder(row)}
+                        size="sm"
+                        variant="outline"
+                        aria-label={`Remind ${row.name} on WhatsApp`}
+                        title="Remind on WhatsApp"
+                        className="h-7 w-7 p-0 shrink-0 rounded-lg bg-background"
+                      >
+                        <Share2 className="size-3.5 text-muted-foreground" />
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    onClick={() => onSettle(row.settleId)}
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-3 text-xs font-bold shrink-0 rounded-lg bg-background"
+                  >
+                    Settle
+                  </Button>
+                </div>
               </div>
-            ))}
-            <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm">
-              <span className="font-black text-foreground">Total</span>
-              <span className={`spendova-money-value shrink-0 font-black ${balanceDetail === "owe" ? "text-warning" : "text-success"}`}>{money(detailTotal)}</span>
-            </div>
+            );
+          })}
+          <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm">
+            <span className="font-black text-foreground">Total</span>
+            <span className={`spendova-money-value shrink-0 font-black ${balanceDetail === "owe" ? "text-warning" : "text-success"}`}>{money(detailTotal)}</span>
           </div>
-        </DrawerContent>
-      </Drawer>
-    </>
+        </div>
+      </DrawerContent>
+    </Drawer>
   );
 };
 
@@ -1840,41 +1955,16 @@ const PersonalView = ({ expenses, settlements, summary, categories, currentUserI
           <Plus className="size-4" />Add expense
         </button>
       </main>
-      <Drawer open={Boolean(balanceDetail)} onOpenChange={(open) => !open && setBalanceDetail(null)}>
-        <DrawerContent className="mx-auto max-h-[calc(100svh_-_env(safe-area-inset-top)_-_0.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_0.75rem)] max-w-3xl overflow-hidden rounded-t-3xl border-border bg-card px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-          <DrawerHeader className="px-0 pb-2 text-left">
-            <DrawerTitle>{balanceDetail === "owe" ? "You Owe" : "You Get"}</DrawerTitle>
-            <DrawerDescription>{balanceDetail === "owe" ? "People you need to pay." : "People who need to pay you."}</DrawerDescription>
-          </DrawerHeader>
-          <div className="max-h-[55dvh] overflow-y-auto overscroll-contain rounded-2xl bg-elevated/70">
-            {detailRows.map((row, index) => (
-              <div key={`${row.name}-${index}`} className={`flex items-center justify-between gap-3 px-4 py-3 text-sm ${index < detailRows.length - 1 ? "border-b border-border/60" : ""}`}>
-                <div className="flex-1 min-w-0 mr-2">
-                  <div className="flex items-center justify-between">
-                    <span className="min-w-0 truncate font-bold text-foreground">{row.name}</span>
-                    <span className="spendova-money-value shrink-0 font-black text-foreground">{money(row.amount)}</span>
-                  </div>
-                </div>
-                <Button
-                  onClick={() => {
-                    setBalanceDetail(null);
-                    setTimeout(() => openModal("settle-up", row.settleId), 150);
-                  }}
-                  size="sm"
-                  variant="outline"
-                  className="h-7 px-3 text-xs font-bold shrink-0 rounded-lg bg-background"
-                >
-                  Settle
-                </Button>
-              </div>
-            ))}
-            <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm">
-              <span className="font-black text-foreground">Total</span>
-              <span className={`spendova-money-value shrink-0 font-black ${balanceDetail === "owe" ? "text-warning" : "text-success"}`}>{money(detailTotal)}</span>
-            </div>
-          </div>
-        </DrawerContent>
-      </Drawer>
+      <BalanceDetailDrawer
+        balanceDetail={balanceDetail}
+        onClose={() => setBalanceDetail(null)}
+        detailRows={detailRows}
+        detailTotal={detailTotal}
+        onSettle={(settleId) => {
+          setBalanceDetail(null);
+          setTimeout(() => openModal("settle-up", settleId), 150);
+        }}
+      />
     </>
   );
 };
@@ -4813,14 +4903,52 @@ const CreateGroupForm = ({ friends, group, onSubmit, onCancel }: { friends: Frie
 
 const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }: { currentUserId: string; friends: FriendProfile[]; requests: ConnectionRow[]; onRequest: (receiverId: string) => Promise<void>; onCancel: () => void }) => {
   const { toast } = useToast();
-  const [username, setUsername] = useState("");
+  const [query, setQuery] = useState("");
   const [result, setResult] = useState<Profile | null>(null);
+  const [unregisteredPhone, setUnregisteredPhone] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
+  const [syncingContacts, setSyncingContacts] = useState(false);
+  const [contactsLoaded, setContactsLoaded] = useState(false);
+  const [matchedContacts, setMatchedContacts] = useState<MatchedSpendovaContact[]>([]);
+  const [unmatchedContacts, setUnmatchedContacts] = useState<UnmatchedPhoneContact[]>([]);
+  const [contactFilter, setContactFilter] = useState("");
+  const [sendingId, setSendingId] = useState<string | null>(null);
+
+  const isNative = Capacitor.isNativePlatform();
+
   const search = async () => {
-    if (!username.trim()) return;
+    const raw = query.trim();
+    if (!raw) return;
     setSearching(true);
     setResult(null);
-    const { data, error } = await supabase.from("profiles").select("user_id, full_name, username").eq("username", username.toLowerCase()).maybeSingle();
+    setUnregisteredPhone(null);
+
+    const normalized = normalizePhone(raw);
+    if (normalized && /^[\d+\s-]+$/.test(raw)) {
+      const { data, error } = await (supabase.rpc as any)("match_spendova_contacts", {
+        phone_numbers: [normalized],
+      });
+      setSearching(false);
+      if (error || !data || data.length === 0) {
+        setUnregisteredPhone(normalized);
+        return;
+      }
+      setResult(data[0] as Profile);
+      return;
+    }
+
+    const cleanUsername = raw.toLowerCase().replace(/^@/, "").replace(/[^a-z0-9_]/g, "");
+    if (!cleanUsername) {
+      setSearching(false);
+      toast({ title: "Invalid input", description: "Enter a valid username or 10-digit mobile number.", variant: "destructive" });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("user_id, full_name, username")
+      .eq("username", cleanUsername)
+      .maybeSingle();
     setSearching(false);
     if (error || !data) {
       toast({ title: "Not found", description: "No user found with that username.", variant: "destructive" });
@@ -4832,17 +4960,187 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
     }
     setResult(data as Profile);
   };
+
+  const handleSyncContacts = async () => {
+    setSyncingContacts(true);
+    try {
+      const res = await syncAndMatchContacts();
+      if (!res.supported) {
+        toast({ title: "Android app required", description: "Contact sync is available in the Spendova Android app. You can still search by mobile number above." });
+        return;
+      }
+      if (res.permissionDenied) {
+        toast({ title: "Contacts permission needed", description: "Allow contacts access in Settings to find friends on Spendova.", variant: "destructive" });
+        return;
+      }
+      setMatchedContacts(res.matched);
+      setUnmatchedContacts(res.unmatched);
+      setContactsLoaded(true);
+    } catch (err: any) {
+      toast({ title: "Could not load contacts", description: err?.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setSyncingContacts(false);
+    }
+  };
+
+  const openWhatsAppInvite = (phone: string, name?: string) => {
+    const greeting = name ? `Hey ${name}, ` : "Hey! ";
+    const message = `${greeting}join me on Spendova to track expenses and split bills easily: ${SPENDOVA_DOWNLOAD_URL}`;
+    window.open(buildWhatsAppUrl(phone, message), "_blank", "noopener,noreferrer");
+  };
+
   const existingIds = new Set([...friends.map((friend) => friend.user_id), ...requests.map((request) => request.profiles.user_id)]);
+  const filterLower = contactFilter.trim().toLowerCase();
+  const filteredMatched = matchedContacts.filter(
+    (c) => !filterLower || c.contactName.toLowerCase().includes(filterLower) || (c.username || "").toLowerCase().includes(filterLower) || c.phone.includes(filterLower)
+  );
+  const filteredUnmatched = unmatchedContacts
+    .filter((c) => !filterLower || c.contactName.toLowerCase().includes(filterLower) || c.phone.includes(filterLower))
+    .slice(0, 30);
+
   return (
     <div className="space-y-3">
-      <Field label="Search by username" placeholder="username" value={username} onChange={(value) => setUsername(value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} />
-      <Button onClick={search} className="w-full" disabled={searching}>{searching ? "Searching..." : "Search"}</Button>
+      <Field
+        label="Search by mobile number or username"
+        placeholder="e.g. 9876543210 or username"
+        value={query}
+        onChange={setQuery}
+      />
+      <Button onClick={search} className="w-full" disabled={searching}>
+        <Search className="size-4" />
+        {searching ? "Searching..." : "Search"}
+      </Button>
+
       {result && (
-        <div className="flex items-center justify-between rounded-2xl bg-elevated p-3">
-          <div><p className="font-bold text-foreground">{displayName(result)}</p><p className="text-xs text-muted-foreground">@{result.username}</p></div>
-          <Button size="sm" disabled={existingIds.has(result.user_id) || result.user_id === currentUserId} onClick={() => onRequest(result.user_id)}><UserPlus />Send request</Button>
+        <div className="flex items-center justify-between gap-2 rounded-2xl bg-elevated p-3">
+          <div className="min-w-0">
+            <p className="truncate font-bold text-foreground">{displayName(result)}</p>
+            <p className="truncate text-xs text-muted-foreground">@{result.username}</p>
+          </div>
+          <Button
+            size="sm"
+            disabled={existingIds.has(result.user_id) || result.user_id === currentUserId || sendingId === result.user_id}
+            onClick={async () => {
+              setSendingId(result.user_id);
+              await onRequest(result.user_id);
+              setSendingId(null);
+            }}
+          >
+            <UserPlus />
+            {existingIds.has(result.user_id) ? "Added" : "Send request"}
+          </Button>
         </div>
       )}
+
+      {unregisteredPhone && (
+        <div className="flex items-center justify-between gap-2 rounded-2xl bg-elevated p-3">
+          <div className="min-w-0">
+            <p className="truncate font-bold text-foreground">{formatPhoneDisplay(unregisteredPhone)}</p>
+            <p className="text-xs text-muted-foreground">Not on Spendova yet</p>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => openWhatsAppInvite(unregisteredPhone)}>
+            <Share2 className="size-3.5" />
+            Invite on WhatsApp
+          </Button>
+        </div>
+      )}
+
+      <div className="border-t border-border/60 pt-3 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">From your contacts</p>
+          {isNative && (
+            <Button size="sm" variant="outline" onClick={handleSyncContacts} disabled={syncingContacts} className="h-8 rounded-xl text-xs font-bold">
+              <Phone className="size-3.5" />
+              {syncingContacts ? "Syncing..." : contactsLoaded ? "Refresh" : "Sync Contacts"}
+            </Button>
+          )}
+        </div>
+
+        {!isNative && (
+          <p className="rounded-2xl bg-elevated/70 p-3 text-xs font-medium text-muted-foreground">
+            Open the Spendova Android app to sync your phone contacts automatically, or search by mobile number above.
+          </p>
+        )}
+
+        {isNative && !contactsLoaded && (
+          <div className="rounded-2xl bg-elevated/70 p-3 text-center space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              Allow Spendova to read your contacts to see who is already on Spendova and invite others via WhatsApp.
+            </p>
+            <Button size="sm" variant="quiet" onClick={handleSyncContacts} disabled={syncingContacts} className="w-full">
+              <Users className="size-4" />
+              {syncingContacts ? "Loading contacts..." : "Find friends from contacts"}
+            </Button>
+          </div>
+        )}
+
+        {contactsLoaded && (
+          <div className="space-y-2.5">
+            <Field label="" placeholder="Filter contacts..." value={contactFilter} onChange={setContactFilter} />
+            <div className="max-h-56 space-y-2 overflow-y-auto overscroll-contain pr-0.5">
+              {filteredMatched.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-success">On Spendova ({filteredMatched.length})</p>
+                  {filteredMatched.map((c) => {
+                    const already = existingIds.has(c.userId);
+                    return (
+                      <div key={c.userId} className="flex items-center justify-between gap-2 rounded-2xl bg-elevated p-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-foreground">{c.contactName}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {c.username ? `@${c.username} · ` : ""}{formatPhoneDisplay(c.phone)}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          disabled={already || sendingId === c.userId}
+                          onClick={async () => {
+                            setSendingId(c.userId);
+                            await onRequest(c.userId);
+                            setSendingId(null);
+                          }}
+                          className="h-8 shrink-0 rounded-xl px-3 text-xs font-bold"
+                        >
+                          <UserPlus className="size-3.5" />
+                          {already ? "Added" : sendingId === c.userId ? "Sending..." : "Add"}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {filteredUnmatched.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Invite to Spendova</p>
+                  {filteredUnmatched.map((c) => (
+                    <div key={c.phone} className="flex items-center justify-between gap-2 rounded-2xl bg-elevated/60 p-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-foreground">{c.contactName}</p>
+                        <p className="truncate text-xs text-muted-foreground">{formatPhoneDisplay(c.phone)}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openWhatsAppInvite(c.phone, c.contactName)}
+                        className="h-8 shrink-0 rounded-xl px-3 text-xs font-bold"
+                      >
+                        <Share2 className="size-3.5" />
+                        Invite
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {filteredMatched.length === 0 && filteredUnmatched.length === 0 && (
+                <p className="py-3 text-center text-xs font-medium text-muted-foreground">No matching contacts found.</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       <Button variant="quiet" className="w-full" onClick={onCancel}>Cancel</Button>
     </div>
   );

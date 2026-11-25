@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { Fingerprint, LockKeyhole } from "lucide-react";
+import { Fingerprint, LockKeyhole, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { AppLoader } from "@/components/AppLoader";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
@@ -17,6 +18,7 @@ import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 import { initializeNotifications } from "@/lib/notifications";
 import { registerBackHandler } from "@/lib/back-handler";
 import { ForceUpdateModal } from "@/components/ForceUpdateModal";
+import { normalizePhone } from "@/lib/phone";
 import Auth from "./pages/Auth";
 
 const Admin = lazy(() => import("./pages/Admin"));
@@ -55,6 +57,125 @@ const LoadingFallback = ({ label = "Preparing your workspace..." }: { label?: st
   );
 };
 
+const PhoneCompletionGate = ({ children }: { children: React.ReactNode }) => {
+  const { user, signOut } = useAuth();
+  const { toast } = useToast();
+  const [checking, setChecking] = useState(true);
+  const [needsPhone, setNeedsPhone] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    if (!user) {
+      setChecking(false);
+      setNeedsPhone(false);
+      return;
+    }
+
+    setChecking(true);
+    supabase
+      .from("profiles")
+      .select("phone")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data, error: fetchErr }) => {
+        if (!active) return;
+        if (fetchErr) {
+          console.warn("Phone check failed:", fetchErr.message);
+          setNeedsPhone(false);
+        } else {
+          setNeedsPhone(!data?.phone);
+        }
+        setChecking(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  const handleSavePhone = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!user) return;
+    setError("");
+
+    const normalized = normalizePhone(phoneInput);
+    if (!normalized) {
+      setError("Please enter a valid 10-digit mobile number (e.g. 9876543210).");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { data: available, error: checkErr } = await (supabase.rpc as any)("is_phone_available", {
+        target_phone: normalized,
+      });
+      if (!checkErr && available === false) {
+        setError("This mobile number is already linked to another Spendova account.");
+        setSaving(false);
+        return;
+      }
+
+      const { error: updateErr } = await supabase
+        .from("profiles")
+        .update({ phone: normalized })
+        .eq("user_id", user.id);
+
+      if (updateErr) {
+        if (updateErr.code === "23505") {
+          setError("This mobile number is already linked to another Spendova account.");
+        } else {
+          setError(updateErr.message || "Could not save mobile number.");
+        }
+        return;
+      }
+
+      toast({ title: "Mobile number saved", description: "You can now find friends from your contacts." });
+      setNeedsPhone(false);
+    } catch (err: any) {
+      setError(err?.message || "Failed to save mobile number.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (checking) return <LoadingFallback />;
+  if (!needsPhone) return <>{children}</>;
+
+  return (
+    <main className="grid min-h-screen place-items-center bg-background px-5 text-foreground">
+      <section className="w-full max-w-sm rounded-[1.25rem] bg-card p-6 text-center shadow-panel">
+        <div className="mx-auto grid size-16 place-items-center rounded-full bg-primary/15 text-primary">
+          <Phone className="size-7" />
+        </div>
+        <h1 className="mt-5 text-2xl font-bold tracking-tight">Add your mobile number</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          Link your mobile number to continue using Spendova, find friends from contacts, and receive payment reminders.
+        </p>
+        <form onSubmit={handleSavePhone} className="mt-5 space-y-3 text-left">
+          <Input
+            type="tel"
+            required
+            value={phoneInput}
+            onChange={(e) => setPhoneInput(e.target.value.replace(/[^\d+\s-]/g, ""))}
+            placeholder="e.g. 9876543210 or +91 9876543210"
+            className="h-12 rounded-xl bg-elevated px-4 text-sm font-medium"
+          />
+          {error && <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">{error}</p>}
+          <Button type="submit" disabled={saving} className="h-12 w-full rounded-full shadow-primary-action">
+            {saving ? "Saving..." : "Continue"}
+          </Button>
+        </form>
+        <button type="button" onClick={signOut} className="mt-4 text-sm font-bold text-muted-foreground">
+          Sign out
+        </button>
+      </section>
+    </main>
+  );
+};
+
 const ProtectedIndex = () => {
   const { user, loading } = useAuth();
   
@@ -66,7 +187,11 @@ const ProtectedIndex = () => {
 
   if (loading) return <LoadingFallback />;
   if (!user) return <Auth mode="login" />;
-  return <Index />;
+  return (
+    <PhoneCompletionGate>
+      <Index />
+    </PhoneCompletionGate>
+  );
 };
 
 const BiometricLockGate = ({ children }: { children: React.ReactNode }) => {

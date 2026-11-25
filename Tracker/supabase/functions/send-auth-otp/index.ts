@@ -22,6 +22,23 @@ function cleanEmail(email: string) {
   return String(email || '').trim().toLowerCase()
 }
 
+function normalizePhone(raw: string, defaultCountryCode = '+91'): string | null {
+  const trimmed = String(raw || '').trim()
+  if (!trimmed) return null
+  const hasPlus = trimmed.startsWith('+')
+  let digits = trimmed.replace(/\D/g, '')
+  if (!digits) return null
+  if (hasPlus) return digits.length >= 10 && digits.length <= 15 ? `+${digits}` : null
+  if (digits.startsWith('00')) {
+    digits = digits.slice(2)
+    return digits.length >= 10 && digits.length <= 15 ? `+${digits}` : null
+  }
+  if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1)
+  if (digits.length === 10) return `${defaultCountryCode}${digits}`
+  if (digits.length === 12 && digits.startsWith('91')) return `+${digits}`
+  return digits.length >= 10 && digits.length <= 15 ? `+${digits}` : null
+}
+
 async function isFakeEmail(email: string): Promise<boolean> {
   const apiKey = Deno.env.get('GEMINI_API_KEY')
   if (!apiKey) {
@@ -180,9 +197,10 @@ serve(async (req) => {
       const password = String(body.password || '')
       const fullName = String(body.fullName || '').trim()
       const username = String(body.username || '').trim().toLowerCase()
+      const phone = normalizePhone(String(body.phone || ''))
       const existingUser = await findUserByEmail(supabaseAdmin, email)
-      if (!password || !fullName || !username) {
-        if (!existingUser) return json({ error: 'Missing signup details' }, 400)
+      if (!password || !fullName || !username || !phone) {
+        if (!existingUser) return json({ error: 'Missing signup details (including valid mobile number)' }, 400)
         const { data: existingProfile } = await supabaseAdmin
           .from('profiles')
           .select('email_verified')
@@ -197,6 +215,13 @@ serve(async (req) => {
           .maybeSingle()
         if (existingUsername && existingUsername.user_id !== existingUser?.id) return json({ error: 'Username is already taken' }, 409)
 
+        const { data: existingPhone } = await supabaseAdmin
+          .from('profiles')
+          .select('user_id')
+          .eq('phone', phone)
+          .maybeSingle()
+        if (existingPhone && existingPhone.user_id !== existingUser?.id) return json({ error: 'This mobile number is already registered' }, 409)
+
         if (existingUser) {
           const { data: existingProfile } = await supabaseAdmin
             .from('profiles')
@@ -206,12 +231,13 @@ serve(async (req) => {
           if (existingProfile?.email_verified) return json({ error: 'An account with this email already exists' }, 409)
           await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
             password,
-            user_metadata: { full_name: fullName, username, spendova_custom_pending: true },
+            user_metadata: { full_name: fullName, username, phone, spendova_custom_pending: true },
           })
           await supabaseAdmin.from('profiles').upsert({
             user_id: existingUser.id,
             full_name: fullName,
             username,
+            phone,
             email_verified: false,
           }, { onConflict: 'user_id' })
         } else {
@@ -219,13 +245,14 @@ serve(async (req) => {
             email,
             password,
             email_confirm: true,
-            user_metadata: { full_name: fullName, username, spendova_custom_pending: true },
+            user_metadata: { full_name: fullName, username, phone, spendova_custom_pending: true },
           })
           if (createError) throw createError
           await supabaseAdmin.from('profiles').upsert({
             user_id: created.user.id,
             full_name: fullName,
             username,
+            phone,
             email_verified: false,
           }, { onConflict: 'user_id' })
         }

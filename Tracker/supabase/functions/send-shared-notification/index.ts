@@ -26,6 +26,7 @@ const supportedTypes = new Set([
   'group_expense_deleted',
   'group_user_removed',
   'group_deleted',
+  'payment_reminder',
 ])
 
 function json(body: unknown, status = 200) {

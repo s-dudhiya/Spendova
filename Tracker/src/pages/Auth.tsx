@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
-import { Eye, EyeOff, LockKeyhole, LogIn, Mail, ShieldCheck, User, UserRound } from "lucide-react";
+import { Eye, EyeOff, LockKeyhole, LogIn, Mail, Phone, ShieldCheck, User, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-error";
 import { useTheme } from "@/hooks/useTheme";
 import { safeStorage } from "@/lib/startup-safety";
+import { normalizePhone } from "@/lib/phone";
 
 type AuthMode = "login" | "register" | "forgot" | "reset";
 type Theme = "light" | "dark";
@@ -55,8 +56,10 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
+  const [phone, setPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [phoneStatus, setPhoneStatus] = useState<"idle" | "checking" | "available" | "taken" | "invalid">("idle");
   const [loginMethod, setLoginMethod] = useState<"password" | "otp">("password");
   const [formError, setFormError] = useState("");
   const { user, loading, signIn } = useAuth();
@@ -85,6 +88,24 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
     }, 450);
     return () => window.clearTimeout(timer);
   }, [isRegister, username]);
+
+  useEffect(() => {
+    if (!isRegister || !phone.trim()) {
+      setPhoneStatus("idle");
+      return;
+    }
+    const normalized = normalizePhone(phone);
+    if (!normalized) {
+      setPhoneStatus("invalid");
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      setPhoneStatus("checking");
+      const { data, error } = await (supabase.rpc as any)("is_phone_available", { target_phone: normalized });
+      setPhoneStatus(error ? "available" : data ? "available" : "taken");
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [isRegister, phone]);
 
   if (!loading && user && !isReset) {
     const redirect = searchParams.get("redirect") || "/dashboard";
@@ -142,6 +163,13 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
       setFormError("Please choose a valid and unique username.");
       return;
     }
+    const normalizedPhone = isRegister ? normalizePhone(phone) : null;
+    if (isRegister && (!normalizedPhone || phoneStatus === "taken" || phoneStatus === "invalid")) {
+      const message = phoneStatus === "taken" ? "This mobile number is already registered." : "Please enter a valid 10-digit mobile number.";
+      setFormError(message);
+      toast({ title: "Check mobile number", description: message, variant: "destructive" });
+      return;
+    }
 
     setSubmitting(true);
     const redirect = searchParams.get("redirect") || undefined;
@@ -177,7 +205,7 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
       const purpose = isRegister ? "signup_verify" : "reset_password";
       const { error } = await supabase.functions.invoke("send-auth-otp", {
         body: isRegister
-          ? { purpose, email, password, fullName, username }
+          ? { purpose, email, password, fullName, username, phone: normalizedPhone }
           : { purpose, email },
       });
       if (error) {
@@ -251,6 +279,12 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
                 {username && <p className={`mt-2 text-xs font-semibold ${usernameStatus === "available" ? "text-success" : usernameStatus === "checking" ? "text-muted-foreground" : "text-destructive"}`}>{usernameStatus === "available" ? "Username is available" : usernameStatus === "checking" ? "Checking username..." : "Username must be unique and at least 3 characters"}</p>}
               </div>
             )}
+            {isRegister && (
+              <div>
+                <TextField label="Mobile number" value={phone} onChange={(value) => setPhone(value.replace(/[^\d+\s-]/g, ""))} placeholder="e.g. 9876543210 or +91 9876543210" type="tel" icon={Phone} />
+                {phone && <p className={`mt-2 text-xs font-semibold ${phoneStatus === "available" ? "text-success" : phoneStatus === "checking" ? "text-muted-foreground" : "text-destructive"}`}>{phoneStatus === "available" ? "Mobile number is valid" : phoneStatus === "checking" ? "Checking mobile number..." : phoneStatus === "taken" ? "This mobile number is already registered" : "Enter a valid mobile number (e.g. 10 digits)"}</p>}
+              </div>
+            )}
             {!isReset && <TextField label={isLogin ? "Email or username" : "Email"} value={email} onChange={setEmail} placeholder={isLogin ? "Enter email or username" : "Enter email address"} type={isLogin ? "text" : "email"} icon={isLogin ? User : Mail} />}
             {isReset && <TextField label="Email" value={email} onChange={setEmail} placeholder="Enter email address" type="email" icon={Mail} />}
             {!isForgot && !isReset && loginMethod === "password" && (
@@ -268,7 +302,7 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
 
             {formError && <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">{formError}</p>}
 
-            <Button type="submit" disabled={submitting || (isRegister && usernameStatus !== "available")} className="h-12 w-full rounded-xl bg-[linear-gradient(135deg,#7c3aed,#6d28d9)] text-white shadow-[0_14px_24px_rgba(109,40,217,0.26)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60">
+            <Button type="submit" disabled={submitting || (isRegister && (usernameStatus !== "available" || phoneStatus !== "available"))} className="h-12 w-full rounded-xl bg-[linear-gradient(135deg,#7c3aed,#6d28d9)] text-white shadow-[0_14px_24px_rgba(109,40,217,0.26)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60">
               <LogIn className="size-4" strokeWidth={2} />
               {buttonLabel}
             </Button>
