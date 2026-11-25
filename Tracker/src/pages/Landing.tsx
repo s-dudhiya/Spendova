@@ -34,6 +34,85 @@ export default function Landing() {
   const [version, setVersion] = useState(APP_VERSION);
   const [apkUrl, setApkUrl] = useState(FALLBACK_APK_URL);
   const [apkSize, setApkSize] = useState("~12 MB");
+  const [previewTab, setPreviewTab] = useState<"get" | "owe">("get");
+  const [scrollPct, setScrollPct] = useState(0);
+  const [featureIdx, setFeatureIdx] = useState(0);
+  const [carouselPaused, setCarouselPaused] = useState(false);
+
+  const features = [
+    {
+      icon: Zap,
+      title: "Smart Debt Simplification",
+      desc: "When 3 or more people owe each other in a group, Spendova simplifies circular debts into the fewest direct transfers.",
+      tags: [
+        { label: "Invariance verified", cls: "bg-success/15 text-success" },
+        { label: "Debt Engine", cls: "bg-primary/15 text-primary" },
+      ],
+    },
+    {
+      icon: Users,
+      title: "Group & 1-on-1 Splits",
+      desc: "Split trips, rent, groceries, or dinners with equal, exact, percentage, or share-based splits and multiple payers.",
+      tags: [
+        { label: "Equal · Exact · %", cls: "bg-success/15 text-success" },
+        { label: "Multi-payer", cls: "bg-primary/15 text-primary" },
+      ],
+    },
+    {
+      icon: BarChart3,
+      title: "Personal Budgets & Ledgers",
+      desc: "Track individual spending, monthly trends, custom categories, and shared household ledgers in one place.",
+      tags: [
+        { label: "Live charts", cls: "bg-success/15 text-success" },
+        { label: "Ledgers", cls: "bg-primary/15 text-primary" },
+      ],
+    },
+    {
+      icon: Bell,
+      title: "Push Alerts & Reminders",
+      desc: "Instant alerts for shared activity and 1-tap payment reminders directly from the You Get drawer.",
+      tags: [
+        { label: "Instant push", cls: "bg-success/15 text-success" },
+        { label: "1-tap remind", cls: "bg-primary/15 text-primary" },
+      ],
+    },
+    {
+      icon: Lock,
+      title: "Biometric Lock & Privacy",
+      desc: "Protect your financial records with optional Android fingerprint lock on launch.",
+      tags: [
+        { label: "Fingerprint ready", cls: "bg-success/15 text-success" },
+        { label: "Device lock", cls: "bg-primary/15 text-primary" },
+      ],
+    },
+    {
+      icon: Smartphone,
+      title: "Native Android Experience",
+      desc: "Contacts friend matching, back-swipe navigation, and 1-tap in-app updates.",
+      tags: [
+        { label: "Contacts sync", cls: "bg-success/15 text-success" },
+        { label: "Auto updates", cls: "bg-primary/15 text-primary" },
+      ],
+    },
+  ];
+
+  useEffect(() => {
+    if (carouselPaused) return;
+    const id = window.setInterval(() => {
+      setFeatureIdx((prev) => (prev + 1) % features.length);
+    }, 2800);
+    return () => window.clearInterval(id);
+  }, [carouselPaused, features.length]);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const top = window.scrollY;
+      const height = document.documentElement.scrollHeight - window.innerHeight;
+      setScrollPct(height > 0 ? Math.min(100, (top / height) * 100) : 0);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -72,15 +151,21 @@ export default function Landing() {
   const apkFilename = `Spendova_v${version}.apk`;
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-background text-foreground selection:bg-primary selection:text-primary-foreground">
+    <div className="min-h-screen overflow-x-clip bg-background text-foreground selection:bg-primary selection:text-primary-foreground">
+      {/* Top Scroll Progress Hairline */}
+      <div
+        className="fixed top-0 left-0 z-[60] h-[2px] bg-primary transition-[width] duration-75 ease-out pointer-events-none"
+        style={{ width: `${scrollPct}%` }}
+      />
+
       {/* Header / Navigation Bar */}
-      <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/90 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-8">
+      <header className="fixed top-0 inset-x-0 z-50 w-full border-b border-border/60 bg-background/90 backdrop-blur-xl transition-colors duration-200">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-8">
           <a href="#" className="flex items-center transition hover:opacity-90" aria-label="Spendova home">
             <img
               src={theme === "dark" ? "/brand/navbar-logo-dark.png" : "/brand/navbar-logo.png"}
               alt="Spendova — Split. Track. Grow."
-              className="h-9 sm:h-10 md:h-11 w-auto object-contain select-none"
+              className="h-8 sm:h-10 w-auto object-contain select-none"
             />
           </a>
 
@@ -91,11 +176,11 @@ export default function Landing() {
             <a href="#faq" className="transition hover:text-foreground">FAQ</a>
           </nav>
 
-          <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             <button
               type="button"
               onClick={toggleTheme}
-              className="grid size-9 place-items-center rounded-full bg-card border border-border/60 text-foreground shadow-soft transition hover:bg-elevated"
+              className="grid size-8 sm:size-9 place-items-center rounded-full bg-card border border-border/60 text-foreground shadow-soft transition hover:bg-elevated"
               aria-label="Toggle theme"
             >
               {theme === "dark" ? (
@@ -107,61 +192,57 @@ export default function Landing() {
 
             <Link
               to="/login"
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-card border border-border/60 px-4 py-2 text-xs font-bold text-foreground shadow-soft transition hover:bg-elevated"
+              className="inline-flex items-center gap-1 sm:gap-1.5 rounded-full bg-card border border-border/60 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-bold text-foreground shadow-soft transition hover:bg-elevated"
             >
-              <span>Web App</span>
-              <ExternalLink className="size-3.5 text-muted-foreground" />
+              <span className="sm:hidden">Web</span>
+              <span className="hidden sm:inline">Web App</span>
+              <ExternalLink className="size-3 sm:size-3.5 text-muted-foreground" />
             </Link>
 
             <a
               href={apkUrl}
               download={apkFilename}
-              className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs sm:text-sm font-bold text-primary-foreground shadow-primary-action transition hover:brightness-105 active:scale-95"
+              className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-primary px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-bold text-primary-foreground shadow-primary-action transition hover:brightness-105 active:scale-95"
             >
-              <AndroidIcon className="size-4 shrink-0" />
-              <span>Download App</span>
+              <AndroidIcon className="size-3.5 sm:size-4 shrink-0" />
+              <span className="sm:hidden">Get App</span>
+              <span className="hidden sm:inline">Download App</span>
             </a>
           </div>
         </div>
       </header>
 
       {/* Hero Section */}
-      <section className="px-5 pt-12 pb-16 sm:px-8 sm:pt-20 sm:pb-24">
+      <section className="px-4 pt-24 pb-12 sm:px-8 sm:pt-28 sm:pb-16">
         <div className="mx-auto max-w-5xl text-center">
-          <div className="inline-flex items-center gap-2 rounded-full bg-card border border-border/60 px-4 py-1.5 text-xs font-bold text-foreground shadow-soft mb-6">
+          <div className="inline-flex items-center gap-2 rounded-full bg-card border border-border/60 px-3.5 py-1.5 text-xs font-bold text-foreground shadow-soft mb-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <span className="size-2 rounded-full bg-success" />
             <span>Spendova v{version} · Latest Android Release</span>
           </div>
 
-          <h1 className="text-3xl font-extrabold tracking-tight text-foreground sm:text-5xl md:text-[3.5rem] leading-[1.12]">
+          <h1 className="text-3xl font-extrabold tracking-tight text-foreground sm:text-5xl md:text-[3.35rem] leading-[1.12] animate-in fade-in slide-in-from-bottom-3 duration-500">
             Smarter Spending.
             <br />
             <span className="text-primary">Seamless Bill Splitting.</span>
           </h1>
 
-          <p className="mx-auto mt-5 max-w-2xl text-base sm:text-lg font-medium leading-relaxed text-muted-foreground">
+          <p className="mx-auto mt-4 max-w-2xl text-sm sm:text-lg font-medium leading-relaxed text-muted-foreground animate-in fade-in slide-in-from-bottom-3 duration-500">
             Track personal budgets, split shared expenses with friends, simplify group debts automatically, and receive instant payment reminders.
           </p>
 
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3.5">
+          <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
             <a
               href={apkUrl}
               download={apkFilename}
-              className="group flex w-full sm:w-auto items-center justify-center gap-3.5 rounded-2xl bg-primary px-7 py-3.5 text-base font-bold text-primary-foreground shadow-primary-action transition hover:brightness-105 active:scale-95"
+              className="group inline-flex h-12 w-full sm:w-auto items-center justify-center gap-2 rounded-full bg-primary px-6 text-sm font-bold text-primary-foreground shadow-primary-action transition hover:brightness-105 active:scale-95"
             >
-              <span className="grid size-9 place-items-center rounded-xl bg-black/15 dark:bg-black/20">
-                <AndroidIcon className="size-5" />
-              </span>
-              <span className="text-left">
-                <span className="block text-[11px] font-semibold uppercase tracking-wider opacity-85">Official Android APK</span>
-                <span className="block text-base font-extrabold">Download Spendova App</span>
-              </span>
-              <ArrowDown className="ml-1 size-5 opacity-85 transition group-hover:translate-y-0.5" />
+              <AndroidIcon className="size-4 shrink-0" />
+              <span>Download Android App</span>
             </a>
 
             <Link
               to="/login"
-              className="flex w-full sm:w-auto items-center justify-center gap-2 rounded-2xl bg-card border border-border/60 px-6 py-4 text-sm font-bold text-foreground shadow-soft transition hover:bg-elevated"
+              className="inline-flex h-12 w-full sm:w-auto items-center justify-center gap-2 rounded-full bg-card border border-border/60 px-6 text-sm font-bold text-foreground shadow-soft transition hover:bg-elevated"
             >
               <Monitor className="size-4 text-primary" />
               <span>Open Web App</span>
@@ -210,17 +291,34 @@ export default function Landing() {
                 </div>
                 <p className="spendova-money-value mt-1 text-3xl font-extrabold text-foreground">₹1,130.00</p>
 
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl bg-card p-3.5">
+                <div className="mt-3.5 grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTab("get")}
+                    className={`rounded-2xl bg-card p-3 text-left transition ${previewTab === "get" ? "ring-2 ring-primary/40" : "hover:bg-card/80"}`}
+                  >
                     <p className="text-xs font-semibold text-muted-foreground">You Get</p>
-                    <p className="spendova-money-value mt-1 text-lg sm:text-xl font-black text-success">₹1,450.00</p>
-                    <p className="text-[11px] font-medium text-muted-foreground mt-0.5">from 3 friends</p>
-                  </div>
-                  <div className="rounded-2xl bg-card p-3.5">
+                    <p className="spendova-money-value mt-0.5 text-lg sm:text-xl font-black text-success">₹1,450.00</p>
+                    <p className="text-[11px] font-medium text-muted-foreground">from 3 friends</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewTab("owe")}
+                    className={`rounded-2xl bg-card p-3 text-left transition ${previewTab === "owe" ? "ring-2 ring-primary/40" : "hover:bg-card/80"}`}
+                  >
                     <p className="text-xs font-semibold text-muted-foreground">You Owe</p>
-                    <p className="spendova-money-value mt-1 text-lg sm:text-xl font-black text-warning">₹320.00</p>
-                    <p className="text-[11px] font-medium text-muted-foreground mt-0.5">in Goa Trip</p>
-                  </div>
+                    <p className="spendova-money-value mt-0.5 text-lg sm:text-xl font-black text-warning">₹320.00</p>
+                    <p className="text-[11px] font-medium text-muted-foreground">in Trip Group</p>
+                  </button>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-card/80 px-3 py-2 text-xs transition-all duration-200">
+                  <span className="font-semibold text-foreground truncate">
+                    {previewTab === "get" ? "James Davis owes you ₹850.00" : "You owe Charles Miller ₹320.00"}
+                  </span>
+                  <span className="shrink-0 rounded-lg bg-primary/15 px-2.5 py-1 font-bold text-primary">
+                    {previewTab === "get" ? "Remind · Settle" : "Settle Now"}
+                  </span>
                 </div>
               </div>
 
@@ -245,33 +343,104 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Core Features Grid */}
-      <section id="features" className="border-t border-border/60 bg-surface px-5 py-16 sm:px-8 sm:py-24">
+      {/* Core Features Focus Carousel (Main.dc.html style) */}
+      <section id="features" className="border-t border-border/60 bg-surface px-4 py-12 sm:px-8 sm:py-16">
         <div className="mx-auto max-w-6xl">
-          <div className="text-center max-w-3xl mx-auto">
-            <p className="text-xs font-bold uppercase tracking-widest text-primary">Why Spendova</p>
-            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-foreground sm:text-4xl">
+          <div className="text-center max-w-2xl mx-auto">
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-primary">WHY SPENDOVA</p>
+            <h2 className="mt-1.5 text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
               Everything you need to manage money and shared bills.
             </h2>
-            <p className="mt-3 text-sm sm:text-base text-muted-foreground">Built for accuracy, privacy, and everyday speed.</p>
+            <p className="mt-1.5 text-sm sm:text-base text-muted-foreground">Built for accuracy, privacy, and everyday speed.</p>
           </div>
 
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              { icon: Zap, title: "Smart Debt Simplification", desc: "When 3 or more people owe each other in a group, Spendova simplifies circular debts into the fewest direct transfers." },
-              { icon: Users, title: "Group & 1-on-1 Splits", desc: "Split trips, rent, groceries, or dinners with equal, exact, percentage, or share-based splits and multiple payers." },
-              { icon: BarChart3, title: "Personal Budgets & Ledgers", desc: "Track individual spending, monthly trends, custom categories, and shared household ledgers in one place." },
-              { icon: Bell, title: "Instant Push Alerts & Reminders", desc: "Get native push alerts when expenses or settlements are added, and send 1-tap payment reminders." },
-              { icon: Lock, title: "Biometric Lock & Privacy", desc: "Protect your financial records with optional Android fingerprint and biometric lock on app launch." },
-              { icon: Smartphone, title: "Native Android Experience", desc: "Includes Android system back-swipe navigation, contacts friend matching, and seamless in-app updates." },
-            ].map((item) => (
-              <div key={item.title} className="rounded-[1.25rem] bg-card border border-border/55 p-6 shadow-soft transition hover:shadow-panel hover:border-border">
-                <div className="grid size-11 place-items-center rounded-full bg-primary/15 text-primary">
-                  <item.icon className="size-5" />
+          {(() => {
+            const total = features.length;
+            const prevIdx = (featureIdx - 1 + total) % total;
+            const nextIdx = (featureIdx + 1) % total;
+            const prevItem = features[prevIdx];
+            const curItem = features[featureIdx];
+            const nextItem = features[nextIdx];
+            const PrevIcon = prevItem.icon;
+            const CurIcon = curItem.icon;
+            const NextIcon = nextItem.icon;
+
+            return (
+              <div className="mt-8 flex items-center justify-center gap-4 lg:gap-6 select-none">
+                <button
+                  key={`prev-${prevItem.title}`}
+                  type="button"
+                  onClick={() => setFeatureIdx(prevIdx)}
+                  className="hidden md:flex w-[270px] lg:w-[290px] h-[300px] shrink-0 flex-col justify-between rounded-[24px] bg-card/65 border border-border/50 p-5 text-left opacity-75 shadow-soft transition-all duration-300 hover:opacity-95 hover:-translate-y-0.5 cursor-pointer animate-in fade-in slide-in-from-right-4 duration-300"
+                >
+                  <div>
+                    <div className="h-24 rounded-2xl bg-elevated flex items-center justify-center text-primary">
+                      <PrevIcon className="size-6" />
+                    </div>
+                    <h3 className="mt-3.5 text-lg font-bold text-foreground">{prevItem.title}</h3>
+                    <p className="mt-1.5 text-xs sm:text-sm leading-relaxed text-muted-foreground line-clamp-3">{prevItem.desc}</p>
+                  </div>
+                </button>
+
+                <div
+                  key={curItem.title}
+                  className="w-full max-w-[420px] min-h-[360px] sm:min-h-[380px] shrink-0 flex flex-col justify-between rounded-[28px] bg-card border border-primary/25 p-6 shadow-panel animate-in fade-in slide-in-from-right-4 duration-300"
+                >
+                  <div>
+                    <div
+                      className="h-32 sm:h-36 rounded-[20px] flex items-center justify-center shadow-soft"
+                      style={{ background: "linear-gradient(135deg, hsl(var(--primary)), #4F2BB8)" }}
+                    >
+                      <div
+                        className="grid size-20 place-items-center rounded-full bg-white/15 text-white"
+                        style={{ boxShadow: "0 0 0 10px rgba(255,255,255,0.10), 0 0 0 22px rgba(255,255,255,0.06)" }}
+                      >
+                        <CurIcon className="size-9" />
+                      </div>
+                    </div>
+                    <h3 className="mt-5 text-xl font-extrabold tracking-tight text-foreground">{curItem.title}</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{curItem.desc}</p>
+                  </div>
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    {curItem.tags.map((t) => (
+                      <span key={t.label} className={`rounded-full px-3 py-1 text-xs font-bold ${t.cls}`}>
+                        {t.label}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-                <h3 className="mt-4 text-lg font-bold text-foreground">{item.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.desc}</p>
+
+                <button
+                  key={`next-${nextItem.title}`}
+                  type="button"
+                  onClick={() => setFeatureIdx(nextIdx)}
+                  className="hidden lg:flex w-[270px] lg:w-[290px] h-[300px] shrink-0 flex-col justify-between rounded-[24px] bg-card/65 border border-border/50 p-5 text-left opacity-75 shadow-soft transition-all duration-300 hover:opacity-95 hover:-translate-y-0.5 cursor-pointer animate-in fade-in slide-in-from-right-4 duration-300"
+                >
+                  <div>
+                    <div className="h-24 rounded-2xl bg-elevated flex items-center justify-center text-primary">
+                      <NextIcon className="size-6" />
+                    </div>
+                    <h3 className="mt-3.5 text-lg font-bold text-foreground">{nextItem.title}</h3>
+                    <p className="mt-1.5 text-xs sm:text-sm leading-relaxed text-muted-foreground line-clamp-3">{nextItem.desc}</p>
+                  </div>
+                </button>
               </div>
+            );
+          })()}
+
+          <div className="mt-6 flex items-center justify-center gap-1.5">
+            {features.map((item, idx) => (
+              <button
+                key={item.title}
+                type="button"
+                onClick={() => setFeatureIdx(idx)}
+                aria-label={`Go to ${item.title}`}
+                className={
+                  idx === featureIdx
+                    ? "h-1 w-14 rounded-full bg-primary transition-all duration-300"
+                    : "h-1 w-7 rounded-full bg-border hover:bg-primary/50 transition-all duration-300"
+                }
+              />
             ))}
           </div>
         </div>
@@ -362,43 +531,8 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Latest Release Notes Box */}
-      <section className="px-5 py-16 sm:px-8">
-        <div className="mx-auto max-w-4xl rounded-[1.25rem] bg-card border border-border/50 p-6 sm:p-8 shadow-panel">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 pb-5">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-primary">Release Changelog</span>
-              <h3 className="mt-1 text-xl font-bold flex items-center gap-2.5 text-foreground">
-                <span>Spendova v{version}</span>
-                <span className="rounded-full bg-success/15 px-2.5 py-0.5 text-[11px] font-bold text-success">Stable</span>
-              </h3>
-            </div>
-            <span className="text-xs font-semibold text-muted-foreground">Latest Version</span>
-          </div>
-
-          <div className="mt-5 text-sm space-y-2.5 leading-relaxed text-muted-foreground">
-            <p className="flex items-start gap-2">
-              <span className="text-primary font-bold">✓</span>
-              <span><strong className="text-foreground">Mobile Contacts Sync &amp; Invites</strong>: Find friends already on Spendova directly from your contacts.</span>
-            </p>
-            <p className="flex items-start gap-2">
-              <span className="text-primary font-bold">✓</span>
-              <span><strong className="text-foreground">One-Tap Payment Reminders</strong>: Send push and in-app reminders right from the You Get drawer.</span>
-            </p>
-            <p className="flex items-start gap-2">
-              <span className="text-primary font-bold">✓</span>
-              <span><strong className="text-foreground">Debt Simplification Engine</strong>: Verified invariance with partial settle-up protection.</span>
-            </p>
-            <p className="flex items-start gap-2">
-              <span className="text-primary font-bold">✓</span>
-              <span><strong className="text-foreground">Native Android Navigation</strong>: Smooth system back-swipe support with 2-tap exit safeguard.</span>
-            </p>
-          </div>
-        </div>
-      </section>
-
       {/* FAQ Section */}
-      <section id="faq" className="border-t border-border/60 bg-surface px-5 py-16 sm:px-8 sm:py-20">
+      <section id="faq" className="px-4 py-12 sm:px-8 sm:py-16">
         <div className="mx-auto max-w-3xl">
           <div className="text-center">
             <p className="text-xs font-bold uppercase tracking-widest text-primary">FAQ</p>
@@ -424,28 +558,8 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Sticky Mobile Bottom Download Bar */}
-      <div className="fixed bottom-0 inset-x-0 z-50 p-3 sm:hidden border-t border-border/60 bg-background/90 backdrop-blur-xl">
-        <div className="flex items-center gap-2.5">
-          <a
-            href={apkUrl}
-            download={apkFilename}
-            className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-primary py-3 text-xs font-bold text-primary-foreground shadow-primary-action"
-          >
-            <ArrowDown className="size-4" />
-            <span>Download Spendova App</span>
-          </a>
-          <Link
-            to="/login"
-            className="inline-flex items-center justify-center rounded-full bg-card border border-border/60 px-4 py-3 text-xs font-bold text-foreground"
-          >
-            <span>Web App</span>
-          </Link>
-        </div>
-      </div>
-
       {/* Footer */}
-      <footer className="border-t border-border/60 bg-surface px-5 py-10 pb-24 sm:pb-10 text-center text-xs text-muted-foreground">
+      <footer className="border-t border-border/60 bg-surface px-4 py-8 text-center text-xs text-muted-foreground">
         <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-6 px-4">
           <div className="flex items-center gap-2">
             <img src="/brand/spendova-symbol.png" alt="Spendova" className="size-6 object-contain" />

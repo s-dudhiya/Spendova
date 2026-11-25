@@ -6,7 +6,7 @@ import { RatingFeedbackModal } from "@/components/RatingFeedbackModal";
 import { useExpenseCategories } from "@/hooks/useExpenseCategories";
 import { APP_VERSION } from "@/lib/version";
 import { syncAndMatchContacts, type MatchedSpendovaContact, type UnmatchedPhoneContact } from "@/lib/contacts";
-import { buildWhatsAppUrl, formatPhoneDisplay, normalizePhone } from "@/lib/phone";
+import { buildWhatsAppUrl, formatPhoneDisplay, normalizePhone, SPENDOVA_WEBSITE_URL } from "@/lib/phone";
 import {
   ArrowLeft,
   ArrowRight,
@@ -5024,7 +5024,7 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
 
   const openWhatsAppInvite = (phone: string, name?: string) => {
     const greeting = name ? `Hey ${name}, ` : "Hey! ";
-    const message = `${greeting}join me on Spendova to track expenses and split bills easily.`;
+    const message = `${greeting}join me on Spendova to track expenses and split bills easily: ${SPENDOVA_WEBSITE_URL}`;
     window.open(buildWhatsAppUrl(phone, message), "_blank", "noopener,noreferrer");
   };
 
@@ -5047,16 +5047,24 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
 
   return (
     <div className="space-y-3">
-      <Field
-        label="Search by mobile number or username"
-        placeholder="e.g. 9876543210 or username"
-        value={query}
-        onChange={setQuery}
-      />
-      <Button onClick={search} className="w-full" disabled={searching}>
-        <Search className="size-4" />
-        {searching ? "Searching..." : "Search"}
-      </Button>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void search();
+        }}
+        className="space-y-3"
+      >
+        <Field
+          label="Search by mobile number or username"
+          placeholder="e.g. 9876543210 or username"
+          value={query}
+          onChange={setQuery}
+        />
+        <Button type="submit" className="w-full" disabled={searching}>
+          <Search className="size-4" />
+          {searching ? "Searching..." : "Search"}
+        </Button>
+      </form>
 
       {result && (
         <div className="flex items-center justify-between gap-2 rounded-2xl bg-elevated p-3">
@@ -5105,7 +5113,7 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
 
         {!isNative && (
           <p className="rounded-2xl bg-elevated/70 p-3 text-xs font-medium text-muted-foreground">
-            Contact sync is available in the Spendova Android app.
+            Search by mobile number above to add or invite friends.
           </p>
         )}
 

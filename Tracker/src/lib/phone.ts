@@ -54,3 +54,5 @@ export function buildWhatsAppUrl(phone: string, message: string): string {
   const digits = String(phone || "").replace(/\D/g, "");
   return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
+
+export const SPENDOVA_WEBSITE_URL = "https://spendova.vercel.app";

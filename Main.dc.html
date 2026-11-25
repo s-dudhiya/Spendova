@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A Focus carousel</title>
+<script src="./_runtime/react.js"></script>
+<script src="./_runtime/react-dom.js"></script>
+<script src="./_runtime/support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap">
+<style>body{margin:0}button{font-family:inherit;cursor:pointer}</style>
+</helmet>
+<div style="width:1200px;height:540px;box-sizing:border-box;padding:40px 48px;background:#ECE8F8;font-family:Inter,sans-serif;color:#1F1A33;display:flex;flex-direction:column;gap:28px;overflow:hidden">
+<div style="display:flex;justify-content:space-between;align-items:flex-end">
+<div><div style="font-size:13px;font-weight:600;letter-spacing:.12em;color:#5B2FC9">WHY SPENDOVA</div>
+<h2 style="margin:6px 0 4px;font-size:34px;letter-spacing:-.02em">Everything you need to manage money and shared bills.</h2>
+<div style="font-size:16px;color:#4B4566">Built for accuracy, privacy, and everyday speed.</div></div>
+<div style="display:flex;gap:10px"><button aria-label="Previous" style="width:46px;height:46px;border-radius:50%;border:0;background:#fff;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F1A33" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></button><button aria-label="Next" style="width:46px;height:46px;border-radius:50%;border:0;background:#fff;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F1A33" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></button></div>
+</div>
+<div style="display:flex;align-items:center;justify-content:center;gap:24px;flex:1">
+<div style="width:290px;height:310px;box-sizing:border-box;padding:22px;border-radius:24px;background:rgba(255,255,255,.55);opacity:.7;display:flex;flex-direction:column;gap:14px">
+<div style="height:100px;border-radius:16px;background:#E2DBF6;display:flex;align-items:center;justify-content:center;color:#5B2FC9"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"></path></svg></div>
+<div style="font-size:19px;font-weight:600">Push Alerts &amp; Reminders</div>
+<div style="font-size:14px;line-height:1.5;color:#4B4566">Instant alerts for shared activity and 1-tap payment reminders.</div></div>
+
+<div style="width:400px;height:390px;box-sizing:border-box;padding:26px;border-radius:28px;background:#fff;box-shadow:0 28px 56px rgba(91,47,201,.28);display:flex;flex-direction:column;gap:14px">
+<div style="height:140px;border-radius:20px;background:linear-gradient(135deg,#7C4DE8,#4F2BB8);display:flex;align-items:center;justify-content:center"><div style="width:84px;height:84px;border-radius:50%;background:rgba(255,255,255,.16);box-shadow:0 0 0 10px rgba(255,255,255,.1),0 0 0 22px rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 11v4c0 2-.5 3.5-1.5 5"></path><path d="M8 13c0-2.2 1.8-4 4-4s4 1.8 4 4c0 2.5-.4 4.5-1 6"></path><path d="M5 12a7 7 0 0 1 14 0c0 3-.3 5-1 7"></path><path d="M12 2.5a10 10 0 0 1 9 9.5"></path></svg></div></div>
+<div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:22px;font-weight:700">Biometric Lock &amp; Privacy</div></div>
+<div style="font-size:15px;line-height:1.5;color:#4B4566">Protect your financial records with optional Android fingerprint lock on launch.</div>
+<div style="display:flex;gap:8px;margin-top:auto"><span style="padding:6px 12px;border-radius:99px;background:#E6F4EC;color:#1B6B3F;font-size:13px;font-weight:600">Fingerprint ready</span><span style="padding:6px 12px;border-radius:99px;background:#F0ECFB;color:#4B2BA8;font-size:13px;font-weight:600">Device lock</span></div></div>
+
+<div style="width:290px;height:310px;box-sizing:border-box;padding:22px;border-radius:24px;background:rgba(255,255,255,.55);opacity:.7;display:flex;flex-direction:column;gap:14px">
+<div style="height:100px;border-radius:16px;background:#E2DBF6;display:flex;align-items:center;justify-content:center;gap:-6px"><span style="width:38px;height:38px;border-radius:50%;background:#7C4DE8;color:#fff;font-weight:600;display:flex;align-items:center;justify-content:center;border:3px solid #E2DBF6">R</span><span style="width:38px;height:38px;border-radius:50%;background:#2F8F5B;color:#fff;font-weight:600;display:flex;align-items:center;justify-content:center;border:3px solid #E2DBF6;margin-left:-10px">A</span><span style="width:38px;height:38px;border-radius:50%;background:#D9822B;color:#fff;font-weight:600;display:flex;align-items:center;justify-content:center;border:3px solid #E2DBF6;margin-left:-10px">S</span></div>
+<div style="font-size:19px;font-weight:600">Native Android Experience</div>
+<div style="font-size:14px;line-height:1.5;color:#4B4566">Contacts friend matching, back-swipe navigation, 1-tap updates.</div></div>
+</div>
+<div style="display:flex;justify-content:center;gap:6px"><span style="width:28px;height:4px;border-radius:4px;background:#C9BFEA"></span><span style="width:28px;height:4px;border-radius:4px;background:#C9BFEA"></span><span style="width:28px;height:4px;border-radius:4px;background:#C9BFEA"></span><span style="width:28px;height:4px;border-radius:4px;background:#C9BFEA"></span><span style="width:56px;height:4px;border-radius:4px;background:#5B2FC9"></span><span style="width:28px;height:4px;border-radius:4px;background:#C9BFEA"></span></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":540}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
