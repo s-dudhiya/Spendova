@@ -4948,6 +4948,17 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
 
     const normalized = normalizePhone(raw);
     if (normalized && /^[\d+\s().-]+$/.test(raw)) {
+      const { data: myProfile } = await supabase
+        .from("profiles")
+        .select("phone")
+        .eq("user_id", currentUserId)
+        .maybeSingle();
+      if (normalizePhone(myProfile?.phone || "") === normalized) {
+        setSearching(false);
+        toast({ title: "Invalid search", description: "You cannot add yourself.", variant: "destructive" });
+        return;
+      }
+
       const { data, error } = await (supabase.rpc as any)("match_spendova_contacts", {
         phone_numbers: [normalized],
       });
@@ -5019,11 +5030,19 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
 
   const existingIds = new Set([...friends.map((friend) => friend.user_id), ...requests.map((request) => request.profiles.user_id)]);
   const filterLower = contactFilter.trim().toLowerCase();
-  const filteredMatched = matchedContacts.filter(
-    (c) => !filterLower || c.contactName.toLowerCase().includes(filterLower) || (c.username || "").toLowerCase().includes(filterLower) || c.phone.includes(filterLower)
+  const filterDigits = contactFilter.replace(/\D/g, "");
+  const matchesContactFilter = (name: string, phone: string, username?: string | null) => {
+    if (!filterLower) return true;
+    if (name.toLowerCase().includes(filterLower)) return true;
+    if (username && username.toLowerCase().includes(filterLower)) return true;
+    if (filterDigits && phone.replace(/\D/g, "").includes(filterDigits)) return true;
+    return phone.toLowerCase().includes(filterLower);
+  };
+  const filteredMatched = matchedContacts.filter((c) =>
+    matchesContactFilter(c.contactName, c.phone, c.username)
   );
   const filteredUnmatched = unmatchedContacts
-    .filter((c) => !filterLower || c.contactName.toLowerCase().includes(filterLower) || c.phone.includes(filterLower))
+    .filter((c) => matchesContactFilter(c.contactName, c.phone))
     .slice(0, 30);
 
   return (
@@ -5121,16 +5140,24 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
                         </div>
                         <Button
                           size="sm"
-                          disabled={already || sendingId === c.userId}
+                          variant={c.isSelf || already ? "outline" : "default"}
+                          disabled={c.isSelf || already || sendingId === c.userId}
                           onClick={async () => {
+                            if (c.isSelf) return;
                             setSendingId(c.userId);
                             await onRequest(c.userId);
                             setSendingId(null);
                           }}
                           className="h-8 shrink-0 rounded-xl px-3 text-xs font-bold"
                         >
-                          <UserPlus className="size-3.5" />
-                          {already ? "Added" : sendingId === c.userId ? "Sending..." : "Add"}
+                          {c.isSelf ? (
+                            "On Spendova"
+                          ) : (
+                            <>
+                              <UserPlus className="size-3.5" />
+                              {already ? "Added" : sendingId === c.userId ? "Sending..." : "Add"}
+                            </>
+                          )}
                         </Button>
                       </div>
                     );

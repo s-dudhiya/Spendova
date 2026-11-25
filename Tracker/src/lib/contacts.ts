@@ -9,6 +9,7 @@ export type MatchedSpendovaContact = {
   username: string | null;
   phone: string;
   contactName: string;
+  isSelf?: boolean;
 };
 
 export type UnmatchedPhoneContact = {
@@ -105,6 +106,28 @@ export async function syncAndMatchContacts(): Promise<{
           contactName: phoneToContactName.get(row.phone) || row.full_name || row.username || "Spendova User",
         });
       }
+    }
+  }
+
+  const { data: authData } = await supabase.auth.getUser();
+  const currentUserId = authData?.user?.id;
+  if (currentUserId) {
+    const { data: myProfile } = await supabase
+      .from("profiles")
+      .select("user_id, full_name, username, phone")
+      .eq("user_id", currentUserId)
+      .maybeSingle();
+    const myNormalized = normalizePhone(myProfile?.phone || "");
+    if (myNormalized && phoneToContactName.has(myNormalized)) {
+      matchedPhones.add(myNormalized);
+      matchedMap.set(currentUserId, {
+        userId: currentUserId,
+        fullName: myProfile?.full_name || null,
+        username: myProfile?.username || null,
+        phone: myNormalized,
+        contactName: phoneToContactName.get(myNormalized) || myProfile?.full_name || "You",
+        isSelf: true,
+      });
     }
   }
 
