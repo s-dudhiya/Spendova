@@ -23,7 +23,9 @@ function cleanEmail(email: string) {
 }
 
 function normalizePhone(raw: string, defaultCountryCode = '+91'): string | null {
-  const trimmed = String(raw || '').trim()
+  const trimmed = String(raw || '')
+    .replace(/[\u200B-\u200F\u202A-\u202E\uFEFF\u00A0]/g, '')
+    .trim()
   if (!trimmed) return null
   const hasPlus = trimmed.startsWith('+')
   let digits = trimmed.replace(/\D/g, '')

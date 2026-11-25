@@ -3,7 +3,9 @@
  */
 
 export function normalizePhone(raw: string, defaultCountryCode = "+91"): string | null {
-  const trimmed = String(raw || "").trim();
+  const trimmed = String(raw || "")
+    .replace(/[\u200B-\u200F\u202A-\u202E\uFEFF\u00A0]/g, "")
+    .trim();
   if (!trimmed) return null;
 
   const hasPlus = trimmed.startsWith("+");
@@ -52,5 +54,3 @@ export function buildWhatsAppUrl(phone: string, message: string): string {
   const digits = String(phone || "").replace(/\D/g, "");
   return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
-
-export const SPENDOVA_DOWNLOAD_URL = "https://github.com/s-dudhiya/Spendova/releases/latest";

@@ -6,7 +6,7 @@ import { RatingFeedbackModal } from "@/components/RatingFeedbackModal";
 import { useExpenseCategories } from "@/hooks/useExpenseCategories";
 import { APP_VERSION } from "@/lib/version";
 import { syncAndMatchContacts, type MatchedSpendovaContact, type UnmatchedPhoneContact } from "@/lib/contacts";
-import { buildWhatsAppUrl, formatPhoneDisplay, normalizePhone, SPENDOVA_DOWNLOAD_URL } from "@/lib/phone";
+import { buildWhatsAppUrl, formatPhoneDisplay, normalizePhone } from "@/lib/phone";
 import {
   ArrowLeft,
   ArrowRight,
@@ -4940,14 +4940,14 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
   }, [isNative]);
 
   const search = async () => {
-    const raw = query.trim();
+    const raw = query.replace(/[\u200B-\u200F\u202A-\u202E\uFEFF\u00A0]/g, " ").trim();
     if (!raw) return;
     setSearching(true);
     setResult(null);
     setUnregisteredPhone(null);
 
     const normalized = normalizePhone(raw);
-    if (normalized && /^[\d+\s-]+$/.test(raw)) {
+    if (normalized && /^[\d+\s().-]+$/.test(raw)) {
       const { data, error } = await (supabase.rpc as any)("match_spendova_contacts", {
         phone_numbers: [normalized],
       });
@@ -5013,7 +5013,7 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
 
   const openWhatsAppInvite = (phone: string, name?: string) => {
     const greeting = name ? `Hey ${name}, ` : "Hey! ";
-    const message = `${greeting}join me on Spendova to track expenses and split bills easily: ${SPENDOVA_DOWNLOAD_URL}`;
+    const message = `${greeting}join me on Spendova to track expenses and split bills easily.`;
     window.open(buildWhatsAppUrl(phone, message), "_blank", "noopener,noreferrer");
   };
 
