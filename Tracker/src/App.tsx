@@ -20,10 +20,12 @@ import { requestContactsPermissionOnBoot } from "@/lib/contacts";
 import { registerBackHandler } from "@/lib/back-handler";
 import { ForceUpdateModal } from "@/components/ForceUpdateModal";
 import { normalizePhone } from "@/lib/phone";
+import { Capacitor } from "@capacitor/core";
 import Auth from "./pages/Auth";
 
 const Admin = lazy(() => import("./pages/Admin"));
 const Index = lazy(() => import("./pages/Index"));
+const Landing = lazy(() => import("./pages/Landing"));
 const InviteAccept = lazy(() => import("./pages/InviteAccept"));
 const InviteLedgerAccept = lazy(() => import("./pages/Ledger/InviteLedgerAccept"));
 const Maintenance = lazy(() => import("./pages/Maintenance"));
@@ -382,10 +384,12 @@ const AppRoutes = () => {
     );
   }
 
+  const isNativeApp = Capacitor.isNativePlatform();
+
   return (
     <Suspense fallback={<LoadingFallback />}>
       <Routes>
-        <Route path="/" element={<ProtectedIndex />} />
+        <Route path="/" element={isNativeApp ? <ProtectedIndex /> : <Landing />} />
         <Route path="/dashboard" element={<ProtectedIndex />} />
         <Route path="/ledger/:id" element={<ProtectedIndex />} />
         <Route path="/profile" element={<ProtectedIndex />} />
