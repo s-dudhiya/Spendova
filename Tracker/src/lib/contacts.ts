@@ -16,6 +16,28 @@ export type UnmatchedPhoneContact = {
   phone: string;
 };
 
+export async function requestContactsPermissionOnBoot(userId: string): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const perm = await Contacts.checkPermissions();
+    if (perm.contacts === "granted") return true;
+
+    const promptedKey = `spendova_contacts_prompted_${userId}`;
+    if (typeof localStorage !== "undefined" && localStorage.getItem(promptedKey) === "true") {
+      return false;
+    }
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(promptedKey, "true");
+    }
+
+    const req = await Contacts.requestPermissions();
+    return req.contacts === "granted";
+  } catch (err) {
+    console.warn("Contacts permission request failed:", err);
+    return false;
+  }
+}
+
 export async function syncAndMatchContacts(): Promise<{
   supported: boolean;
   permissionDenied?: boolean;

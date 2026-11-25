@@ -316,6 +316,8 @@ const AdminDashboard = () => {
     created_at: string;
     is_blocked: boolean;
     blocked_reason?: string | null;
+    is_test_account?: boolean;
+    is_super_account?: boolean;
   };
   const [usersList, setUsersList] = useState<AdminUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -862,7 +864,7 @@ const AdminDashboard = () => {
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("user_id, full_name, username, created_at, is_blocked, blocked_reason")
+        .select("user_id, full_name, username, created_at, is_blocked, blocked_reason, is_test_account, is_super_account")
         .order("created_at", { ascending: false });
       if (error) throw error;
       setUsersList(((data as unknown as AdminUser[]) || []));
@@ -870,6 +872,34 @@ const AdminDashboard = () => {
       console.error("Failed to fetch users", error);
     } finally {
       setUsersLoading(false);
+    }
+  };
+
+  const handleToggleAccountFlag = async (
+    userItem: AdminUser,
+    field: "is_test_account" | "is_super_account",
+    nextValue: boolean
+  ) => {
+    setSavingBlockAction(true);
+    try {
+      const { error } = await supabase.rpc("admin_set_account_flags" as never, {
+        target_user_id: userItem.user_id,
+        next_is_test: field === "is_test_account" ? nextValue : null,
+        next_is_super: field === "is_super_account" ? nextValue : null,
+      } as never);
+      if (error) throw error;
+
+      const label = field === "is_test_account" ? "Test Account" : "Super Account";
+      toast({
+        title: nextValue ? `Marked as ${label}` : `Removed ${label} flag`,
+        description: `${userItem.full_name || userItem.username || "User"} ${nextValue ? "will bypass the mobile number requirement." : "flag updated."}`,
+      });
+      await fetchUsers();
+    } catch (error) {
+      console.error("Failed to update account flag", error);
+      toast({ title: "Action failed", description: getFriendlyErrorMessage(error, "admin"), variant: "destructive" });
+    } finally {
+      setSavingBlockAction(false);
     }
   };
 
@@ -1819,7 +1849,7 @@ const AdminDashboard = () => {
                             {initials}
                           </div>
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <p className="text-sm font-bold text-foreground truncate">
                                 {item.full_name || item.username || "Spendova User"}
                               </p>
@@ -1831,6 +1861,16 @@ const AdminDashboard = () => {
                                 <span className={`size-1.5 rounded-full ${item.is_blocked ? "bg-destructive" : "bg-emerald-500"}`} />
                                 {item.is_blocked ? "Suspended" : "Active"}
                               </span>
+                              {item.is_super_account && (
+                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-primary/15 text-primary border border-primary/30">
+                                  Super Account
+                                </span>
+                              )}
+                              {item.is_test_account && (
+                                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                                  Test Account
+                                </span>
+                              )}
                             </div>
                             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-0.5">
                               {item.username && <span>@{item.username}</span>}
@@ -1845,7 +1885,38 @@ const AdminDashboard = () => {
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-end gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/60">
+                        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/60">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleToggleAccountFlag(item, "is_test_account", !item.is_test_account)}
+                            disabled={savingBlockAction}
+                            className={`h-8 sm:h-9 rounded-xl text-xs font-semibold ${
+                              item.is_test_account
+                                ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
+                                : "border-border bg-elevated/60 hover:bg-elevated text-foreground"
+                            }`}
+                            title="Flag or unflag as Test Account (skips mobile number requirement)"
+                          >
+                            {item.is_test_account ? "Unmark Test" : "Mark Test"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleToggleAccountFlag(item, "is_super_account", !item.is_super_account)}
+                            disabled={savingBlockAction}
+                            className={`h-8 sm:h-9 rounded-xl text-xs font-semibold ${
+                              item.is_super_account
+                                ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+                                : "border-border bg-elevated/60 hover:bg-elevated text-foreground"
+                            }`}
+                            title="Flag or unflag as Super Account (skips mobile number requirement)"
+                          >
+                            <ShieldCheck className="mr-1.5 size-3.5 text-primary" />
+                            {item.is_super_account ? "Super" : "Make Super"}
+                          </Button>
                           <Button
                             type="button"
                             variant="outline"

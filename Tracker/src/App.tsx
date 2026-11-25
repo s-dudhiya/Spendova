@@ -16,6 +16,7 @@ import { consumeFreshLoginUnlocked, isBiometricLockEnabled, unlockWithBiometric 
 import { getFriendlyErrorMessage } from "@/lib/friendly-error";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 import { initializeNotifications } from "@/lib/notifications";
+import { requestContactsPermissionOnBoot } from "@/lib/contacts";
 import { registerBackHandler } from "@/lib/back-handler";
 import { ForceUpdateModal } from "@/components/ForceUpdateModal";
 import { normalizePhone } from "@/lib/phone";
@@ -75,21 +76,30 @@ const PhoneCompletionGate = ({ children }: { children: React.ReactNode }) => {
     }
 
     setChecking(true);
-    supabase
-      .from("profiles")
-      .select("phone")
-      .eq("user_id", user.id)
-      .maybeSingle()
-      .then(({ data, error: fetchErr }) => {
-        if (!active) return;
-        if (fetchErr) {
-          console.warn("Phone check failed:", fetchErr.message);
-          setNeedsPhone(false);
-        } else {
-          setNeedsPhone(!data?.phone);
-        }
-        setChecking(false);
-      });
+    Promise.all([
+      supabase
+        .from("profiles")
+        .select("phone, is_test_account, is_super_account")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase.rpc("is_admin" as never),
+    ]).then(([profileRes, adminRes]) => {
+      if (!active) return;
+      const isAdmin = !adminRes.error && adminRes.data === true;
+      if (profileRes.error) {
+        console.warn("Phone check failed:", profileRes.error.message);
+        setNeedsPhone(false);
+      } else {
+        const p = profileRes.data as {
+          phone?: string | null;
+          is_test_account?: boolean | null;
+          is_super_account?: boolean | null;
+        } | null;
+        const exempt = Boolean(p?.phone || p?.is_test_account || p?.is_super_account || isAdmin);
+        setNeedsPhone(!exempt);
+      }
+      setChecking(false);
+    });
 
     return () => {
       active = false;
@@ -127,7 +137,8 @@ const PhoneCompletionGate = ({ children }: { children: React.ReactNode }) => {
         if (updateErr.code === "23505") {
           setError("This mobile number is already linked to another Spendova account.");
         } else {
-          setError(updateErr.message || "Could not save mobile number.");
+          console.error("Failed to save mobile number:", updateErr);
+          setError("Could not save mobile number. Please check your connection and try again.");
         }
         return;
       }
@@ -135,11 +146,18 @@ const PhoneCompletionGate = ({ children }: { children: React.ReactNode }) => {
       toast({ title: "Mobile number saved", description: "You can now find friends from your contacts." });
       setNeedsPhone(false);
     } catch (err: any) {
-      setError(err?.message || "Failed to save mobile number.");
+      console.error("Phone save exception:", err);
+      setError("Could not save mobile number. Please try again.");
     } finally {
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!checking && !needsPhone && user) {
+      void requestContactsPermissionOnBoot(user.id);
+    }
+  }, [checking, needsPhone, user]);
 
   if (checking) return <LoadingFallback />;
   if (!needsPhone) return <>{children}</>;
@@ -152,7 +170,7 @@ const PhoneCompletionGate = ({ children }: { children: React.ReactNode }) => {
         </div>
         <h1 className="mt-5 text-2xl font-bold tracking-tight">Add your mobile number</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Link your mobile number to continue using Spendova, find friends from contacts, and receive payment reminders.
+          Enter your mobile number to continue using Spendova.
         </p>
         <form onSubmit={handleSavePhone} className="mt-5 space-y-3 text-left">
           <Input
@@ -160,7 +178,7 @@ const PhoneCompletionGate = ({ children }: { children: React.ReactNode }) => {
             required
             value={phoneInput}
             onChange={(e) => setPhoneInput(e.target.value.replace(/[^\d+\s-]/g, ""))}
-            placeholder="e.g. 9876543210 or +91 9876543210"
+            placeholder="Enter your phone number"
             className="h-12 rounded-xl bg-elevated px-4 text-sm font-medium"
           />
           {error && <p className="rounded-2xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive">{error}</p>}

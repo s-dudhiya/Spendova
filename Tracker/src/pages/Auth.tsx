@@ -281,7 +281,7 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
             )}
             {isRegister && (
               <div>
-                <TextField label="Mobile number" value={phone} onChange={(value) => setPhone(value.replace(/[^\d+\s-]/g, ""))} placeholder="e.g. 9876543210 or +91 9876543210" type="tel" icon={Phone} />
+                <TextField label="Mobile number" value={phone} onChange={(value) => setPhone(value.replace(/[^\d+\s-]/g, ""))} placeholder="Enter your phone number" type="tel" icon={Phone} />
                 {phone && <p className={`mt-2 text-xs font-semibold ${phoneStatus === "available" ? "text-success" : phoneStatus === "checking" ? "text-muted-foreground" : "text-destructive"}`}>{phoneStatus === "available" ? "Mobile number is valid" : phoneStatus === "checking" ? "Checking mobile number..." : phoneStatus === "taken" ? "This mobile number is already registered" : "Enter a valid mobile number (e.g. 10 digits)"}</p>}
               </div>
             )}

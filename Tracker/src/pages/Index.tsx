@@ -1689,9 +1689,10 @@ const BalanceDetailDrawer = ({
         description: `${row.name} was notified about ${money(row.amount)}.`,
       });
     } catch (err: any) {
+      console.error("Could not send reminder:", err);
       toast({
         title: "Could not send reminder",
-        description: err?.message || "Please try again.",
+        description: getFriendlyErrorMessage(err, "friend"),
         variant: "destructive",
       });
     } finally {
@@ -4916,6 +4917,28 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
 
   const isNative = Capacitor.isNativePlatform();
 
+  useEffect(() => {
+    if (!isNative || contactsLoaded) return;
+    let active = true;
+    void (async () => {
+      try {
+        setSyncingContacts(true);
+        const res = await syncAndMatchContacts();
+        if (!active || !res.supported || res.permissionDenied) return;
+        setMatchedContacts(res.matched);
+        setUnmatchedContacts(res.unmatched);
+        setContactsLoaded(true);
+      } catch {
+        // User can retry manually via Sync Contacts button
+      } finally {
+        if (active) setSyncingContacts(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [isNative]);
+
   const search = async () => {
     const raw = query.trim();
     if (!raw) return;
@@ -4977,7 +5000,12 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
       setUnmatchedContacts(res.unmatched);
       setContactsLoaded(true);
     } catch (err: any) {
-      toast({ title: "Could not load contacts", description: err?.message || "Please try again.", variant: "destructive" });
+      console.error("Could not load contacts:", err);
+      toast({
+        title: "Could not load contacts",
+        description: "Unable to access your contacts right now. Please check app permissions and try again.",
+        variant: "destructive",
+      });
     } finally {
       setSyncingContacts(false);
     }
@@ -5040,7 +5068,7 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
           </div>
           <Button size="sm" variant="outline" onClick={() => openWhatsAppInvite(unregisteredPhone)}>
             <Share2 className="size-3.5" />
-            Invite on WhatsApp
+            Invite
           </Button>
         </div>
       )}
@@ -5058,14 +5086,14 @@ const AddFriendForm = ({ currentUserId, friends, requests, onRequest, onCancel }
 
         {!isNative && (
           <p className="rounded-2xl bg-elevated/70 p-3 text-xs font-medium text-muted-foreground">
-            Open the Spendova Android app to sync your phone contacts automatically, or search by mobile number above.
+            Contact sync is available in the Spendova Android app.
           </p>
         )}
 
         {isNative && !contactsLoaded && (
           <div className="rounded-2xl bg-elevated/70 p-3 text-center space-y-2">
             <p className="text-xs font-medium text-muted-foreground">
-              Allow Spendova to read your contacts to see who is already on Spendova and invite others via WhatsApp.
+              Sync your contacts to find friends on Spendova.
             </p>
             <Button size="sm" variant="quiet" onClick={handleSyncContacts} disabled={syncingContacts} className="w-full">
               <Users className="size-4" />
