@@ -4543,7 +4543,7 @@ const ExpenseForm = ({
 
           <div>
             <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Strategy</p>
-            <div className="flex gap-1 rounded-full bg-background p-1">
+            <div className="grid grid-cols-2 gap-1 rounded-2xl bg-background p-1 sm:grid-cols-4 sm:rounded-full">
               {(["equal", "exact", "percentage", "shares"] as const).map((item) => (
                 <button
                   key={item}
@@ -4562,7 +4562,7 @@ const ExpenseForm = ({
                       }
                     }
                   }}
-                  className={`flex-1 rounded-full px-3 py-2 text-xs font-bold capitalize transition-colors ${
+                  className={`rounded-xl sm:rounded-full px-2.5 py-2 text-xs font-bold capitalize transition-colors whitespace-nowrap ${
                     strategy === item
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -6206,7 +6206,7 @@ const ActionModal = ({
 
   return (
     <Dialog open={type !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent onOpenAutoFocus={(e) => e.preventDefault()} className="grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_1rem)] w-[calc(100vw_-_1.5rem)] max-w-[calc(100vw_-_1.5rem)] grid-rows-[auto,minmax(0,1fr)] gap-4 overflow-hidden rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:w-full sm:max-w-md sm:p-6">
+      <DialogContent onOpenAutoFocus={(e) => e.preventDefault()} className="grid max-h-[calc(100svh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_2.75rem)] max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_2.75rem)] w-[calc(100vw_-_1.5rem)] max-w-[calc(100vw_-_1.5rem)] grid-rows-[auto,minmax(0,1fr)] gap-4 overflow-hidden rounded-[1.25rem] border-border bg-card p-4 shadow-panel sm:w-full sm:max-w-md sm:p-6">
         <DialogHeader className="min-w-0 pr-6">
           <DialogTitle className="text-foreground">{title}</DialogTitle>
           <DialogDescription>{type === "notifications" ? "Pending settlements, invites, and recent activity." : type === "feedback-support" ? "Send feedback, bugs, or suggestions." : type === "remove-group-member" ? "Select an action for this member." : type === "saved" ? `${modal.item ?? "Action"} saved.` : "Complete the fields below."}</DialogDescription>

@@ -183,13 +183,13 @@ export default function Landing() {
       />
 
       {/* Header / Navigation Bar */}
-      <header className="fixed top-0 inset-x-0 z-50 px-2.5 pt-2.5 sm:px-6 sm:pt-3.5 pointer-events-none">
-        <div className="pointer-events-auto mx-auto flex max-w-6xl items-center justify-between gap-2 sm:gap-3 rounded-full border border-border/70 bg-card/85 px-2.5 py-1.5 sm:px-5 sm:py-2.5 backdrop-blur-xl shadow-soft transition-colors duration-200">
-          <a href="#" className="flex items-center pl-0.5 sm:pl-1 shrink-0 transition hover:opacity-90" aria-label="Spendova home">
+      <header className="fixed top-0 inset-x-0 z-50 md:px-6 md:pt-3.5 pointer-events-none">
+        <div className="pointer-events-auto mx-auto flex max-w-6xl items-center justify-between gap-2 md:gap-3 border-b md:border border-border/70 bg-card/90 md:bg-card/85 px-3.5 py-2.5 md:rounded-full md:px-5 md:py-2.5 backdrop-blur-xl shadow-soft transition-colors duration-200">
+          <a href="#" className="flex items-center shrink-0 transition hover:opacity-90" aria-label="Spendova home">
             <img
               src={theme === "dark" ? "/brand/navbar-logo-dark.png" : "/brand/navbar-logo.png"}
               alt="Spendova — Split. Track. Grow."
-              className="h-7 sm:h-10 w-auto object-contain select-none"
+              className="h-9 md:h-10 w-auto object-contain select-none"
             />
           </a>
 
@@ -200,35 +200,35 @@ export default function Landing() {
             <a href="#faq" className="rounded-full px-4 py-1.5 transition-all hover:bg-card hover:text-foreground hover:shadow-soft whitespace-nowrap">FAQ</a>
           </nav>
 
-          <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
+          <div className="flex items-center gap-1.5 md:gap-2.5 shrink-0">
             <button
               type="button"
               onClick={toggleTheme}
-              className="grid size-8 sm:size-10 place-items-center rounded-full bg-background/80 border border-border/60 text-foreground shadow-soft transition hover:bg-elevated active:scale-95"
+              className="grid size-9 md:size-10 place-items-center rounded-full bg-background/80 border border-border/60 text-foreground shadow-soft transition hover:bg-elevated active:scale-95"
               aria-label="Toggle theme"
             >
               {theme === "dark" ? (
-                <Sun className="size-3.5 sm:size-4 text-warning" />
+                <Sun className="size-4 text-warning" />
               ) : (
-                <Moon className="size-3.5 sm:size-4 text-primary" />
+                <Moon className="size-4 text-primary" />
               )}
             </button>
 
             <Link
               to="/login"
-              className="inline-flex h-8 sm:h-10 items-center gap-1 sm:gap-1.5 rounded-full bg-background/80 border border-border/60 px-2.5 sm:px-4 text-[11px] sm:text-sm font-bold text-foreground shadow-soft transition hover:bg-elevated whitespace-nowrap"
+              className="inline-flex h-9 md:h-10 items-center gap-1.5 rounded-full bg-background/80 border border-border/60 px-3 md:px-4 text-xs md:text-sm font-bold text-foreground shadow-soft transition hover:bg-elevated whitespace-nowrap"
             >
               <span className="sm:hidden">Web</span>
               <span className="hidden sm:inline">Web App</span>
-              <ExternalLink className="size-3 sm:size-3.5 text-muted-foreground" />
+              <ExternalLink className="size-3.5 text-muted-foreground" />
             </Link>
 
             <a
               href={apkUrl}
               download={apkFilename}
-              className="inline-flex h-8 sm:h-10 items-center gap-1 sm:gap-2 rounded-full bg-primary px-2.5 sm:px-4 text-[11px] sm:text-sm font-bold text-primary-foreground shadow-primary-action transition hover:brightness-105 active:scale-95 whitespace-nowrap"
+              className="inline-flex h-9 md:h-10 items-center gap-1.5 md:gap-2 rounded-full bg-primary px-3 md:px-4 text-xs md:text-sm font-bold text-primary-foreground shadow-primary-action transition hover:brightness-105 active:scale-95 whitespace-nowrap"
             >
-              <AndroidIcon className="size-3.5 sm:size-4 shrink-0" />
+              <AndroidIcon className="size-3.5 md:size-4 shrink-0" />
               <span className="sm:hidden">Get App</span>
               <span className="hidden sm:inline">Download App</span>
             </a>
@@ -496,9 +496,9 @@ export default function Landing() {
             <div className="rounded-[1.25rem] bg-card border border-border/50 p-6 shadow-panel">
               <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-4">Example Scenario: 3 Friends</div>
               <div className="space-y-3">
-                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-elevated">
-                  <span className="text-sm font-semibold text-foreground">Without Simplification</span>
-                  <span className="text-xs font-bold text-warning bg-warning/15 px-2.5 py-1 rounded-full">3 separate transfers</span>
+                <div className="flex items-center justify-between gap-1.5 p-3 sm:p-3.5 rounded-2xl bg-elevated">
+                  <span className="text-xs sm:text-sm font-semibold text-foreground whitespace-nowrap">Without Simplification</span>
+                  <span className="text-[10.5px] sm:text-xs font-bold text-warning bg-warning/15 px-2 sm:px-2.5 py-1 rounded-full whitespace-nowrap shrink-0">3 separate transfers</span>
                 </div>
                 <div className="p-4 rounded-2xl bg-primary/10 border border-primary/25">
                   <span className="text-xs font-bold uppercase tracking-wider text-primary">With Spendova Simplification</span>
