@@ -727,8 +727,8 @@ const getExpenseTimelineCreatedAt = (expense: ExpenseRow) => {
 };
 
 const FilterTrigger = ({ count, onClick }: { count: number; onClick: () => void }) => (
-  <button type="button" onClick={onClick} className="inline-flex items-center gap-1 text-xs font-bold text-primary">
-    <Filter className="size-3.5" />Filter{count > 0 ? ` (${count})` : ""}
+  <button type="button" onClick={onClick} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-bold text-primary">
+    <Filter className="size-3.5 shrink-0" />Filter{count > 0 ? ` (${count})` : ""}
   </button>
 );
 
@@ -2083,8 +2083,8 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <div className="flex flex-1 items-center gap-2 rounded-full border border-input bg-background px-4 py-3 shadow-soft">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex flex-1 min-w-0 items-center gap-2 rounded-full border border-input bg-background px-3.5 py-2.5 sm:px-4 sm:py-3 shadow-soft">
             <Search className="size-4 shrink-0 text-muted-foreground" />
             <input
               value={query}
@@ -2101,29 +2101,29 @@ const SplitView = ({ data, currentUserId, openModal }: { data: AppData; currentU
           <FilterTrigger count={activeFilterCount} onClick={() => setFiltersOpen(true)} />
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <Button
             onClick={() => openModal("create-group")}
             variant="outline"
-            className="h-11 flex-1 min-w-0 rounded-full border-border/80 bg-card px-2 text-xs font-bold text-foreground shadow-soft hover:bg-elevated sm:px-4 sm:text-sm"
+            className="h-10 sm:h-11 flex-1 min-w-0 rounded-full border-border/80 bg-card px-2.5 text-[11px] font-bold text-foreground shadow-soft hover:bg-elevated sm:px-4 sm:text-sm whitespace-nowrap"
           >
-            <Plus className="mr-1 size-4 shrink-0 text-primary" />
-            <span className="truncate">New Group</span>
+            <Plus className="mr-1 size-3.5 sm:size-4 shrink-0 text-primary" />
+            <span>New Group</span>
           </Button>
           <Button
             onClick={() => openModal("add-friend")}
             variant="outline"
-            className="h-11 flex-1 min-w-0 rounded-full border-border/80 bg-card px-2 text-xs font-bold text-foreground shadow-soft hover:bg-elevated sm:px-4 sm:text-sm"
+            className="h-10 sm:h-11 flex-1 min-w-0 rounded-full border-border/80 bg-card px-2.5 text-[11px] font-bold text-foreground shadow-soft hover:bg-elevated sm:px-4 sm:text-sm whitespace-nowrap"
           >
-            <UserPlus className="mr-1 size-4 shrink-0 text-primary" />
-            <span className="truncate">Add Friend</span>
+            <UserPlus className="mr-1 size-3.5 sm:size-4 shrink-0 text-primary" />
+            <span>Add Friend</span>
           </Button>
           <Button
             onClick={openFriendRequests}
             variant="quiet"
-            className="relative h-11 shrink-0 rounded-full border border-border/60 bg-card px-3 text-xs font-bold shadow-soft"
+            className="relative h-10 sm:h-11 shrink-0 rounded-full border border-border/60 bg-card px-2.5 sm:px-3 text-[11px] sm:text-xs font-bold shadow-soft whitespace-nowrap"
           >
-            <Inbox className="mr-1 size-4 shrink-0" />
+            <Inbox className="mr-1 size-3.5 sm:size-4 shrink-0" />
             <span>Requests</span>
             <CountBadge count={requestCount} className="ring-background" />
           </Button>

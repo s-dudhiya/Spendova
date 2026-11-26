@@ -236,16 +236,16 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
   };
 
   return (
-    <main className="relative isolate min-h-screen overflow-hidden bg-[#f4efff] px-4 py-5 text-[#171445] sm:px-6 sm:py-7">
+    <main className="relative isolate min-h-[100dvh] overflow-x-hidden bg-[#f4efff] px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] text-[#171445] sm:px-6 sm:py-7">
       <div className="pointer-events-none absolute left-[-5rem] top-[18%] hidden h-40 w-56 rotate-[-32deg] rounded-[2rem] bg-[#d8c9ff]/45 blur-[1px] sm:block" />
       <div className="pointer-events-none absolute left-[-2.5rem] top-[27%] hidden h-24 w-44 rotate-[-32deg] rounded-[1.5rem] bg-white/35 sm:block" />
       <div className="pointer-events-none absolute right-[-4.5rem] top-[58%] hidden h-36 w-48 rotate-[-32deg] rounded-[2rem] bg-[#d8c9ff]/45 sm:block" />
       <div className="pointer-events-none absolute right-10 top-14 hidden h-24 w-24 bg-[radial-gradient(circle,#bba7f4_1.5px,transparent_1.5px)] [background-size:13px_13px] opacity-70 sm:block" />
       <div className="pointer-events-none absolute bottom-10 left-8 hidden h-24 w-24 bg-[radial-gradient(circle,#bba7f4_1.5px,transparent_1.5px)] [background-size:13px_13px] opacity-70 sm:block" />
 
-      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-[392px] flex-col items-center justify-center sm:min-h-[calc(100vh-3.5rem)]">
-        <header className="text-center">
-          <Link to="/" className="block h-[116px] overflow-hidden sm:h-[132px]" aria-label="Spendova home">
+      <div className="relative z-10 mx-auto flex min-h-[calc(100dvh-2.75rem)] w-full max-w-[392px] flex-col items-center justify-center sm:min-h-[calc(100dvh-3.5rem)]">
+        <header className="text-center pt-1">
+          <Link to="/" className="block h-[88px] overflow-hidden min-[380px]:h-[104px] sm:h-[132px]" aria-label="Spendova home">
             <picture>
               <source media="(max-width: 640px)" srcSet={AUTH_BRAND_IMAGE_MOBILE} type="image/webp" />
               <source media="(max-width: 1024px)" srcSet={AUTH_BRAND_IMAGE_TABLET} type="image/webp" />
@@ -258,13 +258,13 @@ const Auth = ({ mode }: { mode: AuthMode }) => {
                 loading="eager"
                 decoding="async"
                 fetchPriority="high"
-                className="h-auto w-[19rem] max-w-none -translate-y-[48px] min-[380px]:w-[21rem] min-[380px]:-translate-y-[52px] sm:w-[24rem] sm:-translate-y-[58px]"
+                className="h-auto w-[15.5rem] max-w-none -translate-y-[38px] min-[380px]:w-[18.5rem] min-[380px]:-translate-y-[45px] sm:w-[24rem] sm:-translate-y-[58px]"
               />
             </picture>
           </Link>
         </header>
 
-        <section className="mt-3 w-full rounded-[1.35rem] border border-white/80 bg-white/95 p-5 shadow-[0_22px_36px_rgba(76,61,130,0.18)] min-[380px]:p-7 sm:mt-4 sm:p-8">
+        <section className="mt-2 w-full rounded-[1.35rem] border border-white/80 bg-white/95 p-4 shadow-[0_22px_36px_rgba(76,61,130,0.18)] min-[380px]:p-6 sm:mt-4 sm:p-8">
           <div className="mb-4 border-b border-[#ddd3f6] pb-4 text-left">
             <p className="text-[0.68rem] font-bold uppercase tracking-[0.22em] text-[#6e6295]">Spendova account</p>
             <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#0d0b35] sm:text-[1.7rem]">{heading}</h1>
