@@ -90,7 +90,7 @@ export const checkForAppUpdate = async (): Promise<UpdateInfo | null> => {
 
     const apkUrl =
       apkAsset?.browser_download_url ||
-      "https://github.com/s-dudhiya/Spendova/releases/download/v-latest/Spendova-debug.apk";
+      `https://github.com/s-dudhiya/Spendova/releases/download/v-latest/Spendova_v${latestVersion}.apk`;
 
     const hasUpdate = compareVersions(latestVersion, APP_VERSION) > 0;
 

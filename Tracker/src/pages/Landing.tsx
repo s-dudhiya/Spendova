@@ -8,6 +8,7 @@ import {
   Clock,
   ExternalLink,
   Lock,
+  Minus,
   Monitor,
   Moon,
   Plus,
@@ -21,8 +22,9 @@ import { useTheme } from "@/hooks/useTheme";
 import { APP_VERSION } from "@/lib/version";
 
 const REPO = "s-dudhiya/Spendova";
-const RELEASE_API_URL = `https://api.github.com/repos/${REPO}/releases/tags/v-latest`;
-const FALLBACK_APK_URL = `https://github.com/${REPO}/releases/download/v-latest/Spendova-debug.apk`;
+const RELEASE_TAG_API_URL = `https://api.github.com/repos/${REPO}/releases/tags/v-latest`;
+const RELEASE_LATEST_API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
+const FALLBACK_APK_URL = `https://github.com/${REPO}/releases/download/v-latest/Spendova_v${APP_VERSION}.apk`;
 
 const AndroidIcon = ({ className = "size-4" }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -34,7 +36,7 @@ export default function Landing() {
   const { theme, toggleTheme } = useTheme();
   const [version, setVersion] = useState(APP_VERSION);
   const [apkUrl, setApkUrl] = useState(FALLBACK_APK_URL);
-  const [apkSize, setApkSize] = useState("~12 MB");
+  const [apkSize, setApkSize] = useState<string | null>(null);
   const [previewTab, setPreviewTab] = useState<"get" | "owe">("get");
   const [scrollPct, setScrollPct] = useState(0);
   const [featureIdx, setFeatureIdx] = useState(0);
@@ -117,29 +119,50 @@ export default function Landing() {
 
   useEffect(() => {
     let active = true;
-    fetch(RELEASE_API_URL, { headers: { Accept: "application/vnd.github.v3+json" } })
+    const headers = { Accept: "application/vnd.github.v3+json" };
+
+    const applyRelease = (data: {
+      body?: string;
+      name?: string;
+      tag_name?: string;
+      assets?: Array<{ name?: string; browser_download_url?: string; size?: number }>;
+    }) => {
+      const body = String(data.body || "");
+      const name = String(data.name || "");
+      const tag = String(data.tag_name || "");
+      const vMatch = body.match(/RELEASE_VERSION=([0-9]+\.[0-9]+(\.[0-9]+)?)/i);
+      const nMatch = name.match(/v?([0-9]+\.[0-9]+(\.[0-9]+)?)/i);
+      const tMatch = tag.match(/v?([0-9]+\.[0-9]+(\.[0-9]+)?)/i);
+      const resolvedVersion = vMatch?.[1] || nMatch?.[1] || tMatch?.[1] || APP_VERSION;
+      setVersion(resolvedVersion);
+
+      const apkAssets = (data.assets || []).filter(
+        (a) => a.name && a.name.toLowerCase().endsWith(".apk")
+      );
+      const professionalAsset =
+        apkAssets.find((a) => !a.name!.toLowerCase().includes("debug")) || apkAssets[0];
+
+      if (professionalAsset?.browser_download_url) {
+        setApkUrl(professionalAsset.browser_download_url);
+      }
+      if (professionalAsset?.size) {
+        setApkSize(`${(professionalAsset.size / (1024 * 1024)).toFixed(1)} MB`);
+      }
+    };
+
+    fetch(RELEASE_TAG_API_URL, { headers })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!active || !data) return;
-
-        const body = String(data.body || "");
-        const name = String(data.name || "");
-        const vMatch = body.match(/RELEASE_VERSION=([0-9]+\.[0-9]+(\.[0-9]+)?)/i);
-        const nMatch = name.match(/v?([0-9]+\.[0-9]+(\.[0-9]+)?)/i);
-        const resolvedVersion = vMatch?.[1] || nMatch?.[1] || APP_VERSION;
-        setVersion(resolvedVersion);
-
-        const apkAssets = (data.assets || []).filter(
-          (a: { name?: string }) => a.name && a.name.toLowerCase().endsWith(".apk")
-        );
-        const professionalAsset =
-          apkAssets.find((a: { name: string }) => !a.name.toLowerCase().includes("debug")) || apkAssets[0];
-
-        if (professionalAsset?.browser_download_url) {
-          setApkUrl(professionalAsset.browser_download_url);
+        if (!active) return null;
+        if (data?.assets?.length) {
+          applyRelease(data);
+          return null;
         }
-        if (professionalAsset?.size) {
-          setApkSize(`${(professionalAsset.size / (1024 * 1024)).toFixed(1)} MB`);
+        return fetch(RELEASE_LATEST_API_URL, { headers }).then((r) => (r.ok ? r.json() : null));
+      })
+      .then((fallbackData) => {
+        if (active && fallbackData) {
+          applyRelease(fallbackData);
         }
       })
       .catch(() => {});
@@ -255,11 +278,15 @@ export default function Landing() {
               <CheckCircle2 className="size-3.5 text-success" />
               <span>Version {version}</span>
             </span>
-            <span className="opacity-40">•</span>
-            <span className="flex items-center gap-1.5">
-              <Upload className="size-3.5 text-primary" />
-              <span>Size: {apkSize}</span>
-            </span>
+            {apkSize && (
+              <>
+                <span className="opacity-40">•</span>
+                <span className="flex items-center gap-1.5">
+                  <Upload className="size-3.5 text-primary" />
+                  <span>Size: {apkSize}</span>
+                </span>
+              </>
+            )}
             <span className="opacity-40">•</span>
             <span className="flex items-center gap-1.5">
               <Clock className="size-3.5 text-primary" />
@@ -486,48 +513,82 @@ export default function Landing() {
 
       {/* How to Install APK Section */}
       <section id="install-guide" className="border-t border-border/60 bg-surface px-4 pt-10 pb-8 sm:px-8 sm:pt-14 sm:pb-10">
-        <div className="mx-auto max-w-5xl">
-          <div className="text-center max-w-2xl mx-auto">
-            <p className="text-xs font-bold uppercase tracking-widest text-primary">Quick Setup</p>
-            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-foreground sm:text-4xl">Install Spendova on Android</h2>
-            <p className="mt-3 text-sm sm:text-base text-muted-foreground">Takes less than 60 seconds.</p>
-          </div>
-
-          <div className="mt-12 grid gap-5 sm:grid-cols-3">
-            <div className="rounded-[1.25rem] bg-card border border-border/55 p-6 text-center shadow-soft">
-              <div className="mx-auto grid size-11 place-items-center rounded-full bg-primary text-base font-black text-primary-foreground shadow-primary-action">1</div>
-              <h3 className="mt-4 text-base font-bold text-foreground">Download the App</h3>
-              <p className="mt-2 text-xs sm:text-sm leading-relaxed text-muted-foreground">
-                Tap <strong className="text-foreground">Download App</strong> to save the latest <code className="text-xs bg-elevated px-1.5 py-0.5 rounded font-semibold text-foreground">{apkFilename}</code> file.
+        <div className="mx-auto max-w-6xl">
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-12 md:gap-10 items-center">
+            <div className="md:col-span-5 text-center md:text-left">
+              <p className="text-xs font-bold uppercase tracking-widest text-primary">Android Setup</p>
+              <h2 className="mt-1.5 text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
+                Install Spendova on Android
+              </h2>
+              <p className="mt-2.5 text-xs sm:text-sm leading-relaxed text-muted-foreground max-w-md mx-auto md:mx-0">
+                Download the signed APK directly from GitHub Releases and install it right on your phone—no Play Store wait.
               </p>
+
+              <div className="mt-5 mx-auto md:mx-0 max-w-md rounded-2xl bg-card border border-border/60 p-3 sm:p-3.5 shadow-soft flex items-center justify-between gap-3 text-left">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                    <AndroidIcon className="size-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs sm:text-sm font-bold text-foreground">{apkFilename}</p>
+                    <p className="text-[11px] font-medium text-muted-foreground">
+                      Release v{version}{apkSize ? ` · ${apkSize}` : ""}
+                    </p>
+                  </div>
+                </div>
+
+                <a
+                  href={apkUrl}
+                  download={apkFilename}
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-primary px-4 text-xs font-bold text-primary-foreground shadow-primary-action transition hover:brightness-105 active:scale-95"
+                >
+                  <ArrowDown className="size-3.5" />
+                  <span>Download</span>
+                </a>
+              </div>
             </div>
 
-            <div className="rounded-[1.25rem] bg-card border border-border/55 p-6 text-center shadow-soft">
-              <div className="mx-auto grid size-11 place-items-center rounded-full bg-primary text-base font-black text-primary-foreground shadow-primary-action">2</div>
-              <h3 className="mt-4 text-base font-bold text-foreground">Tap to Open</h3>
-              <p className="mt-2 text-xs sm:text-sm leading-relaxed text-muted-foreground">
-                Tap the completed download notification or open it from <em>Files &gt; Downloads</em>.
-              </p>
+            <div className="md:col-span-7 rounded-[1.25rem] bg-card border border-border/60 shadow-soft divide-y divide-border/50 overflow-hidden">
+              {[
+                {
+                  step: "01",
+                  title: "Download the APK",
+                  body: (
+                    <>
+                      Save <code className="text-xs bg-elevated px-1.5 py-0.5 rounded font-semibold text-foreground">{apkFilename}</code> directly to your device.
+                    </>
+                  ),
+                },
+                {
+                  step: "02",
+                  title: "Open the downloaded file",
+                  body: (
+                    <>
+                      Tap the download notification or open it from <em>Files &gt; Downloads</em>.
+                    </>
+                  ),
+                },
+                {
+                  step: "03",
+                  title: "Allow & install",
+                  body: (
+                    <>
+                      If Android prompts for <em>&ldquo;Install unknown apps&rdquo;</em>, tap <strong>Settings</strong> &gt; <strong>Allow</strong>, then tap <strong>Install</strong>.
+                    </>
+                  ),
+                },
+              ].map((item) => (
+                <div key={item.step} className="flex items-start gap-4 px-4 py-4 sm:px-5 sm:py-4.5">
+                  <span className="mt-0.5 inline-flex h-7 min-w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 px-2 font-mono text-xs font-bold text-primary">
+                    {item.step}
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm sm:text-[15px] font-bold text-foreground">{item.title}</h3>
+                    <p className="mt-1 text-xs sm:text-sm leading-relaxed text-muted-foreground">{item.body}</p>
+                  </div>
+                </div>
+              ))}
             </div>
-
-            <div className="rounded-[1.25rem] bg-card border border-border/55 p-6 text-center shadow-soft">
-              <div className="mx-auto grid size-11 place-items-center rounded-full bg-primary text-base font-black text-primary-foreground shadow-primary-action">3</div>
-              <h3 className="mt-4 text-base font-bold text-foreground">Allow &amp; Install</h3>
-              <p className="mt-2 text-xs sm:text-sm leading-relaxed text-muted-foreground">
-                If prompted for <em>"Install unknown apps"</em>, tap <strong>Settings</strong> &gt; <strong>Allow</strong>, then tap <strong>Install</strong>.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-10 text-center">
-            <a
-              href={apkUrl}
-              download={apkFilename}
-              className="inline-flex items-center gap-2.5 rounded-full bg-primary px-8 py-3.5 text-sm font-bold text-primary-foreground shadow-primary-action transition hover:brightness-105 active:scale-95"
-            >
-              <ArrowDown className="size-4" />
-              <span>Download Spendova App Now</span>
-            </a>
           </div>
         </div>
       </section>
@@ -557,8 +618,9 @@ export default function Landing() {
                 >
                   <summary className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-5 sm:py-4 font-bold text-sm sm:text-[15px] text-foreground select-none list-none">
                     <span>{faq.q}</span>
-                    <span className="grid size-7 shrink-0 place-items-center rounded-full bg-background/70 border border-border/50 text-muted-foreground transition-all duration-200 group-open:rotate-45 group-open:text-primary group-open:border-primary/30">
-                      <Plus className="size-3.5" />
+                    <span className="grid size-7 shrink-0 place-items-center rounded-full bg-background/70 border border-border/50 text-muted-foreground transition-colors duration-200 group-open:text-primary group-open:border-primary/30">
+                      <Plus className="size-3.5 group-open:hidden" />
+                      <Minus className="size-3.5 hidden group-open:block" />
                     </span>
                   </summary>
                   <p className="px-4 pb-4 sm:px-5 sm:pb-4 text-xs sm:text-sm leading-relaxed text-muted-foreground">{faq.a}</p>
