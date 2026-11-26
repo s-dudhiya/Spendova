@@ -96,7 +96,7 @@ export default function Profile() {
 
   // Redirect if not authenticated
   if (!authLoading && !user) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/login" replace />;
   }
 
   if (authLoading) {

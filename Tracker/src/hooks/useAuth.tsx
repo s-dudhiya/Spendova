@@ -82,6 +82,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   }, []);
 
+  const redirectToLogin = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const path = window.location.pathname;
+    if (path.startsWith("/admin") || path === "/login") return;
+    window.location.replace("/login");
+  }, []);
+
   useEffect(() => {
     if (!user) return;
     const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
@@ -103,13 +110,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const result = await checkDeviceSession();
       if (!result.valid) {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut().catch(() => undefined);
         clearLocalAuthState();
         toast({
           title: "Signed Out",
           description: getDeviceSessionMessage(result.reason),
           variant: "destructive",
         });
+        redirectToLogin();
         return;
       }
       lastRegisteredUserRef.current = targetUser.id;
@@ -133,13 +141,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const result = await checkDeviceSession();
         if (!result.valid) {
-          await supabase.auth.signOut();
+          await supabase.auth.signOut().catch(() => undefined);
           clearLocalAuthState();
           toast({
             title: "Signed Out",
             description: getDeviceSessionMessage(result.reason),
             variant: "destructive",
           });
+          redirectToLogin();
         }
       } catch (error) {
         console.warn("Device session check unavailable; continuing without blocking app load.", error);
@@ -189,6 +198,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === "SIGNED_IN" && session?.user) {
         safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
         markFreshLoginUnlocked(session.user.id);
+        if (safeStorage.getItem("spendova_otp_login_pending") === "true") {
+          safeStorage.removeItem("spendova_otp_login_pending");
+          registeringRef.current = true;
+          registerDeviceSession()
+            .then(() => {
+              lastRegisteredUserRef.current = session.user.id;
+              safeStorage.setItem(getLastActivityKey(session.user.id), String(Date.now()));
+              sendSyncBroadcast(session.user.id);
+            })
+            .catch((deviceError) => {
+              console.warn("Device session registration unavailable; continuing without blocking sign-in.", deviceError);
+              lastRegisteredUserRef.current = session.user.id;
+            })
+            .finally(() => {
+              registeringRef.current = false;
+            });
+        }
       }
       setSession(session);
       setUser(session?.user ?? null);
@@ -265,14 +291,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await revokeCurrentDeviceSession().catch(() => undefined);
           await supabase.auth.signOut().catch(() => undefined);
           clearLocalAuthState();
-          setProfile(null);
-          setUser(null);
-          setSession(null);
           toast({
             title: "Account Suspended",
             description: userProfile.blocked_reason || "Your Spendova account has been temporarily blocked by administration. Please contact support.",
             variant: "destructive"
           });
+          redirectToLogin();
           return;
         }
         setProfile(userProfile);
@@ -378,20 +402,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    // Always fetch latest session before signing out
-    const { data: { session: currentSession } } = await withTimeout(supabase.auth.getSession(), 5000, "sign out session lookup");
-    if (!currentSession) {
-      toast({ title: "Sign Out Failed", description: "No active session found.", variant: "destructive" });
-      return;
-    }
+    try {
+      const { data: { session: currentSession } } = await withTimeout(
+        supabase.auth.getSession(),
+        5000,
+        "sign out session lookup"
+      ).catch(() => ({ data: { session: null } }));
 
-    await revokeCurrentDeviceSession().catch((error) => console.error("Device session revoke failed", error));
-    const { error } = await supabase.auth.signOut();
-    if (!error) {
+      if (currentSession) {
+        await revokeCurrentDeviceSession().catch((error) => console.error("Device session revoke failed", error));
+        const { error } = await supabase.auth.signOut();
+        if (!error) {
+          toast({ title: "Signed Out", description: "You have been successfully signed out." });
+        } else {
+          toast({ title: "Signed Out", description: getFriendlyErrorMessage(error, "auth"), variant: "destructive" });
+        }
+      } else {
+        await supabase.auth.signOut().catch(() => undefined);
+      }
+    } catch (error) {
+      console.error("Sign out failed", error);
+      await supabase.auth.signOut().catch(() => undefined);
+    } finally {
       clearLocalAuthState();
-      toast({ title: "Signed Out", description: "You have been successfully signed out." });
-    } else {
-      toast({ title: "Sign Out Failed", description: getFriendlyErrorMessage(error, "auth"), variant: "destructive" });
+      redirectToLogin();
     }
   };
 

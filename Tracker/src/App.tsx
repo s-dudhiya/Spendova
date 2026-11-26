@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { BrowserRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Fingerprint, LockKeyhole, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -206,7 +206,7 @@ const ProtectedIndex = () => {
   }, [user]);
 
   if (loading) return <LoadingFallback />;
-  if (!user) return <Auth mode="login" />;
+  if (!user) return <Navigate to="/login" replace />;
   return (
     <PhoneCompletionGate>
       <Index />

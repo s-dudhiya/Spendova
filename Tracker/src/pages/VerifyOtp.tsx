@@ -112,13 +112,41 @@ export default function VerifyOtp() {
       if (isLogin) {
         const redirectUrl = window.location.origin + redirect;
         const { data, error } = await supabase.functions.invoke("verify-auth-otp", { body: { email, purpose, otp, redirectTo: redirectUrl } });
-        if (error) throw error;
-        if (data.actionLink) {
+        if (error) {
+          if (error.context && typeof error.context.json === "function") {
+            const body = await error.context.json().catch(() => null);
+            if (body?.error) throw new Error(body.error);
+          }
+          throw error;
+        }
+
+        const tokenHash: string | null =
+          data?.tokenHash ||
+          (data?.actionLink ? new URL(data.actionLink).searchParams.get("token") : null);
+
+        if (tokenHash) {
+          safeStorage.setItem("spendova_otp_login_pending", "true");
+          const { error: otpSessionError } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: "magiclink",
+          });
+          if (otpSessionError) {
+            safeStorage.removeItem("spendova_otp_login_pending");
+            throw otpSessionError;
+          }
+          toast({ title: "Logged in successfully", description: "Welcome back." });
+          navigate(redirect, { replace: true });
+          return;
+        }
+
+        if (data?.actionLink) {
           safeStorage.setItem("spendova_otp_login_pending", "true");
           toast({ title: "Logged in successfully", description: "Welcome back." });
           window.location.assign(data.actionLink);
           return;
         }
+
+        throw new Error("Could not establish a login session. Please try again.");
       }
 
       const { data, error } = await supabase.functions.invoke("verify-auth-otp", { body: { email, purpose, otp } });
