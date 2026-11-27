@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { buildDebtBalances, planSimplifiedGroupSettlementWrites } from "../src/lib/debt-simplification.ts";
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -360,6 +361,277 @@ test("net settlement closes opposite-direction expenses without reopening later"
   assert.equal(statusForExpense(expenses[0]), "settled");
   assert.equal(statusForExpense(expenses[1]), "settled");
   assert.equal(statusForExpense(expenses[2]), "pending");
+});
+
+const applySimplifiedTestSettlement = (groupExpenses, fromUserId, toUserId, amount) => {
+  // Plan indirect/reconciliation updates from pre-RPC snapshot (matching Index.tsx)
+  const updates = planSimplifiedGroupSettlementWrites(groupExpenses, fromUserId, toUserId, amount);
+  // Simulate record_split_settlement direct splits
+  let rem = amount;
+  for (const exp of groupExpenses) {
+    if (exp.paid_by !== toUserId) continue;
+    for (const sp of exp.expense_splits || []) {
+      if (sp.user_id !== fromUserId || sp.has_paid) continue;
+      const unpaid = Number(sp.amount_owed) - Number(sp.amount_paid || 0);
+      if (unpaid <= 0.009 || rem <= 0.009) continue;
+      const take = Math.min(rem, unpaid);
+      sp.amount_paid = Math.round((Number(sp.amount_paid || 0) + take) * 100) / 100;
+      sp.has_paid = sp.amount_paid >= Number(sp.amount_owed) - 0.009;
+      rem -= take;
+    }
+  }
+  const byId = new Map(updates.map((u) => [u.id, u]));
+  for (const exp of groupExpenses) {
+    for (const sp of exp.expense_splits || []) {
+      const u = byId.get(sp.id);
+      if (u) {
+        sp.amount_paid = u.amount_paid;
+        sp.has_paid = u.has_paid;
+      }
+    }
+  }
+};
+
+test("simplified multi-hop chain works whether payer or receiver initiates settle", () => {
+  // Charlie -> Bob (100), Bob -> Alice (100) => Simplified: Charlie -> Alice (100)
+  const groupExpenses = [
+    {
+      id: "e1",
+      paid_by: "bob",
+      group_id: "g1",
+      expense_splits: [{ id: "s1", user_id: "charlie", amount_owed: 100, amount_paid: 0, has_paid: false }],
+    },
+    {
+      id: "e2",
+      paid_by: "alice",
+      group_id: "g1",
+      expense_splits: [{ id: "s2", user_id: "bob", amount_owed: 100, amount_paid: 0, has_paid: false }],
+    },
+  ];
+  const before = buildDebtBalances(groupExpenses, [], { groupId: "g1", simplifyDebts: true });
+  assert.deepEqual(before.map((b) => [b.fromUserId, b.toUserId, b.amount]), [["charlie", "alice", 100]]);
+
+  // Receiver (Alice) or Payer (Charlie) settles charlie -> alice for 100
+  applySimplifiedTestSettlement(groupExpenses, "charlie", "alice", 100);
+
+  const afterSim = buildDebtBalances(groupExpenses, [], { groupId: "g1", simplifyDebts: true });
+  const afterRaw = buildDebtBalances(groupExpenses, [], { groupId: "g1", simplifyDebts: false });
+  assert.equal(afterSim.length, 0);
+  assert.equal(afterRaw.length, 0);
+});
+
+test("simplified N-member group (5 members) isolates unrelated members during settlement", () => {
+  // Chain: Alice -> Bob (100), Charlie -> Alice (100) => Charlie -> Bob (100)
+  // Unrelated: Dave -> Alice (50), Eve -> Dave (30)
+  const groupExpenses = [
+    {
+      id: "e1",
+      paid_by: "bob",
+      group_id: "g1",
+      expense_splits: [{ id: "s1", user_id: "alice", amount_owed: 100, amount_paid: 0, has_paid: false }],
+    },
+    {
+      id: "e2",
+      paid_by: "alice",
+      group_id: "g1",
+      expense_splits: [{ id: "s2", user_id: "charlie", amount_owed: 100, amount_paid: 0, has_paid: false }],
+    },
+    {
+      id: "e3",
+      paid_by: "alice",
+      group_id: "g1",
+      expense_splits: [{ id: "s3", user_id: "dave", amount_owed: 50, amount_paid: 0, has_paid: false }],
+    },
+    {
+      id: "e4",
+      paid_by: "dave",
+      group_id: "g1",
+      expense_splits: [{ id: "s4", user_id: "eve", amount_owed: 30, amount_paid: 0, has_paid: false }],
+    },
+  ];
+
+  // Settle Charlie -> Bob (100)
+  applySimplifiedTestSettlement(groupExpenses, "charlie", "bob", 100);
+
+  const afterRaw = buildDebtBalances(groupExpenses, [], { groupId: "g1", simplifyDebts: false });
+  assert.deepEqual(
+    afterRaw.map((b) => [b.fromUserId, b.toUserId, b.amount]),
+    [
+      ["dave", "alice", 50],
+      ["eve", "dave", 30],
+    ]
+  );
+  const afterSim = buildDebtBalances(groupExpenses, [], { groupId: "g1", simplifyDebts: true });
+  assert.deepEqual(
+    afterSim.map((b) => [b.fromUserId, b.toUserId, b.amount]),
+    [
+      ["eve", "alice", 30],
+      ["dave", "alice", 20],
+    ]
+  );
+});
+
+test("simplified 3-member cycle with remainder settles to exact zero without double-charging", () => {
+  // Alice -> Bob (100), Bob -> Charlie (100), Charlie -> Alice (50)
+  // Net: Alice -50, Bob 0, Charlie +50 => Simplified: Alice -> Charlie (50)
+  const groupExpenses = [
+    {
+      id: "e1",
+      paid_by: "bob",
+      group_id: "g1",
+      expense_splits: [{ id: "s1", user_id: "alice", amount_owed: 100, amount_paid: 0, has_paid: false }],
+    },
+    {
+      id: "e2",
+      paid_by: "charlie",
+      group_id: "g1",
+      expense_splits: [{ id: "s2", user_id: "bob", amount_owed: 100, amount_paid: 0, has_paid: false }],
+    },
+    {
+      id: "e3",
+      paid_by: "alice",
+      group_id: "g1",
+      expense_splits: [{ id: "s3", user_id: "charlie", amount_owed: 50, amount_paid: 0, has_paid: false }],
+    },
+  ];
+
+  applySimplifiedTestSettlement(groupExpenses, "alice", "charlie", 50);
+
+  const afterSim = buildDebtBalances(groupExpenses, [], { groupId: "g1", simplifyDebts: true });
+  assert.equal(afterSim.length, 0);
+});
+
+test("test group scenario (t1=600 by Thunder, t2=300 by TestUser): Spendova->Thunder 300 settles all splits with zero Pending left", () => {
+  const groupExpenses = [
+    {
+      id: "t2",
+      paid_by: "testuser",
+      group_id: "g1",
+      expense_splits: [
+        { id: "s_thunder_t2", user_id: "thunder", amount_owed: 100, amount_paid: 0, has_paid: false },
+        { id: "s_spendova_t2", user_id: "spendova", amount_owed: 100, amount_paid: 0, has_paid: false },
+      ],
+    },
+    {
+      id: "t1",
+      paid_by: "thunder",
+      group_id: "g1",
+      expense_splits: [
+        { id: "s_spendova_t1", user_id: "spendova", amount_owed: 200, amount_paid: 0, has_paid: false },
+        { id: "s_testuser_t1", user_id: "testuser", amount_owed: 200, amount_paid: 0, has_paid: false },
+      ],
+    },
+  ];
+
+  const before = buildDebtBalances(groupExpenses, [], { groupId: "g1", simplifyDebts: true });
+  assert.deepEqual(before.map((b) => [b.fromUserId, b.toUserId, b.amount]), [["spendova", "thunder", 300]]);
+
+  applySimplifiedTestSettlement(groupExpenses, "spendova", "thunder", 300);
+
+  const afterSim = buildDebtBalances(groupExpenses, [], { groupId: "g1", simplifyDebts: true });
+  const afterRaw = buildDebtBalances(groupExpenses, [], { groupId: "g1", simplifyDebts: false });
+  assert.equal(afterSim.length, 0);
+  assert.equal(afterRaw.length, 0);
+  for (const exp of groupExpenses) {
+    for (const sp of exp.expense_splits) {
+      assert.equal(sp.has_paid, true, `split ${sp.id} should be marked paid`);
+      assert.equal(sp.amount_paid, sp.amount_owed, `split ${sp.id} should have full amount_paid`);
+    }
+  }
+});
+
+test("hard test: 6-member group with mixed expenses settles step-by-step to exact zero", () => {
+  const groupExpenses = [
+    {
+      id: "g6_e1",
+      paid_by: "u1",
+      group_id: "g6",
+      expense_splits: [
+        { id: "g6_s1", user_id: "u2", amount_owed: 120, amount_paid: 0, has_paid: false },
+        { id: "g6_s2", user_id: "u3", amount_owed: 120, amount_paid: 0, has_paid: false },
+        { id: "g6_s3", user_id: "u4", amount_owed: 120, amount_paid: 0, has_paid: false },
+      ],
+    },
+    {
+      id: "g6_e2",
+      paid_by: "u2",
+      group_id: "g6",
+      expense_splits: [
+        { id: "g6_s4", user_id: "u1", amount_owed: 80, amount_paid: 0, has_paid: false },
+        { id: "g6_s5", user_id: "u5", amount_owed: 160, amount_paid: 0, has_paid: false },
+      ],
+    },
+    {
+      id: "g6_e3",
+      paid_by: "u5",
+      group_id: "g6",
+      expense_splits: [
+        { id: "g6_s6", user_id: "u6", amount_owed: 200, amount_paid: 0, has_paid: false },
+      ],
+    },
+  ];
+
+  // Expected nets: u1: +360-80=+280, u2: +240-120=+120, u3: -120, u4: -120, u5: +200-160=+40, u6: -200
+  const netOf = (bals) => {
+    const m = {};
+    for (const b of bals) {
+      m[b.fromUserId] = Math.round(((m[b.fromUserId] || 0) - b.amount) * 100) / 100;
+      m[b.toUserId] = Math.round(((m[b.toUserId] || 0) + b.amount) * 100) / 100;
+    }
+    return m;
+  };
+
+  let sim = buildDebtBalances(groupExpenses, [], { groupId: "g6", simplifyDebts: true });
+  assert.deepEqual(netOf(sim), { u1: 280, u2: 120, u3: -120, u4: -120, u5: 40, u6: -200 });
+
+  while (sim.length > 0) {
+    const next = sim[0];
+    applySimplifiedTestSettlement(groupExpenses, next.fromUserId, next.toUserId, next.amount);
+    sim = buildDebtBalances(groupExpenses, [], { groupId: "g6", simplifyDebts: true });
+  }
+
+  assert.equal(sim.length, 0);
+  const rawAfter = buildDebtBalances(groupExpenses, [], { groupId: "g6", simplifyDebts: false });
+  assert.equal(rawAfter.length, 0);
+});
+
+test("hard test: partial settlement in simplified group preserves exact remaining balance", () => {
+  const groupExpenses = [
+    {
+      id: "p1",
+      paid_by: "bob",
+      group_id: "gp",
+      expense_splits: [{ id: "ps1", user_id: "alice", amount_owed: 300, amount_paid: 0, has_paid: false }],
+    },
+  ];
+  applySimplifiedTestSettlement(groupExpenses, "alice", "bob", 150);
+  const after = buildDebtBalances(groupExpenses, [], { groupId: "gp", simplifyDebts: true });
+  assert.deepEqual(after.map((b) => [b.fromUserId, b.toUserId, b.amount]), [["alice", "bob", 150]]);
+});
+
+test("hard test: settling in simplified group g1 never affects unsimplified group g2", () => {
+  const g1 = [
+    {
+      id: "g1_e1",
+      paid_by: "thunder",
+      group_id: "g1",
+      expense_splits: [{ id: "g1_s1", user_id: "spendova", amount_owed: 200, amount_paid: 0, has_paid: false }],
+    },
+  ];
+  const g2 = [
+    {
+      id: "g2_e1",
+      paid_by: "thunder",
+      group_id: "g2",
+      expense_splits: [{ id: "g2_s1", user_id: "spendova", amount_owed: 150, amount_paid: 0, has_paid: false }],
+    },
+  ];
+  applySimplifiedTestSettlement(g1, "spendova", "thunder", 200);
+  assert.equal(buildDebtBalances(g1, [], { groupId: "g1", simplifyDebts: true }).length, 0);
+  assert.deepEqual(
+    buildDebtBalances(g2, [], { groupId: "g2", simplifyDebts: false }).map((b) => [b.fromUserId, b.toUserId, b.amount]),
+    [["spendova", "thunder", 150]]
+  );
 });
 
 for (const { name, fn } of tests) {

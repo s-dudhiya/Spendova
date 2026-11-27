@@ -87,7 +87,7 @@ import { canUsePlatformBiometrics, disableBiometricLock, enableBiometricLock, is
 import { getDeviceId, listDeviceSessions, type DeviceSession } from "@/lib/device-session";
 import { getFriendlyErrorMessage, getFriendlyErrorTitle } from "@/lib/friendly-error";
 import { getSpendingChartAverageLabel, getSpendingChartAxisLabels, getSpendingChartSummary, type SpendingChartBucketUnit } from "@/lib/spending-chart";
-import { simplifyGroupDebts, isGroupSimplifyEnabled, setGroupSimplifyEnabled, buildDebtBalances, aggregateDebtsByUser, type DebtBalance, type AggregatedDebtRow } from "@/lib/debt-simplification";
+import { simplifyGroupDebts, isGroupSimplifyEnabled, setGroupSimplifyEnabled, buildDebtBalances, aggregateDebtsByUser, planSimplifiedGroupSettlementWrites, type DebtBalance, type AggregatedDebtRow } from "@/lib/debt-simplification";
 import { bootLog, safeStorage, withTimeout } from "@/lib/startup-safety";
 import { registerBackHandler } from "@/lib/back-handler";
 import { BudgetLedgerView } from "./Ledger";
@@ -5841,91 +5841,29 @@ const ActionModal = ({
           firstSettlementId = settlementId;
         }
 
-        // If this was a simplified group settlement where the payer's amount covers other splits in the group:
-        if (payload.group_id && payload.from_user_id === currentUserId) {
+        // If this was a simplified group settlement (initiated by either payer or receiver),
+        // update any indirect chain splits in the group in one parallel batch:
+        if (payload.group_id) {
           const groupObj = data.groups.find((g) => g.id === payload.group_id);
           const isSimplified = isGroupSimplifyEnabled(payload.group_id, groupObj?.simplify_debts);
           if (isSimplified) {
             const groupExp = data.expenses.filter((e) => e.group_id === payload.group_id);
-            // 1. Clear any remaining unpaid splits for this payer in this group up to the settled amount
-            const payerUnpaidSplits = groupExp.flatMap((e) =>
-              (e.expense_splits || [])
-                .filter((s) => s.user_id === currentUserId && !s.has_paid && Number(s.amount_paid || 0) < Number(s.amount_owed || 0))
-                .map((s) => ({ ...s, expensePaidBy: e.paid_by }))
+            const plannedUpdates = planSimplifiedGroupSettlementWrites(
+              groupExp,
+              payload.from_user_id,
+              payload.to_user_id,
+              payload.amount
             );
-            const directSplits = payerUnpaidSplits.filter((s) => s.expensePaidBy === payload.to_user_id);
-            const directOwed = directSplits.reduce((sum, s) => sum + (Number(s.amount_owed || 0) - Number(s.amount_paid || 0)), 0);
-            let excess = Math.max(0, payload.amount - directOwed);
 
-            const splitUpdates: Array<{ id: string; amount_paid: number; has_paid: boolean }> = [];
-            const applicationRows: Array<{ settlement_id: string; split_id: string; amount: number }> = [];
-
-            const otherPayerSplits = payerUnpaidSplits.filter((s) => s.expensePaidBy !== payload.to_user_id);
-            for (const split of otherPayerSplits) {
-              if (excess <= 0.009) break;
-              const unpaid = Number(split.amount_owed || 0) - Number(split.amount_paid || 0);
-              const apply = Math.min(excess, unpaid);
-              const newAmountPaid = Number(split.amount_paid || 0) + apply;
-              const hasPaid = newAmountPaid >= Number(split.amount_owed || 0) - 0.009;
-
-              splitUpdates.push({ id: split.id, amount_paid: newAmountPaid, has_paid: hasPaid });
-              if (settlementId) {
-                applicationRows.push({ settlement_id: settlementId, split_id: split.id, amount: apply });
-              }
-
-              excess -= apply;
-            }
-
-            // 2. Also clear intermediary splits in this group where intermediary owed payload.to_user_id
-            let receiverCredit = payload.amount - directOwed;
-            if (receiverCredit > 0.009) {
-              const intermediarySplits = groupExp.flatMap((e) =>
-                (e.expense_splits || [])
-                  .filter((s) => e.paid_by === payload.to_user_id && s.user_id !== currentUserId && !s.has_paid && Number(s.amount_paid || 0) < Number(s.amount_owed || 0))
+            if (plannedUpdates.length > 0) {
+              const results = await Promise.all(
+                plannedUpdates.map((u) =>
+                  supabase.from("expense_splits").update({
+                    amount_paid: u.amount_paid,
+                    has_paid: u.has_paid,
+                  } as never).eq("id", u.id)
+                )
               );
-              for (const split of intermediarySplits) {
-                if (receiverCredit <= 0.009) break;
-                const unpaid = Number(split.amount_owed || 0) - Number(split.amount_paid || 0);
-                const apply = Math.min(receiverCredit, unpaid);
-                const newAmountPaid = Number(split.amount_paid || 0) + apply;
-                const hasPaid = newAmountPaid >= Number(split.amount_owed || 0) - 0.009;
-
-                splitUpdates.push({ id: split.id, amount_paid: newAmountPaid, has_paid: hasPaid });
-                if (settlementId) {
-                  applicationRows.push({ settlement_id: settlementId, split_id: split.id, amount: apply });
-                }
-
-                receiverCredit -= apply;
-              }
-            }
-
-            // 3. Offset opposite splits where others owed currentUserId in this group that were factored into this net settlement
-            const oppositeSplits = groupExp.flatMap((e) =>
-              e.paid_by === currentUserId
-                ? (e.expense_splits || []).filter((s) => s.user_id !== currentUserId && !s.has_paid && Number(s.amount_paid || 0) < Number(s.amount_owed || 0))
-                : []
-            );
-            for (const split of oppositeSplits) {
-              const unpaid = Number(split.amount_owed || 0) - Number(split.amount_paid || 0);
-              splitUpdates.push({ id: split.id, amount_paid: Number(split.amount_owed || 0), has_paid: true });
-              if (settlementId && unpaid > 0.009) {
-                applicationRows.push({ settlement_id: settlementId, split_id: split.id, amount: unpaid });
-              }
-            }
-
-            const dbOps: Array<PromiseLike<{ error?: unknown }>> = splitUpdates.map((u) =>
-              supabase.from("expense_splits").update({
-                amount_paid: u.amount_paid,
-                has_paid: u.has_paid,
-              } as never).eq("id", u.id)
-            );
-            if (applicationRows.length > 0) {
-              dbOps.push(
-                (supabase.from as any)("split_settlement_applications").insert(applicationRows as never)
-              );
-            }
-            if (dbOps.length > 0) {
-              const results = await Promise.all(dbOps);
               const failed = results.find((r) => r?.error);
               if (failed?.error) throw failed.error;
             }

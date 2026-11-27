@@ -18,6 +18,7 @@ export type ProfileLike = {
 };
 
 export type ExpenseSplitLike = {
+  id?: string;
   user_id: string;
   amount_owed: number;
   amount_paid?: number | null;
@@ -455,4 +456,173 @@ export function aggregateDebtsByUser(
     totalLent,
     net,
   };
+}
+
+export type SimplifiedSplitUpdate = {
+  id: string;
+  amount_paid: number;
+  has_paid: boolean;
+  applied: number;
+};
+
+/**
+ * Computes the exact indirect expense_splits updates needed when settling a
+ * simplified group balance (`fromUserId -> toUserId` for `settledAmount`).
+ * Works identically whether initiated by the payer or the receiver, and for
+ * any N-member group without touching unrelated members' splits.
+ */
+export function planSimplifiedGroupSettlementWrites(
+  groupExpenses: ExpenseRowLike[],
+  fromUserId: string,
+  toUserId: string,
+  settledAmount: number
+): SimplifiedSplitUpdate[] {
+  if (!fromUserId || !toUserId || fromUserId === toUserId || settledAmount <= 0.009) {
+    return [];
+  }
+
+  const payerUnpaidSplits = groupExpenses.flatMap((e) =>
+    (e.expense_splits || [])
+      .filter((s) => s.user_id === fromUserId && !s.has_paid && Number(s.amount_paid || 0) < Number(s.amount_owed || 0))
+      .map((s) => ({ ...s, expensePaidBy: e.paid_by }))
+  );
+
+  const directOwed = payerUnpaidSplits
+    .filter((s) => s.expensePaidBy === toUserId)
+    .reduce((sum, s) => sum + (Number(s.amount_owed || 0) - Number(s.amount_paid || 0)), 0);
+
+  let excess = Math.max(0, settledAmount - directOwed);
+  if (excess <= 0.009) {
+    return [];
+  }
+
+  const updates: SimplifiedSplitUpdate[] = [];
+
+  // 1. Apply excess credit across splits where fromUserId owed other creditors in the group
+  const otherPayerSplits = payerUnpaidSplits.filter((s) => s.expensePaidBy !== toUserId);
+  for (const split of otherPayerSplits) {
+    if (excess <= 0.009) break;
+    if (!split.id) continue;
+    const unpaid = Number(split.amount_owed || 0) - Number(split.amount_paid || 0);
+    const apply = Math.min(excess, unpaid);
+    const newAmountPaid = Math.round((Number(split.amount_paid || 0) + apply) * 100) / 100;
+    const hasPaid = newAmountPaid >= Number(split.amount_owed || 0) - 0.009;
+
+    updates.push({
+      id: split.id,
+      amount_paid: newAmountPaid,
+      has_paid: hasPaid,
+      applied: Math.round(apply * 100) / 100,
+    });
+    split.amount_paid = newAmountPaid;
+    split.has_paid = hasPaid;
+    excess -= apply;
+  }
+
+  // 2. Apply matching receiver credit across splits where other debtors owed toUserId in the group
+  let receiverCredit = Math.max(0, settledAmount - directOwed);
+  if (receiverCredit > 0.009) {
+    const intermediarySplits = groupExpenses.flatMap((e) =>
+      (e.expense_splits || [])
+        .filter(
+          (s) =>
+            e.paid_by === toUserId &&
+            s.user_id !== fromUserId &&
+            !s.has_paid &&
+            Number(s.amount_paid || 0) < Number(s.amount_owed || 0)
+        )
+        .map((s) => ({ ...s, expensePaidBy: e.paid_by }))
+    );
+    for (const split of intermediarySplits) {
+      if (receiverCredit <= 0.009) break;
+      if (!split.id) continue;
+      const unpaid = Number(split.amount_owed || 0) - Number(split.amount_paid || 0);
+      const apply = Math.min(receiverCredit, unpaid);
+      const newAmountPaid = Math.round((Number(split.amount_paid || 0) + apply) * 100) / 100;
+      const hasPaid = newAmountPaid >= Number(split.amount_owed || 0) - 0.009;
+
+      updates.push({
+        id: split.id,
+        amount_paid: newAmountPaid,
+        has_paid: hasPaid,
+        applied: Math.round(apply * 100) / 100,
+      });
+      split.amount_paid = newAmountPaid;
+      split.has_paid = hasPaid;
+      receiverCredit -= apply;
+    }
+  }
+
+  // 3. Reconcile any mutually canceling opposite-direction splits (e.g. A->B and B->A)
+  // created after Step 1 & Step 2 so settled expenses don't stay marked "Pending".
+  const virtualPaidById = new Map<string, { amount_paid: number; has_paid: boolean }>();
+  for (const u of updates) {
+    virtualPaidById.set(u.id, { amount_paid: u.amount_paid, has_paid: u.has_paid });
+  }
+  const getSplitPaid = (s: ExpenseSplitLike) => {
+    if (s.id && virtualPaidById.has(s.id)) return virtualPaidById.get(s.id)!;
+    return { amount_paid: Number(s.amount_paid || 0), has_paid: Boolean(s.has_paid) };
+  };
+
+  type OpenSplit = { id: string; from: string; to: string; owed: number; paid: number };
+  const openSplits: OpenSplit[] = [];
+  for (const e of groupExpenses) {
+    for (const s of e.expense_splits || []) {
+      if (!s.id || s.user_id === e.paid_by) continue;
+      const st = getSplitPaid(s);
+      if (st.has_paid) continue;
+      const owed = Number(s.amount_owed || 0);
+      if (owed - st.amount_paid > 0.009) {
+        openSplits.push({ id: s.id, from: s.user_id, to: e.paid_by, owed, paid: st.amount_paid });
+      }
+    }
+  }
+
+  const pairOpenTotals = new Map<string, number>();
+  for (const os of openSplits) {
+    const key = `${os.from}|${os.to}`;
+    pairOpenTotals.set(key, (pairOpenTotals.get(key) || 0) + (os.owed - os.paid));
+  }
+
+  const handledPairs = new Set<string>();
+  for (const [key, fwdTotal] of pairOpenTotals.entries()) {
+    const [a, b] = key.split("|");
+    const revKey = `${b}|${a}`;
+    if (handledPairs.has(key) || handledPairs.has(revKey)) continue;
+    handledPairs.add(key);
+    handledPairs.add(revKey);
+
+    const revTotal = pairOpenTotals.get(revKey) || 0;
+    const cancelAmt = Math.round(Math.min(fwdTotal, revTotal) * 100) / 100;
+    if (cancelAmt <= 0.009) continue;
+
+    for (const [f, t] of [
+      [a, b],
+      [b, a],
+    ]) {
+      let rem = cancelAmt;
+      for (const os of openSplits) {
+        if (rem <= 0.009) break;
+        if (os.from !== f || os.to !== t) continue;
+        const unpaid = os.owed - os.paid;
+        if (unpaid <= 0.009) continue;
+        const apply = Math.min(rem, unpaid);
+        os.paid = Math.round((os.paid + apply) * 100) / 100;
+        const hasPaid = os.paid >= os.owed - 0.009;
+        virtualPaidById.set(os.id, { amount_paid: os.paid, has_paid: hasPaid });
+        const existingIdx = updates.findIndex((u) => u.id === os.id);
+        const nextEntry: SimplifiedSplitUpdate = {
+          id: os.id,
+          amount_paid: os.paid,
+          has_paid: hasPaid,
+          applied: Math.round(apply * 100) / 100,
+        };
+        if (existingIdx >= 0) updates[existingIdx] = nextEntry;
+        else updates.push(nextEntry);
+        rem -= apply;
+      }
+    }
+  }
+
+  return updates;
 }
