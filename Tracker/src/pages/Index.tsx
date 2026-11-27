@@ -5857,6 +5857,9 @@ const ActionModal = ({
             const directOwed = directSplits.reduce((sum, s) => sum + (Number(s.amount_owed || 0) - Number(s.amount_paid || 0)), 0);
             let excess = Math.max(0, payload.amount - directOwed);
 
+            const splitUpdates: Array<{ id: string; amount_paid: number; has_paid: boolean }> = [];
+            const applicationRows: Array<{ settlement_id: string; split_id: string; amount: number }> = [];
+
             const otherPayerSplits = payerUnpaidSplits.filter((s) => s.expensePaidBy !== payload.to_user_id);
             for (const split of otherPayerSplits) {
               if (excess <= 0.009) break;
@@ -5865,17 +5868,9 @@ const ActionModal = ({
               const newAmountPaid = Number(split.amount_paid || 0) + apply;
               const hasPaid = newAmountPaid >= Number(split.amount_owed || 0) - 0.009;
 
-              await supabase.from("expense_splits").update({
-                amount_paid: newAmountPaid,
-                has_paid: hasPaid,
-              } as never).eq("id", split.id);
-
+              splitUpdates.push({ id: split.id, amount_paid: newAmountPaid, has_paid: hasPaid });
               if (settlementId) {
-                await (supabase.from as any)("split_settlement_applications").insert({
-                  settlement_id: settlementId,
-                  split_id: split.id,
-                  amount: apply,
-                } as never);
+                applicationRows.push({ settlement_id: settlementId, split_id: split.id, amount: apply });
               }
 
               excess -= apply;
@@ -5895,17 +5890,9 @@ const ActionModal = ({
                 const newAmountPaid = Number(split.amount_paid || 0) + apply;
                 const hasPaid = newAmountPaid >= Number(split.amount_owed || 0) - 0.009;
 
-                await supabase.from("expense_splits").update({
-                  amount_paid: newAmountPaid,
-                  has_paid: hasPaid,
-                } as never).eq("id", split.id);
-
+                splitUpdates.push({ id: split.id, amount_paid: newAmountPaid, has_paid: hasPaid });
                 if (settlementId) {
-                  await (supabase.from as any)("split_settlement_applications").insert({
-                    settlement_id: settlementId,
-                    split_id: split.id,
-                    amount: apply,
-                  } as never);
+                  applicationRows.push({ settlement_id: settlementId, split_id: split.id, amount: apply });
                 }
 
                 receiverCredit -= apply;
@@ -5920,18 +5907,27 @@ const ActionModal = ({
             );
             for (const split of oppositeSplits) {
               const unpaid = Number(split.amount_owed || 0) - Number(split.amount_paid || 0);
-              await supabase.from("expense_splits").update({
-                amount_paid: split.amount_owed,
-                has_paid: true,
-              } as never).eq("id", split.id);
-
+              splitUpdates.push({ id: split.id, amount_paid: Number(split.amount_owed || 0), has_paid: true });
               if (settlementId && unpaid > 0.009) {
-                await (supabase.from as any)("split_settlement_applications").insert({
-                  settlement_id: settlementId,
-                  split_id: split.id,
-                  amount: unpaid,
-                } as never);
+                applicationRows.push({ settlement_id: settlementId, split_id: split.id, amount: unpaid });
               }
+            }
+
+            const dbOps: Array<PromiseLike<{ error?: unknown }>> = splitUpdates.map((u) =>
+              supabase.from("expense_splits").update({
+                amount_paid: u.amount_paid,
+                has_paid: u.has_paid,
+              } as never).eq("id", u.id)
+            );
+            if (applicationRows.length > 0) {
+              dbOps.push(
+                (supabase.from as any)("split_settlement_applications").insert(applicationRows as never)
+              );
+            }
+            if (dbOps.length > 0) {
+              const results = await Promise.all(dbOps);
+              const failed = results.find((r) => r?.error);
+              if (failed?.error) throw failed.error;
             }
           }
         }
@@ -5965,7 +5961,8 @@ const ActionModal = ({
     }
 
     toast({ title: payloads.length > 1 ? "Settlements saved" : "Settlement saved", description: "Balances were updated." });
-    await closeAndRefresh();
+    onClose();
+    void refresh({ silent: true });
   };
 
   const clearExpense = async () => {
